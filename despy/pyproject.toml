@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+authors = [{name = "Direct Electron"}]
+classifiers = [
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "numpy>=1.20.0",
+    "protobuf",
+    "pillow",
+    "matplotlib",
+    "scipy",
+    "scikit-image",
+    "sympy",
+    "distributed",
+    "dask",
+    "hyperspy",
+    "pyxem",
+    "pyqtgraph",
+    "pyside6",
+]
+description = "DE Visualization and Basic Camera Control"
+version = "0.0.1"
+keywords = [
+    "EELS",
+    "STEM",
+    "TEM",
+    "hyperspy",
+    "microscopy",
+    "Cryo EM",
+    "4D STEM",
+]
+name = "spyde"
+requires-python = ">=3.8"
+
+[tool.setuptools.packages.find]
+include = ["spyde*", "spyde.*"]
+where = ["."]
+
+[project.optional-dependencies]
+tests = [
+    "pytest-instafail",
+    "pytest-mpl",
+    "pytest-rerunfailures",
+    "pytest-xdist",
+    "pytest>=3.6",
+    "setuptools_scm",
+    "pytest-cov",
+    "pytest-xprocess",
+    "libertem",
+    "hyperspy",
+]
+doc = [
+    "sphinx",
+    "pydata_sphinx_theme",
+    "sphinx-gallery",
+
+]
+
+[project.urls]
+"Bug Reports" = "https://github.com/directelectron/spyde/issues"
+Documentation = "https://directelectron.github.io/spyde/"
+Homepage = "https://directelectron.com/"
+Support = "https://github.com/directelectron/spyde/discussions"
+Source = "https://github.com/directelectron/spyde"
+
+[project.scripts]
+spyde = "spyde.main_window:main"
