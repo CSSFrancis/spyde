@@ -16,7 +16,9 @@ import hyperspy.api as hs
 from dask.distributed import Client, Future, LocalCluster
 
 from despy.misc.dialogs import DatasetSizeDialog, CreateDataDialog
-from despy.drawing.plot import Plot
+from despy.drawing.multiplot import Plot
+
+from despy.signal_tree import BaseSignalTree
 
 import pyqtgraph as pg
 
@@ -55,12 +57,11 @@ class MainWindow(QMainWindow):
         self.mdi_area = QtWidgets.QMdiArea()
         self.setCentralWidget(self.mdi_area)
 
-        self.plot_subwindows = []
+        self.plot_subwindows = [] # type: list[Plot]
 
         self.mdi_area.subWindowActivated.connect(self.on_subwindow_activated)
         self.create_menu()
         self.setMouseTracking(True)
-
 
         self.selectors_layout = None
         self.s_list_widget = None
@@ -73,15 +74,25 @@ class MainWindow(QMainWindow):
         self.timer.start()
 
         self.mdi_area.setStyleSheet("background-color: #2b2b2b;")  # Dark gray background
+
+        self.signal_trees = []  # type: list[BaseSignalTree]
+
+    @property
+    def navigation_selectors(self):
+        selectors = []
+        for s in self.signal_trees:
+            selectors.extend(s.navigator_plot_manager.navigation_selectors)
+        return selectors
+
     def update_plots_loop(self):
         """This is a simple loop to check if the plots need to be updated. Currently, this
         is running on the main event loop, but it could be moved to a separate thread if it
         starts to slow down the GUI.
         """
         for p in self.plot_subwindows:
-            if isinstance(p.data, Future) and p.data.done():
+            if isinstance(p.current_data, Future) and p.current_data.done():
                 print("Updating Plot")
-                p.data = p.data.result()
+                p.current_data = p.current_data.result()
                 p.update()
 
     def create_menu(self):
@@ -159,7 +170,10 @@ class MainWindow(QMainWindow):
                 kwargs["distributed"] = True
 
             signal = hs.load(file_path, **kwargs)
-            hyper_signal = HyperSignal(signal, main_window=self, client=self.client)
+            hyper_signal = BaseSignalTree(root_signal=signal,
+                                          main_window=self,
+                                          distributed_client=self.client)
+
             plot = Plot(hyper_signal,
                         is_signal=False,
                         key_navigator=True
@@ -180,16 +194,22 @@ class MainWindow(QMainWindow):
             if file_paths:
                 self._create_signals(file_paths)
 
-    def add_signal(self, s):
-        """
-        Add a signal to the main window.
-        """
-        hyper_signal = HyperSignal(s, main_window=self, client=self.client)
-        plot = Plot(hyper_signal, is_signal=False, key_navigator=True, main_window=self)
-        plot.main_window = self
+    def add_signal(self, signal):
+        """Add a signal to the main window.
 
-        self.add_plot(plot)
-        plot.add_selector_and_new_plot()
+        This will "plant" a new seed for a signal tree and set up the associated plots.
+
+        Parameters
+        ----------
+        signal : hs.signals.BaseSignal
+            The hyperspy signal to add.
+
+        """
+
+        self.signal_trees.append(BaseSignalTree(root_signal=signal,
+                                                main_window=self,
+                                                distributed_client=self.client)
+                                 )
 
     def load_example_data(self, name):
         """
@@ -198,7 +218,15 @@ class MainWindow(QMainWindow):
         signal = getattr(pyxem.data, name)(allow_download=True, lazy=True)
         self.add_signal(signal)
 
-    def add_plot(self, plot):
+    def add_plot(self, plot: Plot):
+        """Add a plot to the MDI area.
+
+        Parameters
+        ----------
+        plot : Plot
+            The plot to add.
+
+        """
         plot.resize(self.screen_size.height() // 2, self.screen_size.height() // 2)
 
         plot.setWindowTitle("Test")
@@ -216,11 +244,12 @@ class MainWindow(QMainWindow):
         if hasattr(window, "show_selector_control_widget"):
             window.show_selector_control_widget()
             print("Making toolbar visible for", window)
-        if hasattr(window, "toolbar"):
-            window.toolbar.setVisible(True)
+        if hasattr(window, "plot_state") and window.plot_state is not None and hasattr(window.plot_state, "toolbar"):
+            window.plot_state.toolbar.setVisible(True)
         for plot in self.plot_subwindows:
             if window != plot:
-                plot.toolbar.setVisible(False)
+                if plot.plot_state is not None and hasattr(plot.plot_state, "toolbar"):
+                    plot.plot_state.toolbar.setVisible(False)
                 if hasattr(plot, "hide_selector_control_widget"):
                     plot.hide_selector_control_widget()
         # if an image then set the histogram to the image
@@ -312,8 +341,6 @@ class MainWindow(QMainWindow):
     def close(self):
         self.client.close()
         super().close()
-
-
 
 
 

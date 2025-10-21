@@ -1,158 +1,86 @@
-from pyqtgraph import LinearRegionItem, RectROI, CircleROI
+from pyqtgraph import LinearRegionItem, RectROI, CircleROI, LineROI
 
 from PySide6 import QtCore, QtWidgets
 import numpy as np
 
 import pyqtgraph as pg
 
+from typing import TYPE_CHECKING, Union, List
+if TYPE_CHECKING:
+    from despy.drawing.multiplot import Plot, NavigationPlotManager
 
-class Selector:
+
+class BaseSelector:
+    """
+    Base class for selectors.
+
+    Parameters
+    ----------
+    parent : Plot
+        The parent plot item to which the selector will be added.
+    child : Plot | None
+        An optional child plot item to which the selector will send updates when the selection
+        moves.
+    update_function : callable | None
+        An optional function to call when the selection. This is a function that takes a BaseSelector instance
+        (self) and the selected indices as arguments and then performs the update on the child plot.
+        If the function returns a da.Future, the update timer will start and wait for the future to complete
+        before updating the child plot.
+    width : int
+        The width of the selector lines.
+    color : str
+        The color of the selector lines.
+    hover_color : str
+        The color of the selector lines when hovered.
+    """
     def __init__(self,
-                 parent=None,
-                 on_nav=True,
-                 integration_order=None,
-                 type="RectangleSelector",
-                 *args,
-                 **kwargs):
+                 parent: Union["Plot", "NavigationPlotManager"],
+                 children: Union["Plot", List["Plot"]],
+                 update_function: Union[callable,  List[callable]],
+                 width: int = 5,
+                 color: str = "green",
+                 hover_color: str = "red",
+                 live_delay: int = 20
+                 ):
 
-        # Create a pen with a width of 3 pixels and a red color
-        roi_pen = pg.mkPen(color='green', width=5)
-        handlePen = pg.mkPen(color='green', width=5)
-        hoverPen = pg.mkPen(color='r', width=5)
-        handleHoverPen = pg.mkPen(color='r', width=5)
-
-        if type == "RectangleSelector":
-            print("Creating Rectangle Selector")
-            print(args, kwargs)
-            self.selector = RectROI(pen=roi_pen,
-                                    handlePen=handlePen,
-                                    hoverPen=hoverPen,
-                                    handleHoverPen=handleHoverPen,
-                                    *args,
-                                    **kwargs,
-                                    )
-        elif type == "CircleSelector" or type == "RingSelector":
-            self.selector = CircleROI(*args, **kwargs, edge_thickness=4)
-        elif type == "LineSelector":
-            self.selector = LinearRegionItem(pen=roi_pen,
-                                             hoverPen=hoverPen,
-                                             *args,
-                                             **kwargs)
+        # the parent plot (data source) and the child plot (where the data is plotted)
+        # a selector can have multiple children.
+        self.parent = parent  # type: Plot | NavigationPlotManager
+        if not isinstance(children, list):
+            self.children = {children: update_function}  # type: dict[Plot, callable]
+            self.active_children = [children, ]  # type: list[Plot]
         else:
-            raise ValueError("Invalid Selector Type")
-        parent.addItem(self.selector)
+            self.children = {}  # type: dict[Plot, callable]
+            for child, function in zip(children, update_function):
+                self.children[child] = function
 
-        self.is_live = not on_nav  # if on signal is_live is always False
+        # Create a pen for the selector
+        self.roi_pen = pg.mkPen(color=color, width=width)
+        self.handlePen = pg.mkPen(color=color, width=width)
+        self.hoverPen = pg.mkPen(color=hover_color, width=width)
+        self.handleHoverPen = pg.mkPen(color=hover_color, width=width)
+
+        # The widget which is added to the sidebar to control things like updating, if the selector is
+        # live or if the selector should integrate.
         self.widget = QtWidgets.QWidget()
         self.layout = QtWidgets.QHBoxLayout(self.widget)
-        self.plots = []
         self.is_integrating = False
 
+        # The current selection
+        self.current_indices = None
+
         self.update_timer = QtCore.QTimer()
-        self.update_timer.setInterval(20)  # Every 20ms we will check to update the plots??
+        self.update_timer.setInterval(live_delay)  # To make things smoother we delay how fast we update the plots
         self.update_timer.setSingleShot(True)
         self.update_timer.timeout.connect(self.delayed_update_data)
 
-        if on_nav:
-            self.integrate_button = QtWidgets.QPushButton("Integrate")
-            self.integrate_button.setCheckable(True)
-            self.live_button = QtWidgets.QPushButton("Live")
-            self.live_button.setCheckable(True)
-            self.live_button.setChecked(True)
-            self.live_button.toggled.connect(self.on_live_toggled)
-            self.layout.addWidget(self.live_button)
-        else:
-            self.integrate_button = QtWidgets.QPushButton("Compute")
-            self.integrate_button.setCheckable(False)
-
-        self.integrate_button.setChecked(False)
-        self.integrate_button.update()
-        self.integrate_button.toggled.connect(self.on_integrate_toggled)
-        self.integrate_button.pressed.connect(self.on_integrate_pressed)
-        self.layout.addWidget(self.integrate_button)
-        self.widget.setLayout(self.layout)
-        self.integration_order = integration_order
-        self.last_indices = [[0, 0],]
-
-    def __getattr__(self, item):
-        try:
-            return getattr(self.selector, item)
-        except AttributeError:
-            raise AttributeError(f"'Selector' object has no attribute '{item}'")
-
-    def on_integrate_toggled(self, checked):
-        print("Integrate Toggled")
-        print(self.is_live)
-        if self.is_live:
-            self.is_integrating = checked
-            self.update_data()
-            for p in self.plots:
-                p.update_plot(get_result=True)
-
-    def on_integrate_pressed(self):
-        if not self.is_live:
-            # fire off the integration
-            print("Computing!")
-            for p in self.plots:
-                p.compute_data()
-
-    def on_live_toggled(self, checked):
-        self.is_live = checked
-        if checked:
-            self.integrate_button.setText("Integrate")
-            self.integrate_button.setCheckable(True)
-            self.integrate_button.setChecked(self.is_integrating)
-            self.selection = (self.selection[0], self.selection[0] + 15, self.selection[2], self.selection[2] + 15)
-            self.size_limits = (1, 15, 1, 15)
-            # update the plot
-            for p in self.plots:
-                p.update_data()
-        else:
-            self.integrate_button.setText("Compute")
-            self.is_integrating = True
-            self.integrate_button.setCheckable(False)
-            self.size_limits = (1, self.limits[1], 1, self.limits[3])
+        self.update_function = update_function
 
     def get_selected_indices(self):
         """
         Get the currently selected indices from the selector.
-
-        This just gets the list of x, y indices  to handel arbitrary ROIs,
-        shapes etc.
         """
-        if isinstance(self.selector, RectROI):
-            lower_left = self.selector.pos()
-            size = self.selector.size()
-            
-            # ignore rotation for now...
-            rotation = self.selector.angle()
-
-            y_indices = np.arange(0, np.round(size.y()), dtype=int)
-            x_indices = np.arange(0, np.round(size.x()), dtype=int)
-
-            indices = np.reshape(np.array(np.meshgrid(x_indices,
-                                                      y_indices)).T,
-                                 (-1, 2))
-            indices[:, 0] += np.round(lower_left.x()).astype(int)
-            indices[:, 1] += np.round(lower_left.y()).astype(int)
-            indices = indices.astype(int)
-
-        elif isinstance(self.selector, LinearRegionItem):
-            region = self.selector.getRegion()
-            if region[0] > region[1]:
-                region = (region[1], region[0])
-            indices = np.array([np.arange(np.floor(region[0]).astype(int),
-                                          np.ceil(region[1]).astype(int)),]).T
-        else:
-            raise NotImplementedError("Selector type not supported yet")
-
-        if not self.is_integrating:
-            # just take the mean index
-            indices = np.array([[np.round(np.mean(indices[:, i])).astype(int)
-                                for i in range(indices.shape[1])],])
-
-
-        return indices
+        raise NotImplementedError("get_selected_indices must be implemented in subclasses")
 
     def update_data(self, ev=None):
         """
@@ -160,22 +88,219 @@ class Selector:
         """
         if ev is None:
             self.delayed_update_data()
-        elif self.is_live:
+        else:
             print("Restarting Timer")
             self.update_timer.start()
 
-    def delayed_update_data(self):
+    def delayed_update_data(self, force: bool = False):
         """
         Perform the actual update if the indices have not changed.
         """
-        print("Time out")
         indices = self.get_selected_indices()
-        print("Indices", indices)
-        print("Last Indices", self.last_indices)
-        if not np.array_equal(indices, self.last_indices):
-            print("Updating Data")
-            self.last_indices = indices
-            for p in self.plots:
-                p.current_indexes[self.integration_order] = indices
-                print("Updating Plot")
-                p.update_plot()
+        if not np.array_equal(indices, self.current_indices) or force:
+            for child in self.children:
+                print("Updating Child Plot:", child)
+                new_data = self.children[child](self, child, indices)
+                child.update_data(new_data)  # update the child plot data. If this is a future then
+            # the plot will update when the future completes
+            self.current_indices = indices
+
+
+class RectangleSelector(BaseSelector):
+    def __init__(self,
+                 parent: Union["Plot", "NavigationPlotManager"],
+                 children: Union["Plot", List["Plot"]],
+                 update_function: Union[callable, List[callable]],
+                 *args,
+                 **kwargs):
+        super().__init__(parent,
+                         children,
+                         update_function,
+                         *args,
+                         **kwargs)
+        print("Creating Rectangle Selector")
+        print(args, kwargs)
+        self.selector = RectROI(pos=(0, 0),
+                                size=(10, 10),
+                                pen=self.roi_pen,
+                                handlePen=self.handlePen,
+                                hoverPen=self.hoverPen,
+                                handleHoverPen=self.handleHoverPen,
+                                *args,
+                                **kwargs,
+                                )
+        parent.plot_item.addItem(self.selector)
+        self.selector.sigRegionChanged.connect(self.update_data)
+
+    def get_selected_indices(self):
+        """
+        Get the currently selected indices from the selector.
+        """
+        lower_left = self.selector.pos()
+        size = self.selector.size()
+
+        # ignore rotation for now...
+        rotation = self.selector.angle()
+
+        y_indices = np.arange(0, np.round(size.y()), dtype=int)
+        x_indices = np.arange(0, np.round(size.x()), dtype=int)
+
+        indices = np.reshape(np.array(np.meshgrid(x_indices,
+                                                  y_indices)).T,
+                             (-1, 2))
+        indices[:, 0] += np.round(lower_left.x()).astype(int)
+        indices[:, 1] += np.round(lower_left.y()).astype(int)
+        indices = indices.astype(int)
+        return indices
+
+
+class IntegratingSelectorMixin:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.is_live = True
+        self.integrate_button = QtWidgets.QPushButton("Integrate")
+        self.integrate_button.setCheckable(True)
+        self.live_button = QtWidgets.QPushButton("Live")
+        self.live_button.setCheckable(True)
+        self.live_button.setChecked(True)
+        self.live_button.toggled.connect(self.on_live_toggled)
+        self.layout.addWidget(self.live_button)
+
+        self.integrate_button.setChecked(False)
+        self.integrate_button.update()
+        self.integrate_button.toggled.connect(self.on_integrate_toggled)
+        self.integrate_button.pressed.connect(self.on_integrate_pressed)
+        self.layout.addWidget(self.integrate_button)
+        self.widget.setLayout(self.layout)
+        self.size_limits = (1, 15, 1, 15)
+
+    def on_integrate_toggled(self, checked):
+        print("Integrate Toggled")
+        print(self.is_live)
+        if self.is_live:
+            self.is_integrating = checked
+            self.delayed_update_data(force=True)
+
+    def on_integrate_pressed(self):
+        if not self.is_live:
+            # fire off the integration
+            print("Computing!")
+            self.delayed_update_data(force=True)
+
+    def on_live_toggled(self, checked):
+        self.is_live = checked
+        if checked:
+            self.integrate_button.setText("Integrate")
+            self.integrate_button.setCheckable(True)
+            self.integrate_button.setChecked(self.is_integrating)
+            # TODO: Need to set selection to some default small region for live mode
+            self.size_limits = (1, 15, 1, 15)
+            # update the plot
+            self.delayed_update_data(force=True)
+
+        else:
+            self.integrate_button.setText("Compute")
+            self.is_integrating = True
+            self.integrate_button.setCheckable(False)
+            #self.size_limits = (1, self.limits[1], 1, self.limits[3])
+            # don't need to update the plot here.
+
+    def update_data(self, ev=None):
+        """
+        Start the timer to delay the update.
+        """
+        if self.is_live:
+            if ev is None:
+                self.delayed_update_data()
+            else:
+                print("Restarting Timer")
+                self.update_timer.start()
+
+class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
+    def __init__(self,
+                 parent: Union["Plot", "NavigationPlotManager"],
+                 children: Union["Plot", List["Plot"]],
+                 update_function: Union[callable, List[callable]],
+                 *args,
+                 **kwargs):
+        super().__init__(parent, children, update_function, *args, **kwargs)
+
+
+class LinearRegionSelector(BaseSelector):
+    """
+    A selector which uses a LinearRegionItem to select a region along one axis.
+
+    """
+    def __init__(self,
+                 parent: Union["Plot", "NavigationPlotManager"],
+                 children: Union["Plot", List["Plot"]],
+                 update_function: Union[callable, List[callable]],
+                 *args,
+                 **kwargs):
+        super().__init__(parent,
+                         children,
+                         update_function,
+                         *args,
+                         **kwargs)
+        self.selector = LinearRegionItem(pen=self.roi_pen,
+                                         hoverPen=self.hoverPen,
+                                         *args,
+                                         **kwargs)
+        parent.plot_item.addItem(self.selector)
+        self.selector.sigRegionChanged.connect(self.update_data)
+
+    def get_selected_indices(self):
+        """
+        Get the currently selected indices from the selector.
+        """
+        region = self.selector.getRegion()
+        if region[0] > region[1]:
+            region = (region[1], region[0])
+        indices = np.array([np.arange(np.floor(region[0]).astype(int),
+                                      np.ceil(region[1]).astype(int)),]).T
+        return indices
+
+
+class IntegratingLinearRegionSelector(IntegratingSelectorMixin, LinearRegionSelector):
+    def __init__(self,
+                 parent: Union["Plot", "NavigationPlotManager"],
+                 children: Union["Plot", List["Plot"]],
+                 update_function: Union[callable, List[callable]],
+                 *args,
+                 **kwargs):
+        super().__init__(parent, children, update_function, *args, **kwargs)
+
+
+class LineSelector(BaseSelector):
+    """
+    A selector which uses a LineROI to select a region along one axis.
+
+    """
+    def __init__(self,
+                 parent: Union["Plot", "NavigationPlotManager"],
+                 children: Union["Plot", List["Plot"]],
+                 update_function: Union[callable, List[callable]],
+                 *args,
+                 **kwargs):
+        super().__init__(parent,
+                         children,
+                         update_function,
+                         *args,
+                         **kwargs)
+        self.selector = LineROI(pen=self.roi_pen,
+                                handlePen=self.handlePen,
+                                hoverPen=self.hoverPen,
+                                handleHoverPen=self.handleHoverPen,
+                                *args,
+                                **kwargs)
+        parent.plot_item.addItem(self.selector)
+        self.selector.sigRegionChanged.connect(self.update_data)
+
+    def get_selected_indices(self):
+        """
+        Get the currently selected indices from the selector.
+        """
+        pos = self.selector.getArraySlice(np.arange(self.parent.data.shape[0]),
+                                          self.parent.data.shape)[0]
+        indices = np.array([[np.round(pos[0][i]).astype(int)] for i in range(len(pos[0]))])
+        return indices

@@ -1,24 +1,22 @@
 from PySide6 import QtCore, QtWidgets, QtGui
-from PySide6.QtCore import Qt
-from functools import partial
 
 import pyqtgraph as pg
 import numpy as np
 import dask.array as da
 from dask.distributed import Future
 
-from despy.drawing.selector import Selector
-from despy.drawing.toolbars.plot_control_toolbar import (
-    Plot1DControlToolbar,
-    Plot2DControlToolbar,
-)
-from despy.misc.utils import fast_index_virtual
-
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
     from despy.signal_tree import BaseSignalTree
     from despy.main_window import MainWindow
+    from despy.drawing.selector import BaseSelector
+from hyperspy.signal import BaseSignal
+
+
+from despy.drawing.plot_states import PlotState, NavigationManagerState
+from despy.drawing.toolbars.plot_control_toolbar import Plot1DControlToolbar
+from despy.drawing.update_functions import update_from_navigation_selection
 
 
 class Plot(QtWidgets.QMdiSubWindow):
@@ -45,58 +43,106 @@ class Plot(QtWidgets.QMdiSubWindow):
         The BaseSignalTree to visualize. This is either a signal plot or a navigation plot.
     is_navigator : bool
         True if this plot is for navigation (virtual image), False if for signal
-    parent_selector: Selector | None
-        The parent `Selector`. The parent_selector is on a navigation plot then it will be used to
-        slice the signal_tree to update a signal_plot If selector is None, then no parent selector
-        is attached to the plot (i.e. for a navigator plot which won't have any parent selector).
     multi_plot : MultiPlot | None
         The MultiPlot manager if this plot is part of a MultiPlot.
     """
 
     def __init__(
             self,
-            signal_tree: BaseSignalTree,
-            is_navigator=False,  # True if this plot is for navigation (virtual image), False if for signal
-            parent_selector: Selector = None,
-            nav_plot_manager: "NavigationPlotManager" = None,
+            signal_tree: "BaseSignalTree",
+            is_navigator: bool = False,  # True if this plot is for navigation (virtual image), False if for signal
+            nav_plot_manager: Union["NavigationPlotManager", None] = None,
             *args,
             **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
         # State
-        # the list of selectors attached to this plot/data.  These selectors can be for:
-        # - line profiles: Choosing regions along which to extract a line profile
-        # - live fft: Choosing regions to compute live FFTs
-        self.self_selectors = []
+        # -----
+        # managing the current state of the plot. Including child plots and (non-navigation) selectors
+        # navigation selectors are managed by the NavigationPlotManager. This starts uninitialized.
+        self.plot_state = None  # type: PlotState | None
+        self.plot_states = dict()  # type: dict[BaseSignal:PlotState]
 
-        # Child plots are dependent plots like live FFT plots, line profile plots, etc.
-        # on the close event of this plot, these child plots should also be closed.
-        # The histogram plot is "Special" and is not included here.
-        self.child_plots = []
-        self.signal_tree = signal_tree
-        self.is_navigator = is_navigator
-        self.parent_selector = parent_selector
-        self.nav_plot_manager = nav_plot_manager
+        self.signal_tree = signal_tree  # type: BaseSignalTree
+        self.is_navigator = is_navigator  # type: bool
 
         # the current data being displayed in the plot
-        self.current_data = None
+        self.current_data = None  # type: Union[np.ndarray, da.Array, Future, None]
 
         # Container and plot widget
-        self.container = QtWidgets.QWidget()
+        self.container = QtWidgets.QWidget() # type: QtWidgets.QWidget
         container_layout = QtWidgets.QVBoxLayout(self.container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
 
         # set up the plot widget with pyqtgraph
-        self.plot_widget = pg.PlotWidget()
+        self.plot_widget = pg.PlotWidget(self.container) # type: pg.PlotWidget
         container_layout.addWidget(self.plot_widget)
-        self.plot_item = self.plot_widget.getPlotItem()
+        self.plot_item = self.plot_widget.getPlotItem()  # type: pg.PlotItem
+
+        self.image_item = pg.ImageItem()  # type: pg.ImageItem
+        self.line_item = pg.PlotDataItem()  # type: pg.PlotDataItem
+        self.nav_plot_manager = nav_plot_manager # type: NavigationPlotManager | None
+
+        # Attach the container to the QMdiSubWindow so content is visible
+        self.setWidget(self.container)
         self.plot_item.getViewBox().setAspectLocked(True, ratio=1)  # locked aspect ratio
 
-        # Floating toolbar (position synchronized in moveEvent)
-        self.toolbar = None  # toolbar will be set in the derived classes Plot1D and Plot2D
         self._move_sync = True
+
+        # Register with the main window
+        print("Registering plot with main window")
+        self.main_window.add_plot(self)
+
+        self.toolbar = Plot1DControlToolbar(plot=self)
+
+    def set_plot_state(self, signal: BaseSignal):
+        """Set the plot state to the state for some signal."""
+        # first save the current plot state selectors and child plots
+        old_plot_state = self.plot_state
+        if old_plot_state is not None:
+            self.plot_states[self.plot_state.current_signal] = old_plot_state
+    
+            if old_plot_state is not None:
+                # remove all the current selectors and hide child plots
+                for selector in old_plot_state.plot_selectors + old_plot_state.signal_tree_selectors:
+                    selector.widget.remove()
+                for child_plot in old_plot_state.plot_selectors_children + old_plot_state.signal_tree_selectors_children:
+                    child_plot.hide()
+        # set the new plot state
+        self.plot_state = self.plot_states.get(signal, PlotState(signal=signal))
+
+        # switch plot items if needed for dimensionality change
+        old_dim = 0 if old_plot_state is None else old_plot_state.dimensions
+        vb = self.plot_item.getViewBox()
+
+        if self.plot_state.dimensions == 2 and old_dim != 2:
+            self.plot_item.clear()
+            self.plot_item.addItem(self.image_item)
+            vb.setAspectLocked(True, ratio=1)
+            vb.enableAutoRange(x=True, y=True)
+            vb.autoRange()
+
+        elif self.plot_state.dimensions == 1 and old_dim != 1:
+            self.plot_item.clear()
+            self.plot_item.addItem(self.line_item)
+            vb.setAspectLocked(False)
+            vb.enableAutoRange(x=True, y=True)
+            vb.autoRange()
+
+        # show the new selectors and child plots
+        for selector in self.plot_state.plot_selectors + self.plot_state.signal_tree_selectors:
+            selector.widget.show()
+        for child_plot in self.plot_state.plot_selectors_children + self.plot_state.signal_tree_selectors_children:
+            child_plot.show()
+
+        # fire the selector update to get the correct data displayed...
+        if self.plot_state.dynamic:
+            self.update_data(self.current_data, force=True)
+        else:
+            self.update_data(self.plot_state.current_signal.data)
+        self.plot_item.getViewBox().autoRange()
 
     @property
     def main_window(self) -> "MainWindow":
@@ -127,36 +173,70 @@ class Plot(QtWidgets.QMdiSubWindow):
         finally:
             self._move_sync = False
 
+    def update_range(self):
+        """Update the view range to fit the current data."""
+        self.plot_item.getViewBox().autoRange()
+
+    def update_data(self, new_data: Union[np.ndarray, da.Array, Future], force: bool = False):
+        """Update the current data being displayed in the plot.
+
+        If the new_data is a Future, the update will be deferred until the Future is complete, the update
+        will be handled by the event loop instead.
+        """
+        self.current_data = new_data
+        if isinstance(new_data, Future) and not force:
+            pass
+        elif isinstance(new_data, Future) and force:
+            self.current_data = new_data.result()
+            self.update()
+        else:
+            self.update()
+
     def show_selector_control_widget(self):
         """
         Show selector control widgets for this plot and hide others.
-        Useful to avoid layout flicker when switching active plots.
+
+        Rather than del
         """
-        # Hide selectors from other plots
-        for plot in self.main_window.plot_subwindows:
-            if plot is self:
-                continue
-            for selector in plot.selectors:
+        if self.plot_state is None:
+            return
+        visible_selectors = self.plot_state.plot_selectors + self.plot_state.signal_tree_selectors
+        if self.nav_plot_manager is not None:
+            visible_selectors += self.nav_plot_manager.navigation_selectors
+        print(self.nav_plot_manager)
+        print("Showing selector control widgets for plot:", visible_selectors)
+        # Hide selectors from other plots. Faster than deleting and recreating them (also renders nicer).
+        for selector in self.main_window.navigation_selectors:
+            if selector not in visible_selectors:
                 selector.widget.hide()
+            else:
+                if selector.widget.parent() is None:
+                    self.main_window.selectors_layout.addWidget(selector.widget)
+                selector.widget.show()
 
-        # Show selectors for this plot
-        for selector in self.selectors:
-            selector.widget.show()
-            self.main_window.selectors_layout.addWidget(selector.widget)
-
-
+    def remove_selector_control_widgets(self):
+        visible_selectors = self.plot_state.plot_selectors + self.plot_state.signal_tree_selectors
+        if self.nav_plot_manager is not None:
+            visible_selectors += self.nav_plot_manager.navigation_selectors
+        for selector in visible_selectors:
+            selector.widget.hide()
+            self.main_window.selectors_layout.removeWidget(selector.widget)
 
     def update(self):
         """Push the current data to the plot items."""
-        if self.ndim == 1 and self.line_item is not None:
-            axis = self.hyper_signal.signal.axes_manager.signal_axes[0].axis
-            self.line_item.setData(axis, self.data)
-        elif self.image_item is not None:
-            img = np.asarray(self.data) if isinstance(self.data, da.Array) else self.data
+        if self.plot_state.dimensions == 1:
+            current_data = np.asarray(self.current_data) if isinstance(self.current_data, da.Array) else self.current_data
+            axis = self.plot_state.current_signal.axes_manager.signal_axes[0].axis
+            print("Updating 1D plot with axis:", axis)
+            print("Data shape:", current_data)
+            self.line_item.setData(axis, current_data)
+        elif self.plot_state.dimensions == 2:
+            img = np.asarray(self.current_data) if isinstance(self.current_data, da.Array) else self.current_data
             self.image_item.setImage(img, autoLevels=True)
 
     def closeEvent(self, event):
         """Cleanup toolbar, hide selector widgets, and close attached plots when needed."""
+
         # Close and delete the floating toolbar if present
         tb = getattr(self, "toolbar", None)
         if tb is not None:
@@ -167,6 +247,27 @@ class Plot(QtWidgets.QMdiSubWindow):
             tb.close()
             self.toolbar = None
 
+        # need to delete the current selectors and child plots
+        for child_plot in self.plot_state.plot_selectors_children + self.plot_state.signal_tree_selectors_children:
+            try:
+                child_plot.close()
+            except Exception:
+                pass
+
+        # if part of a nav plot manager close everything and clean up the signal
+        if self.nav_plot_manager is not None:
+            print("Closing nav plot manager plots")
+            for plot in self.nav_plot_manager.plots:
+                try:
+                    plot.close()
+                except Exception:
+                    pass
+            for plot in self.signal_tree.signal_plots:
+                try:
+                    plot.close()
+                except Exception:
+                    pass
+
         # Remove from main window tracking
         if hasattr(self.main_window, "plot_subwindows"):
             try:
@@ -174,89 +275,19 @@ class Plot(QtWidgets.QMdiSubWindow):
             except ValueError:
                 pass
 
-        # Hide the selectors for this plot
-        for selector in self.selectors:
-            selector.widget.hide()
-
-        # If this is a key navigator, close associated plots
-        if self.key_navigator:
-            try:
-                for signal_plot in getattr(self.hyper_signal, "signal_plots", []):
-                    signal_plot.close()
-                for nav_plot in getattr(self.hyper_signal, "navigation_plots", []):
-                    nav_plot.close()
-            except Exception:
-                pass
+        # Remove the selectors for this plot
+        self.remove_selector_control_widgets()
 
         super().closeEvent(event)
-
-
-class Plot2D(Plot):
-    """
-    A QMdi sub-window that displays a 2D image from a BaseSignalTree.
-    It can have interactive selectors.
-
-    Parameters
-    ----------
-    signal_tree : BaseSignalTree
-        The BaseSignalTree to visualize. This is either a signal plot or a navigation plot.
-
-    """
-
-    def __init__(
-            self,
-            signal_tree: BaseSignalTree,
-            is_navigator=False,  # True if this plot is for navigation (virtual image), False if for signal
-            *args,
-            **kwargs,
-    ):
-        super().__init__(
-            signal_tree,
-            is_navigator=is_navigator,
-            *args,
-            **kwargs,
-        )
-
-        self.toolbar = Plot2DControlToolbar(self,
-                                            vertical=True,
-                                            plot=self)
-
-
-class Plot1D(Plot):
-    """
-    A QMdi sub-window that displays a 1D line plot from a BaseSignalTree.
-    It can have interactive selectors.
-
-    Parameters
-    ----------
-    signal_tree : BaseSignalTree
-        The BaseSignalTree to visualize. This is either a signal plot or a navigation plot.
-
-    """
-
-    def __init__(
-            self,
-            signal_tree: BaseSignalTree,
-            is_navigator=False,  # True if this plot is for navigation (virtual image), False if for signal
-            *args,
-            **kwargs,
-    ):
-        super().__init__(
-            signal_tree,
-            is_navigator=is_navigator,
-            *args,
-            **kwargs,
-        )
-
-        self.toolbar = Plot1DControlToolbar(self,
-                                            vertical=True,
-                                            plot=self)
 
 
 class NavigationPlotManager:
     """
     A class to manage multiple `Plot` instances for navigation plots.
-
+    
+    There is only one `NavigationPlotManager` per `BaseSignalTree`. If we want to suplex 
+    multiple navigation plots. For example Time and Temperature in an in situ experiment,
+    the selectors remain linked.
 
     Parameters
     ----------
@@ -268,24 +299,118 @@ class NavigationPlotManager:
                  main_window: "MainWindow",
                  signal_tree: "BaseSignalTree"
                  ):
-        self.main_window = main_window
+        self.main_window = main_window # type: MainWindow
         self.plots = []  # type: list[Plot]
-        self.navigation_selectors = []  # type: list[Selector]
-        self.signal_tree = signal_tree
+        
+        self.navigation_selectors = []  # type: list[BaseSelector]
+        self.signal_tree = signal_tree  # type: BaseSignalTree
+        self.navigation_manager_states = dict()  # type: dict[BaseSignal:NavigationManagerState]
+        self.navigation_manager_state = None  # type: NavigationManagerState | None
 
+        print(f"NavigationPlotManager: dim:{self.nav_dim}")
+        if self.nav_dim < 1:
+            raise ValueError("NavigationPlotManager requires at least 1 navigation dimension.")
+        elif self.nav_dim < 3:
+            nav_plot = Plot(signal_tree=self.signal_tree,
+                            is_navigator=True,
+                            nav_plot_manager=self,
+                            )
+            self.plots.append(nav_plot)
+            # create plot states for the nav plot
+        for signal in self.signal_tree.navigator_signals.values():
+            self.add_state(signal)
+
+        print("Setting initial navigation manager state")
+        print(list(self.signal_tree.navigator_signals.values())[0])
+        self.set_navigation_manager_state(list(self.signal_tree.navigator_signals.values())[0])
+
+        # Add the navigation selector and signal plot
+        self.add_navigation_selector_and_signal_plot()
+
+    def add_state(self,
+                  signal: BaseSignal):
+        """Add a navigation manager state for some signal.
+        Parameters
+        ----------
+        signal : BaseSignal
+            The signal for which to add the navigation state.
+        """
+        self.navigation_manager_states[BaseSignal] = NavigationManagerState(signal=signal,
+                                                                            plot_manager=self)
+
+        dim = self.navigation_manager_states[BaseSignal].dimensions
+        print("Adding navigation state for signal:", signal, " with dimensions:", dim)
+        dim = [d for d in dim if d > 0]
+        for plot, d in zip(self.plots, dim):
+            plot.plot_states[signal] = PlotState(signal=signal,
+                                                 dimensions=d,
+                                                 dynamic=False,  # False for anything under 2?
+                                                 )
+
+    @property
+    def navigation_signals(self) -> dict[str:BaseSignal]:
+        """Return a list of navigation signals managed by this NavigationPlotManager."""
+        return self.signal_tree.navigator_signals
+
+    def set_navigation_manager_state(self, signal: BaseSignal):
+        """Set the navigation state to the state for some signal.
+        
+        Parameters
+        ----------
+        signal : BaseSignal
+            The signal for which to set the navigation state.
+        """
+        self.navigation_manager_state = self.navigation_manager_states.get(signal,
+                                                                           NavigationManagerState(signal=signal, 
+                                                                                                  plot_manager=self)
+                                                                           )
+        for plot in self.plots:
+            # create plot states for the child plot if it does not exist
+            plot.set_plot_state(signal)
+
+    @property
     def nav_dim(self) -> int:
         """
         Get the number of navigation dimensions in the signal tree.
         """
         return self.signal_tree.nav_dim
 
-    def add_navigation_selector_and_signal_plot(self, type=None):
+    def add_navigation_selector_and_signal_plot(self, selector_type=None):
         """
         Add a Selector (or Multi-selector) to the navigation plots. For 2+ dimensional
         navigation signals, multiple-linked selectors will be created.
         """
-        if self.nav_dim() == 1:
-            self.plots.append(Plot1D(signal_tree=self.signal_tree,
-                                     is_navigator=True,
-                                     ))
+        from despy.drawing.selector import IntegratingLinearRegionSelector, IntegratingRectangleSelector, BaseSelector
+        if self.nav_dim == 1 and selector_type is None:
+            selector_type = IntegratingLinearRegionSelector
+        elif self.nav_dim == 2 and selector_type is None:
+            selector_type = IntegratingRectangleSelector
+        elif not isinstance(selector_type, BaseSelector):
+            raise ValueError("Type must be a BaseSelector class.")
+        # need to add an N-D Selector
+
+        if self.nav_dim > 2:
+            raise NotImplementedError("Navigation selectors for >2D navigation not implemented yet.")
+        else:
+            child = Plot(signal_tree=self.signal_tree,
+                         is_navigator=False,
+                         )
+            # create plot states for the child plot
+            child.plot_states = self.signal_tree.create_plot_states()
+
+            print("Added Child plot states: ", child.plot_states)
+            selector = selector_type(parent=self.plots[0],
+                                     children=child,
+                                     update_function=update_from_navigation_selection,
+                                     )
+            child.set_plot_state(list(child.plot_states.keys())[0])
+            self.navigation_selectors.append(selector)
+            # Auto range...
+            selector.update_data()
+            child.update_data(child.current_data, force=True)
+            child.plot_item.getViewBox().autoRange()
+            self.signal_tree.signal_plots.append(child)
+
+
+
 

@@ -13,11 +13,11 @@ class RoundedToolBar(QtWidgets.QToolBar):
     """
     def __init__(self,
                  title: str,
-                 plot: "Plot",
+                 plot: "Plot" = None,
                  parent: QtWidgets.QWidget = None,
                  radius: int = 8,
                  moveable: bool=False,
-                 vertical:bool=False):
+                 vertical: bool=False):
         super().__init__(title, parent)
         self._radius = float(radius)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -62,6 +62,8 @@ class RoundedToolBar(QtWidgets.QToolBar):
         self._move_sync = False
         self._margin = 8
 
+    def set_plot(self, plot: "Plot"):
+        self.plot = plot
         # Actions
         reset_act = self.addAction(QIcon('drawing/toolbars/icons/fullsize.svg'), "Reset")
         reset_act.triggered.connect(lambda: self.plot.plot_item.getViewBox().autoRange())
@@ -71,6 +73,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
 
         zoom_out = self.addAction(QIcon('drawing/toolbars/icons/zoomout.svg'), "Zoom Out")
         zoom_out.triggered.connect(lambda: self._zoom(1.25))
+        self.set_size()
 
     def set_size(self):
         # Lock size so it doesn't change when moved

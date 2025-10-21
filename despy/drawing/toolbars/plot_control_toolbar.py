@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 class Plot2DControlToolbar(RoundedToolBar):
     def __init__(self,
-                 parent=None,
+                 parent:None,
                  vertical: bool = True,
                  plot: "Plot" = None):
         super().__init__(title="Plot Controls", parent=parent, plot=plot, vertical=vertical)

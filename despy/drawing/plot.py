@@ -7,7 +7,7 @@ import numpy as np
 import dask.array as da
 from dask.distributed import Future
 
-from despy.drawing.selector import Selector
+from despy.drawing.selector import BaseSelector
 from despy.drawing.toolbars.plot_control_toolbar import (
     Plot1DControlToolbar,
     Plot2DControlToolbar,
@@ -250,6 +250,7 @@ class Plot(QtWidgets.QMdiSubWindow):
             selector.is_integrating = True
 
         selector.plots.append(new_plot)
+
         self.main_window.add_plot(new_plot)
         selector.selector.sigRegionChanged.connect(selector.update_data)
         return new_plot
@@ -364,8 +365,6 @@ class Plot(QtWidgets.QMdiSubWindow):
             self.data = current_img
             if not isinstance(current_img, Future):
                 self.update()
-
-
 
     def update(self):
         """Push the current data to the plot items."""
