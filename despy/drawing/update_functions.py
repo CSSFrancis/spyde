@@ -49,3 +49,41 @@ def update_from_navigation_selection(selector: "BaseSelector",
         current_img = np.sum(current_signal.data[tuple_inds], axis=0)
     return current_img
 
+
+def get_fft(selector: "BaseSelector",
+            child: "Plot",
+            indices,
+            get_result: bool = False):
+    """
+    Get the FFT of the image.
+
+    Parameters
+    ----------
+    img : array-like
+        The input image.
+
+    Returns
+    -------
+    array-like
+        The FFT of the input image.
+    """
+    # convert indices to image slice:
+    max_x, max_y = np.max(indices, axis=0)
+    min_x, min_y = np.min(indices, axis=0)
+
+    img_max_x = selector.parent.current_data.shape[0] - 1
+    img_max_y = selector.parent.current_data.shape[1] - 1
+    if max_x > img_max_x:
+        max_x = img_max_x
+    if max_y > img_max_y:
+        max_y = img_max_y
+    if min_x < 0:
+        min_x = 0
+    if min_y < 0:
+        min_y = 0
+
+    slice_x, slice_y = slice(min_x, max_x + 1), slice(min_y, max_y + 1)
+    sliced_img = selector.parent.current_data[slice_x, slice_y]
+    fft_img = np.fft.fftshift(np.fft.fft2(sliced_img))
+    return fft_img.real
+

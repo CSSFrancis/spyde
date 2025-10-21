@@ -28,3 +28,10 @@ functions:
     plot_dim: [ 1, 2 ]
     navigation: True
     toolbar_side: right
+  FFT:
+    description: Applies Fast Fourier Transform to the data based on the current selected area.
+    icon: drawing/toolbars/icons/fft.svg
+    parameters: [ ]
+    function: despy.actions.base.add_fft_selector
+    plot_dim: [ 2 ]
+    toolbar_side: right

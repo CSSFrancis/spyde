@@ -57,3 +57,15 @@ def add_selector(plot: "Plot"):
         The plot to add the selector.
     """
     plot.nav_plot_manager.add_navigation_selector_and_signal_plot()
+
+
+def add_fft_selector(plot: "Plot"):
+    """
+    Add FFT selector action for the plot.
+
+    Parameters
+    ----------
+    plot : Plot
+        The plot to add the FFT selector.
+    """
+    plot.add_fft_selector()

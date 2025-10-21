@@ -249,6 +249,7 @@ class Plot(QtWidgets.QMdiSubWindow):
         If the new_data is a Future, the update will be deferred until the Future is complete, the update
         will be handled by the event loop instead.
         """
+        print("Updating plot data", new_data)
         self.current_data = new_data
         if isinstance(new_data, Future) and not force:
             pass
@@ -257,6 +258,24 @@ class Plot(QtWidgets.QMdiSubWindow):
             self.update()
         else:
             self.update()
+
+    def add_fft_selector(self):
+        """Add an FFT selector to the plot."""
+        from despy.drawing.selector import RectangleSelector
+        from despy.drawing.update_functions import get_fft
+        fft_plot = Plot(signal_tree=self.signal_tree,
+                        is_navigator=False,)
+        ps = PlotState(signal=self.plot_state.current_signal, dimensions=2, dynamic=True)
+        fft_plot.plot_states[self.plot_state.current_signal] = ps
+        fft_plot.set_plot_state(self.plot_state.current_signal)
+        fft_selector = RectangleSelector(parent=self,
+                                         children=fft_plot,
+                                         update_function=get_fft,
+                                         live_delay=2,  # faster updates
+                                         )
+        fft_selector.delayed_update_data(force=True)
+        fft_selector._on_region_change_finished()  # update the size
+        self.plot_state.plot_selectors.append(fft_selector)
 
     def show_selector_control_widget(self):
         """

@@ -40,7 +40,8 @@ class BaseSelector:
                  width: int = 5,
                  color: str = "green",
                  hover_color: str = "red",
-                 live_delay: int = 20
+                 live_delay: int = 20,
+                 resize_on_move: bool = False,
                  ):
 
         # the parent plot (data source) and the child plot (where the data is plotted)
@@ -75,6 +76,8 @@ class BaseSelector:
         self.update_timer.timeout.connect(self.delayed_update_data)
 
         self.update_function = update_function
+        self._last_size_sig = None
+
 
     def get_selected_indices(self):
         """
@@ -96,6 +99,7 @@ class BaseSelector:
         """
         Perform the actual update if the indices have not changed.
         """
+        print("updating the data:", self.children)
         indices = self.get_selected_indices()
         if not np.array_equal(indices, self.current_indices) or force:
             for child in self.children:
@@ -105,17 +109,58 @@ class BaseSelector:
             # the plot will update when the future completes
             self.current_indices = indices
 
+    # Helper: compute a compact signature of the current selector size
+    def _size_signature(self):
+        sel = getattr(self, "selector", None)
+        if isinstance(sel, LinearRegionItem):
+            region = sel.getRegion()
+            width = float(abs(region[1] - region[0]))
+            return (round(width, 6),)
+        if isinstance(sel, RectROI):
+            s = sel.size()
+            return (int(round(s.x())), int(round(s.y())))
+        if isinstance(sel, LineROI):
+            # approximate by length of the line
+            p1, p2 = sel.pos(), sel.pos() + sel.size()
+            dx, dy = float(p2.x() - p1.x()), float(p2.y() - p1.y())
+            length = (dx * dx + dy * dy) ** 0.5
+            return (round(length, 6),)
+        return None
+
+    # Helper: autorange a child plot based on its dimension
+    def _autorange_child_plot(self, child_plot):
+        try:
+            vb = child_plot.plot_item.getViewBox()
+        except Exception:
+            return
+        dim = getattr(getattr(child_plot, "plot_state", None), "dimensions", None)
+        if dim == 1:
+            vb.setAspectLocked(False)
+        vb.enableAutoRange(x=True, y=True)
+        vb.autoRange()
+
+    # Called when the user finishes a region change; only autorange on size changes
+    def _on_region_change_finished(self):
+        new_sig = self._size_signature()
+        size_changed = (new_sig != self._last_size_sig)
+        if size_changed or self._last_size_sig is None:
+            for child in self.children.keys():
+                self._autorange_child_plot(child)
+            self._last_size_sig = new_sig
+
 
 class RectangleSelector(BaseSelector):
     def __init__(self,
                  parent: Union["Plot", "NavigationPlotManager"],
                  children: Union["Plot", List["Plot"]],
                  update_function: Union[callable, List[callable]],
+                 live_delay: int = 20,
                  *args,
                  **kwargs):
         super().__init__(parent,
                          children,
                          update_function,
+                         live_delay=live_delay,
                          *args,
                          **kwargs)
         print("Creating Rectangle Selector")
@@ -129,6 +174,9 @@ class RectangleSelector(BaseSelector):
                                 *args,
                                 **kwargs,
                                 )
+        self._last_size_sig = (0, 0)
+        self.selector.sigRegionChangeFinished.connect(self._on_region_change_finished)
+
         parent.plot_item.addItem(self.selector)
         self.selector.sigRegionChanged.connect(self.update_data)
 
@@ -216,14 +264,16 @@ class IntegratingSelectorMixin:
                 print("Restarting Timer")
                 self.update_timer.start()
 
+
 class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
     def __init__(self,
                  parent: Union["Plot", "NavigationPlotManager"],
                  children: Union["Plot", List["Plot"]],
                  update_function: Union[callable, List[callable]],
+                 live_delay: int = 20,
                  *args,
                  **kwargs):
-        super().__init__(parent, children, update_function, *args, **kwargs)
+        super().__init__(parent, children, update_function, live_delay=live_delay,  *args, **kwargs)
 
 
 class LinearRegionSelector(BaseSelector):
@@ -246,6 +296,8 @@ class LinearRegionSelector(BaseSelector):
                                          hoverPen=self.hoverPen,
                                          *args,
                                          **kwargs)
+        self._last_size_sig = self._size_signature()
+        self.selector.sigRegionChangeFinished.connect(self._on_region_change_finished)
         parent.plot_item.addItem(self.selector)
         self.selector.sigRegionChanged.connect(self.update_data)
 
