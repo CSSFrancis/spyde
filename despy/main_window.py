@@ -243,13 +243,17 @@ class MainWindow(QMainWindow):
 
         if hasattr(window, "show_selector_control_widget"):
             window.show_selector_control_widget()
-            print("Making toolbar visible for", window)
+
+        if hasattr(window, "show_toolbars"):
+            window.show_toolbars()
+
         if hasattr(window, "plot_state") and window.plot_state is not None and hasattr(window.plot_state, "toolbar"):
             window.plot_state.toolbar.setVisible(True)
         for plot in self.plot_subwindows:
             if window != plot:
-                if plot.plot_state is not None and hasattr(plot.plot_state, "toolbar"):
-                    plot.plot_state.toolbar.setVisible(False)
+                # hide the toolbars
+                if hasattr(plot, "hide_toolbars"):
+                    plot.hide_toolbars()
                 if hasattr(plot, "hide_selector_control_widget"):
                     plot.hide_selector_control_widget()
         # if an image then set the histogram to the image

@@ -1,6 +1,8 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
+
+from functools import partial
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -10,6 +12,9 @@ if TYPE_CHECKING:
 class RoundedToolBar(QtWidgets.QToolBar):
     """
     A QToolBar with rounded corners and a semi-transparent background.
+
+    This toolbar is designed to be used alongside a Plot widget, allowing for floating
+    tools around some plot area. ("top", "bottom", "left", "right")
     """
     def __init__(self,
                  title: str,
@@ -17,7 +22,14 @@ class RoundedToolBar(QtWidgets.QToolBar):
                  parent: QtWidgets.QWidget = None,
                  radius: int = 8,
                  moveable: bool=False,
-                 vertical: bool=False):
+                 position: "str" = "top-left",
+                 ):
+
+        if position in ["top", "bottom"]:
+            vertical = False
+        elif position in ["right", "left"]:
+            vertical = True
+        self.position = position
         super().__init__(title, parent)
         self._radius = float(radius)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -61,19 +73,54 @@ class RoundedToolBar(QtWidgets.QToolBar):
         # Move/link guards and margin
         self._move_sync = False
         self._margin = 8
-
-    def set_plot(self, plot: "Plot"):
-        self.plot = plot
-        # Actions
-        reset_act = self.addAction(QIcon('drawing/toolbars/icons/fullsize.svg'), "Reset")
-        reset_act.triggered.connect(lambda: self.plot.plot_item.getViewBox().autoRange())
-
-        zoom_in = self.addAction(QIcon('drawing/toolbars/icons/zoom.svg'), "Zoom In")
-        zoom_in.triggered.connect(lambda: self._zoom(0.8))
-
-        zoom_out = self.addAction(QIcon('drawing/toolbars/icons/zoomout.svg'), "Zoom Out")
-        zoom_out.triggered.connect(lambda: self._zoom(1.25))
         self.set_size()
+
+    def add_action(self,
+                   name: str,
+                   icon_path: str,
+                   function: callable):
+        """
+        Add an action to the toolbar.
+
+        Parameters
+        ----------
+        name : str
+            The name of the action.
+        icon_path : str
+            The path to the icon for the action.
+        function : callable
+            The function to be called when the action is triggered.
+        """
+        icon = QIcon(icon_path)
+
+        new_action = self.addAction(icon, name)
+        partial_function = partial(function, self.plot)
+        new_action.triggered.connect(partial_function)
+
+    def num_actions(self) -> int:
+        """
+        Get the number of actions in the toolbar.
+
+        Returns
+        -------
+        int
+            The number of actions in the toolbar.
+        """
+        return len(self.actions())
+
+    def remove_action(self, name: str):
+        """
+        Remove an action from the toolbar by name.
+
+        Parameters
+        ----------
+        name : str
+            The name of the action to be removed.
+        """
+        for action in self.actions():
+            if action.text() == name:
+                self.removeAction(action)
+                break
 
     def set_size(self):
         # Lock size so it doesn't change when moved
@@ -111,36 +158,41 @@ class RoundedToolBar(QtWidgets.QToolBar):
 
     def moveEvent(self, event) -> None:
         super().moveEvent(event)
-        if self.plot is None or self._move_sync:
-            return
-
-        # Move the plot to stay at a fixed offset to the left of this toolbar
-        parent_viewport = self.plot.parentWidget()  # QMdiArea viewport
-        if parent_viewport is None:
-            return
-
-        self._move_sync = True
-        try:
-            # Toolbar TL in global coords -> MDI viewport coords
-            tb_global = self.mapToGlobal(QtCore.QPoint(0, 0))
-            tb_in_mdi = parent_viewport.mapFromGlobal(tb_global)
-
-            # Desired plot TL: to the left of the toolbar by margin
-            new_plot_pos = tb_in_mdi - QtCore.QPoint(self.plot.width() + self._margin, self._margin)
-            self.plot.move(new_plot_pos)
-            self.plot.raise_()
-        finally:
-            self._move_sync = False
+        # Intentionally do not move the plot here. The plot will reposition us.
 
     def move_next_to_plot(self):
-        """Place the toolbar to the right of the plot using global mapping."""
+        """Place the toolbar next to the plot using global mapping."""
         if self.plot is None or self.parentWidget() is None:
             return
 
         parent = self.parentWidget()
         plot_global_tl = self.plot.mapToGlobal(QtCore.QPoint(0, 0))
-        desired_global = QtCore.QPoint(plot_global_tl.x() + self.plot.width() + self._margin,
-                                       plot_global_tl.y() + self._margin)
+
+        if self.position == "left":
+            # to the left of the plot
+            desired_global = QtCore.QPoint(
+                plot_global_tl.x() - self.width() - self._margin,
+                plot_global_tl.y() + self._margin
+            )
+        elif self.position == "right":
+            # to the right of the plot
+            desired_global = QtCore.QPoint(
+                plot_global_tl.x() + self.plot.width() + self._margin,
+                plot_global_tl.y() + self._margin
+            )
+        elif self.position == "top":
+            # above the plot
+            desired_global = QtCore.QPoint(
+                plot_global_tl.x() + self._margin,
+                plot_global_tl.y() - self.height() - self._margin
+            )
+        else:  # "bottom"
+            # below the plot
+            desired_global = QtCore.QPoint(
+                plot_global_tl.x() + self._margin,
+                plot_global_tl.y() + self.plot.height() + self._margin
+            )
+
         desired_in_parent = parent.mapFromGlobal(desired_global)
 
         self._move_sync = True
@@ -150,6 +202,4 @@ class RoundedToolBar(QtWidgets.QToolBar):
         finally:
             self._move_sync = False
 
-    def _zoom(self, factor: float):
-        vb = self.plot.plot_item.getViewBox()
-        vb.scaleBy((factor, factor))
+

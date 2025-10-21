@@ -1,0 +1,30 @@
+functions:
+  Reset:
+    description: Resets the data to its original view.
+    icon: drawing/toolbars/icons/fullsize.svg
+    parameters: []
+    function: despy.actions.base.reset_view
+    plot_dim: [1, 2]
+    toolbar_side: right
+  Zoom In:
+    description: Zooms into the data view.
+    icon: drawing/toolbars/icons/zoom.svg
+    parameters: [ ]
+    function: despy.actions.base.zoom_in
+    plot_dim: [ 1, 2 ]
+    toolbar_side: right
+  Zoom Out:
+    description: Zooms out of the data view.
+    icon: drawing/toolbars/icons/zoomout.svg
+    parameters: [ ]
+    function: despy.actions.base.zoom_out
+    plot_dim: [ 1, 2 ]
+    toolbar_side: right
+  Add Selector:
+    description: Adds a selection tool to the data view.
+    icon: drawing/toolbars/icons/add_selector.svg
+    parameters: [ ]
+    function: despy.actions.base.add_selector
+    plot_dim: [ 1, 2 ]
+    navigation: True
+    toolbar_side: right

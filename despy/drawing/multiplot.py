@@ -15,7 +15,8 @@ from hyperspy.signal import BaseSignal
 
 
 from despy.drawing.plot_states import PlotState, NavigationManagerState
-from despy.drawing.toolbars.plot_control_toolbar import Plot1DControlToolbar
+from despy.drawing.toolbars.plot_control_toolbar import get_toolbar_actions_for_plot
+from despy.drawing.toolbars.rounded_toolbar import RoundedToolBar
 from despy.drawing.update_functions import update_from_navigation_selection
 
 
@@ -95,7 +96,28 @@ class Plot(QtWidgets.QMdiSubWindow):
         print("Registering plot with main window")
         self.main_window.add_plot(self)
 
-        self.toolbar = Plot1DControlToolbar(plot=self)
+        # Creating all the floating toolbars...
+
+        self.toolbar_right = RoundedToolBar(title="Plot Controls",
+                                      plot=self,
+                                      parent=self.main_window,
+                                      position="right",)
+        self.toolbar_left = RoundedToolBar(title="Plot Controls",
+                                      plot=self,
+                                      parent=self.main_window,
+                                      position="left",)
+        self.toolbar_top = RoundedToolBar(title="Plot Controls",
+                                      plot=self,
+                                      parent=self.main_window,
+                                      position="top",)
+        self.toolbar_bottom = RoundedToolBar(title="Plot Controls",
+                                      plot=self,
+                                      parent=self.main_window,
+                                      position="bottom",)
+        # Ensure they are visible
+        for tb in (self.toolbar_right, self.toolbar_left, self.toolbar_top, self.toolbar_bottom):
+            tb.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
+            tb.show()
 
     def set_plot_state(self, signal: BaseSignal):
         """Set the plot state to the state for some signal."""
@@ -143,35 +165,79 @@ class Plot(QtWidgets.QMdiSubWindow):
         else:
             self.update_data(self.plot_state.current_signal.data)
         self.plot_item.getViewBox().autoRange()
+        # update the toolbars
+        self.update_toolbars()
+
+    def hide_toolbars(self):
+        """Hide all floating toolbars."""
+        for tb in (getattr(self, "toolbar_right", None),
+                   getattr(self, "toolbar_left", None),
+                   getattr(self, "toolbar_top", None),
+                   getattr(self, "toolbar_bottom", None)):
+            if tb is not None:
+                tb.hide()
+
+    def show_toolbars(self):
+        """Show all floating toolbars."""
+        for tb in (getattr(self, "toolbar_right", None),
+                   getattr(self, "toolbar_left", None),
+                   getattr(self, "toolbar_top", None),
+                   getattr(self, "toolbar_bottom", None)):
+            if tb is not None and tb.num_actions() > 0:
+                tb.show()
+
+    def update_toolbars(self):
+        functions, icons, names, toolbar_sides = get_toolbar_actions_for_plot(self)
+        # Clear existing toolbars
+        for tb in [self.toolbar_right, self.toolbar_left, self.toolbar_top, self.toolbar_bottom]:
+            tb.clear()
+
+        # Add actions to the appropriate toolbars
+        for func, icon, name, side in zip(functions, icons, names, toolbar_sides):
+            if side == "right":
+                self.toolbar_right.add_action(name, icon, func)
+
+            elif side == "left":
+                self.toolbar_left.add_action(name, icon, func)
+            elif side == "top":
+                self.toolbar_top.add_action(name, icon, func)
+            elif side == "bottom":
+                self.toolbar_bottom.add_action(name, icon, func)
+
+        for tb in [self.toolbar_right, self.toolbar_left, self.toolbar_top, self.toolbar_bottom]:
+            tb.set_size()
+            # if there are no actions hide the toolbar
+            if tb.num_actions() == 0:
+                tb.hide()
+            else:
+                tb.show()
+            tb.raise_()
 
     @property
     def main_window(self) -> "MainWindow":
         """Get the main window containing this sub-window."""
         return self.signal_tree.main_window
 
+    def reposition_toolbars(self):
+        """Reposition the floating toolbars around the subwindow."""
+        for tb in (getattr(self, "toolbar_right", None),
+                   getattr(self, "toolbar_left", None),
+                   getattr(self, "toolbar_top", None),
+                   getattr(self, "toolbar_bottom", None)):
+            if tb is not None and tb.isVisible():
+                tb.move_next_to_plot()
+
+    def showEvent(self, ev: QtGui.QShowEvent) -> None:
+        super().showEvent(ev)
+        self.reposition_toolbars()
+
     def moveEvent(self, ev: QtGui.QMoveEvent) -> None:
-        """Keep the floating toolbar positioned to the right of the subwindow."""
         super().moveEvent(ev)
-        tb = getattr(self, "toolbar", None)
-        if tb is None or tb.parentWidget() is None or getattr(self, "_move_sync", False):
-            return
-        try:
-            parent = tb.parentWidget()
-            plot_global_tl = self.mapToGlobal(QtCore.QPoint(0, 0))
-            margin = getattr(tb, "_margin", 8)
-            desired_global = QtCore.QPoint(
-                plot_global_tl.x() + self.width() + margin,
-                plot_global_tl.y() + margin,
-            )
-            desired_in_parent = parent.mapFromGlobal(desired_global)
-            tb._move_sync = True
-            try:
-                tb.move(desired_in_parent)
-                tb.raise_()
-            finally:
-                tb._move_sync = False
-        finally:
-            self._move_sync = False
+        self.reposition_toolbars()
+
+    def resizeEvent(self, ev: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(ev)
+        self.reposition_toolbars()
 
     def update_range(self):
         """Update the view range to fit the current data."""
@@ -237,15 +303,15 @@ class Plot(QtWidgets.QMdiSubWindow):
     def closeEvent(self, event):
         """Cleanup toolbar, hide selector widgets, and close attached plots when needed."""
 
-        # Close and delete the floating toolbar if present
-        tb = getattr(self, "toolbar", None)
-        if tb is not None:
-            try:
-                tb.plot = None  # break linkage to avoid moveEvent side-effects
-            except Exception:
-                pass
-            tb.close()
-            self.toolbar = None
+        for attr in ("toolbar_right", "toolbar_left", "toolbar_top", "toolbar_bottom"):
+            tb = getattr(self, attr, None)
+            if tb is not None:
+                try:
+                    tb.plot = None
+                except Exception:
+                    pass
+                tb.close()
+                setattr(self, attr, None)
 
         # need to delete the current selectors and child plots
         for child_plot in self.plot_state.plot_selectors_children + self.plot_state.signal_tree_selectors_children:

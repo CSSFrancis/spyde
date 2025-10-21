@@ -7,7 +7,6 @@ if TYPE_CHECKING:
     from despy.drawing.plot_states import PlotState
     from despy.main_window import MainWindow
 
-from despy.drawing.toolbars import SIGNAL_TOOLBARS
 from despy.drawing.multiplot import NavigationPlotManager, Plot
 
 

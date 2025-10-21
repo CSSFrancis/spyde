@@ -7,7 +7,6 @@ import numpy as np
 import dask.array as da
 from dask.distributed import Future
 
-from despy.drawing.selector import BaseSelector
 from despy.drawing.toolbars.plot_control_toolbar import (
     Plot1DControlToolbar,
     Plot2DControlToolbar,

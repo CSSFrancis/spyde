@@ -1,8 +1,5 @@
 from hyperspy.signal import BaseSignal
 
-from despy.drawing.toolbars.rounded_toolbar import RoundedToolBar
-from despy.drawing.toolbars.plot_control_toolbar import Plot2DControlToolbar, Plot1DControlToolbar
-
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from despy.drawing.multiplot import NavigationPlotManager, Plot

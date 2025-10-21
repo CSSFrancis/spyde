@@ -1,42 +1,42 @@
-from despy.drawing.toolbars.rounded_toolbar import RoundedToolBar
-from PySide6.QtGui import QIcon
-from PySide6 import QtCore, QtWidgets
+import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from despy.drawing.multiplot import Plot
 
+from despy import TOOLBAR_ACTIONS
 
-class Plot2DControlToolbar(RoundedToolBar):
-    def __init__(self,
-                 parent:None,
-                 vertical: bool = True,
-                 plot: "Plot" = None):
-        super().__init__(title="Plot Controls", parent=parent, plot=plot, vertical=vertical)
+def get_toolbar_actions_for_plot(plot: "Plot"):
+    functions = []
+    icons = []
+    names = []
+    toolbar_sides = []
 
-        # Actions
+    for action in TOOLBAR_ACTIONS["functions"]:
 
-        add_selector_action = self.addAction(QIcon('drawing/toolbars/icons/add_selector.svg'), "Add Selector")
-        add_selector_action.triggered.connect(self.plot.add_selector_and_new_plot)
+        signal_types = TOOLBAR_ACTIONS["functions"][action].get('signal_types', None)
+        plot_dim = TOOLBAR_ACTIONS["functions"][action].get('plot_dim', [1, 2])
+        navigation_only = TOOLBAR_ACTIONS["functions"][action].get('navigation', None)
 
-        # need to set all the action icons size at the end
-        self.set_size()
+        plot_signal_type = plot.plot_state.current_signal._signal_type
 
+        add_action = ((signal_types is None or plot_signal_type in signal_types) and
+                      (plot.plot_state.dimensions in plot_dim) and
+                      (navigation_only is None or navigation_only == plot.is_navigator))
 
-class Plot1DControlToolbar(RoundedToolBar):
-    """
-    A toolbar to manage plot controls.
-    """
+        print("Add Action", add_action)
+        print(action)
+        if add_action:
+            print(f"Adding toolbar action: {action}")
+            function = TOOLBAR_ACTIONS["functions"][action]['function']
+            module_path, _, attr = function.rpartition('.')
+            resolved_func = getattr(importlib.import_module(module_path), attr)
 
-    def __init__(self,
-                 parent=None,
-                 vertical=True,
-                 plot: "Plot" = None):
-        super().__init__(parent,
-                         plot=plot,
-                         vertical=vertical)
+            functions.append(resolved_func)
+            icons.append(TOOLBAR_ACTIONS["functions"][action]['icon'])
+            names.append(action)
+            toolbar_sides.append(TOOLBAR_ACTIONS["functions"][action].get('toolbar_side', 'left'))
 
-        # need to set all the action icons size at the end
-        self.set_size()
+    return functions, icons, names, toolbar_sides
 
 
