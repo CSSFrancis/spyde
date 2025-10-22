@@ -50,10 +50,13 @@ class BaseSelector:
         if not isinstance(children, list):
             self.children = {children: update_function}  # type: dict[Plot, callable]
             self.active_children = [children, ]  # type: list[Plot]
+            children.parent_selector = self
+
         else:
             self.children = {}  # type: dict[Plot, callable]
             for child, function in zip(children, update_function):
                 self.children[child] = function
+                child.parent_selector = self
 
         # Create a pen for the selector
         self.roi_pen = pg.mkPen(color=color, width=width)
@@ -74,9 +77,10 @@ class BaseSelector:
         self.update_timer.setInterval(live_delay)  # To make things smoother we delay how fast we update the plots
         self.update_timer.setSingleShot(True)
         self.update_timer.timeout.connect(self.delayed_update_data)
-
         self.update_function = update_function
         self._last_size_sig = None
+        self.selector = None  # to be defined in subclasses
+
 
 
     def get_selected_indices(self):
@@ -147,6 +151,15 @@ class BaseSelector:
             for child in self.children.keys():
                 self._autorange_child_plot(child)
             self._last_size_sig = new_sig
+
+    def close(self):
+        """
+        Clean up the selector.
+        """
+        if self.selector is not None:
+            self.parent.plot_item.removeItem(self.selector)
+            self.parent.plot_item.update()
+        self.selector = None
 
 
 class RectangleSelector(BaseSelector):

@@ -6,6 +6,7 @@ if TYPE_CHECKING:
 
 from despy import TOOLBAR_ACTIONS
 
+
 def get_toolbar_actions_for_plot(plot: "Plot"):
     functions = []
     icons = []

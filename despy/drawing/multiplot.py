@@ -92,6 +92,9 @@ class Plot(QtWidgets.QMdiSubWindow):
 
         self._move_sync = True
 
+        # Parent selector if this plot is a child plot
+        self.parent_selector = None  # type: BaseSelector | None
+
         # Register with the main window
         print("Registering plot with main window")
         self.main_window.add_plot(self)
@@ -271,7 +274,7 @@ class Plot(QtWidgets.QMdiSubWindow):
         fft_selector = RectangleSelector(parent=self,
                                          children=fft_plot,
                                          update_function=get_fft,
-                                         live_delay=2,  # faster updates
+                                         live_delay=5,  # faster updates
                                          )
         fft_selector.delayed_update_data(force=True)
         fft_selector._on_region_change_finished()  # update the size
@@ -331,7 +334,11 @@ class Plot(QtWidgets.QMdiSubWindow):
                     pass
                 tb.close()
                 setattr(self, attr, None)
-
+        print("Closing plot:", self)
+        print("Closing parent selector if exists")
+        if self.parent_selector is not None:
+            print("Closing parent selector")
+            self.parent_selector.close()
         # need to delete the current selectors and child plots
         for child_plot in self.plot_state.plot_selectors_children + self.plot_state.signal_tree_selectors_children:
             try:
