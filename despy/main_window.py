@@ -262,22 +262,46 @@ class MainWindow(QMainWindow):
             signal_tree = window.signal_tree
             metadata_dict = signal_tree.get_metadata_widget()
             for subsection, items in metadata_dict.items():
-                print(f"Adding subsection: {subsection}")
                 group = QtWidgets.QGroupBox(str(subsection))
-                group_layout = QtWidgets.QGridLayout(group)
+
+                # Keep each group a constant height and allow scrolling inside
+                group.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
+                                    QtWidgets.QSizePolicy.Policy.Fixed)
+                group.setFixedHeight(120)
+
+                # Group layout that holds the scroll area
+                group_layout = QtWidgets.QVBoxLayout(group)
                 group_layout.setContentsMargins(6, 6, 6, 6)
-                group_layout.setHorizontalSpacing(12)
-                group_layout.setVerticalSpacing(4)
+                group_layout.setSpacing(0)
+
+                # Scroll area inside the group
+                scroll = QtWidgets.QScrollArea()
+                scroll.setWidgetResizable(True)
+                scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+                scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+                # Container for the metadata rows
+                container = QtWidgets.QWidget()
+                grid = QtWidgets.QGridLayout(container)
+                grid.setContentsMargins(0, 0, 0, 0)
+                grid.setHorizontalSpacing(12)
+                grid.setVerticalSpacing(4)
+
                 for row, (key, value) in enumerate((items or {}).items()):
                     key_label = QtWidgets.QLabel(f"{key}:")
                     value_label = QtWidgets.QLabel(f"{value}")
                     key_label.setStyleSheet("font-size: 10px;")
                     value_label.setStyleSheet("font-size: 10px;")
                     key_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    group_layout.addWidget(key_label, row, 0)
-                    group_layout.addWidget(value_label, row, 1)
-                group_layout.setColumnStretch(0, 0)
-                group_layout.setColumnStretch(1, 1)
+                    grid.addWidget(key_label, row, 0)
+                    grid.addWidget(value_label, row, 1)
+
+                grid.setColumnStretch(0, 0)
+                grid.setColumnStretch(1, 1)
+
+                scroll.setWidget(container)
+                group_layout.addWidget(scroll)
+
                 self.metadata_layout.addWidget(group)
 
     def on_subwindow_activated(self, window):
