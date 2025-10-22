@@ -1,26 +1,29 @@
-import distributed
-import pyxem.data
+import sys
+import os
+from typing import Union
+from functools import partial
 import webbrowser
 
-from PySide6.QtGui import QAction, QIcon, QPixmap, QColor
+
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QSplashScreen, QMainWindow, QApplication, QMessageBox, QDialog, QFileDialog
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtGui import QPixmap, QColor
 
-
-import sys
-import os
-from functools import partial
-import hyperspy.api as hs
 from dask.distributed import Client, Future, LocalCluster
+import pyqtgraph as pg
+import hyperspy.api as hs
+import pyxem.data
+
+
+
 
 from despy.misc.dialogs import DatasetSizeDialog, CreateDataDialog
 from despy.drawing.multiplot import Plot
-
 from despy.signal_tree import BaseSignalTree
 
-import pyqtgraph as pg
+
 
 color_maps = ["viridis", "plasma", "magma", "cividis", "grays"]
 
@@ -33,12 +36,15 @@ class MainWindow(QMainWindow):
     def __init__(self, app=None):
         super().__init__()
         self.app = app
+        self.metadata_group = None  # type: Union[QtWidgets.QGroupBox, None]
+        self.metadata_layout = None  # type: Union[QtWidgets.QVBoxLayout, None]
+
         # Test if the theme is set correctly
         cpu_count = os.cpu_count()
         threads = (cpu_count//4) - 1
         cluster = LocalCluster(n_workers=threads, threads_per_worker=4)
         self.client = Client(cluster)  # Start a local Dask client (this should be settable eventually)
-        print(self.client.dashboard_link)
+        print(f"Starting Dashboard at: {self.client.dashboard_link}")
         self.setWindowTitle("DE-Spy")
         # get screen size and set window size to 3/4 of the screen size
         # get screen size and set subwindow size to 1/4 of the screen size
@@ -57,7 +63,7 @@ class MainWindow(QMainWindow):
         self.mdi_area = QtWidgets.QMdiArea()
         self.setCentralWidget(self.mdi_area)
 
-        self.plot_subwindows = [] # type: list[Plot]
+        self.plot_subwindows = []  # type: list[Plot]
 
         self.mdi_area.subWindowActivated.connect(self.on_subwindow_activated)
         self.create_menu()
@@ -65,7 +71,6 @@ class MainWindow(QMainWindow):
 
         self.selectors_layout = None
         self.s_list_widget = None
-        self.add_plot_control_widget()
         self.file_dialog = None
 
         self.timer = QTimer()
@@ -76,6 +81,9 @@ class MainWindow(QMainWindow):
         self.mdi_area.setStyleSheet("background-color: #2b2b2b;")  # Dark gray background
 
         self.signal_trees = []  # type: list[BaseSignalTree]
+
+        self.add_plot_control_widget()
+        self.current_selected_signal_tree = None  # type: Union[BaseSignalTree, None]
 
     @property
     def navigation_selectors(self):
@@ -237,10 +245,42 @@ class MainWindow(QMainWindow):
         plot.mdi_area = self.mdi_area
         return
 
-    def on_subwindow_activated(self, window):
-        print("Activated Subwindow", window)
-        print("hasattr show_selector_control_widget:", hasattr(window, "show_selector_control_widget"))
+    def update_metadata_widget(self, window):
+        # Clear existing layout (including spacers)
+        if self.metadata_layout is None:
+            return
+        while self.metadata_layout.count():
+            item = self.metadata_layout.takeAt(0)
+            widget_to_remove = item.widget()
+            if widget_to_remove is not None:
+                widget_to_remove.deleteLater()
+            else:
+                del item
 
+        # Add new metadata
+        if hasattr(window, "signal_tree"):
+            signal_tree = window.signal_tree
+            metadata_dict = signal_tree.get_metadata_widget()
+            for subsection, items in metadata_dict.items():
+                print(f"Adding subsection: {subsection}")
+                group = QtWidgets.QGroupBox(str(subsection))
+                group_layout = QtWidgets.QGridLayout(group)
+                group_layout.setContentsMargins(6, 6, 6, 6)
+                group_layout.setHorizontalSpacing(12)
+                group_layout.setVerticalSpacing(4)
+                for row, (key, value) in enumerate((items or {}).items()):
+                    key_label = QtWidgets.QLabel(f"{key}:")
+                    value_label = QtWidgets.QLabel(f"{value}")
+                    key_label.setStyleSheet("font-size: 10px;")
+                    value_label.setStyleSheet("font-size: 10px;")
+                    key_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    group_layout.addWidget(key_label, row, 0)
+                    group_layout.addWidget(value_label, row, 1)
+                group_layout.setColumnStretch(0, 0)
+                group_layout.setColumnStretch(1, 1)
+                self.metadata_layout.addWidget(group)
+
+    def on_subwindow_activated(self, window):
         if hasattr(window, "show_selector_control_widget"):
             window.show_selector_control_widget()
 
@@ -260,6 +300,11 @@ class MainWindow(QMainWindow):
         if window is not None and getattr(window, "image_item", None) is not None:
             print("Setting histogram to image", window.image_item)
             self.histogram.setImageItem(window.image_item)
+        if (window is not None and
+            hasattr(window, "signal_tree") and
+            window.signal_tree != self.current_selected_signal_tree):
+            self.current_selected_signal_tree = window.signal_tree
+            self.update_metadata_widget(window)
 
     def add_plot_control_widget(self):
         """
@@ -302,9 +347,9 @@ class MainWindow(QMainWindow):
 
         # Create a Group for the metadata
         # ----------------------------------------
-        metadata_group = QtWidgets.QGroupBox("Experimental Metadata")
-        metadata_layout = QtWidgets.QVBoxLayout(metadata_group)
-        layout.addWidget(metadata_group)
+        self.metadata_group = QtWidgets.QGroupBox("Metadata")
+        self.metadata_layout = QtWidgets.QVBoxLayout(self.metadata_group)
+        layout.addWidget(self.metadata_group)
 
         # Create a Group for the axes
         # ----------------------------------------
@@ -345,60 +390,6 @@ class MainWindow(QMainWindow):
     def close(self):
         self.client.close()
         super().close()
-
-
-
-class HyperSignal:
-    """
-    A class to manage the plotting of hyperspy signals. This class manages the
-    different plots associated with a hyperspy signal.
-
-    Because of the 1st class nature of lazy signals there are limits to how fast this class can
-    be.  Hardware optimization is very, very important to get the most out of this class.  That being
-    said dask task-scheduling is always going to be somewhat of a bottleneck.
-
-    Parameters
-    ----------
-    signal : hs.signals.BaseSignal
-        The hyperspy signal to plot.
-    main_window : MainWindow
-        The main window of the application.
-    client : distributed.Client
-        The Dask client to use for computations.
-    """
-
-    def __init__(self,
-                 signal: hs.signals.BaseSignal,
-                 main_window: MainWindow,
-                 parent_signal=None,
-                 client: distributed.Client = None):
-        self.signal = signal
-        self.client = client
-        self.main_window = main_window
-        self.parent_signal = parent_signal
-
-        if len(signal.axes_manager.navigation_axes) > 0 and len(signal.axes_manager.signal_axes) != 0:
-            if signal._lazy and signal.navigator is not None:
-                nav_sig = signal.navigator
-            else:
-                nav_sig = signal.sum(signal.axes_manager.signal_axes)
-                if nav_sig._lazy:
-                    nav_sig.compute()
-            if not isinstance(nav_sig, hs.signals.BaseSignal):
-                nav_sig = hs.signals.BaseSignal(nav_sig).T
-            if len(nav_sig.axes_manager.navigation_axes) > 2: #
-                nav_sig = nav_sig.transpose(2)
-
-            self.nav_sig = HyperSignal(nav_sig,
-                                       main_window=self.main_window,
-                                       parent_signal=self,
-                                       client=self.client
-                                       )  # recursive...
-        else:
-            self.nav_sig = None
-
-        self.navigation_plots = []
-        self.signal_plots = []
 
 
 if __name__ == '__main__':

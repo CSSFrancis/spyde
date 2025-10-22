@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from despy.main_window import MainWindow
 
 from despy.drawing.multiplot import NavigationPlotManager, Plot
-
+from despy import METADATA_WIDGET_CONFIG
 
 class BaseSignalTree:
     """
@@ -190,6 +190,68 @@ class BaseSignalTree:
         """
         self.navigator_plot_manager = NavigationPlotManager(main_window=self.main_window,
                                                             signal_tree=self)
+
+    def get_nested_attr(self, attr_path: str):
+        """
+        Get a nested attribute from `self` following a dot-separated path.
+
+        Parameters
+        ----------
+        attr_path : str
+            Dot-separated path of attributes (e.g., "root.axes_manager.navigation_shape").
+
+        Returns
+        -------
+        Any
+            The resolved attribute value or `None` if any segment is missing or `None`.
+        """
+        if not attr_path:
+            return self
+        attrs = [p for p in attr_path.split(".") if p]
+        current_obj = self
+        for attr in attrs:
+            current_obj = getattr(current_obj, attr, None)
+            if current_obj is None:
+                return None
+        return current_obj
+
+    def get_metadata_widget(self) -> dict:
+        """
+        Get the metadata widget for the signal tree.
+
+        Returns
+        -------
+        metadata : dict
+            A dictionary containing metadata for each signal in the tree.
+        """
+        print("Getting metadata widget")
+        subsections = {}
+        for subsection in METADATA_WIDGET_CONFIG["metadata_widget"]:
+            print(f"Processing subsection: {subsection}")
+            subsections[subsection] = {}
+            for prop, value in METADATA_WIDGET_CONFIG["metadata_widget"][subsection].items():
+                print(f"Processing property: {prop} with value: {value}")
+                if "key" in value:
+                    current_value = self.root.metadata.get_item(item_path=value["key"],
+                                                default=value.get("default", "--"))
+                elif "attr" in value:
+                    current_value = self.get_nested_attr(value["attr"])
+                elif "function" in value:
+                    print(f"Calling function for property {prop}: {value['function']}")
+                    fun = self.get_nested_attr(value["function"])
+                    if fun is None or not callable(fun):
+                        print(f"Function {value['function']} not found.")
+                        current_value = "--"
+                    else:
+                        current_value = self.get_nested_attr(value["function"])()
+                else:
+                    current_value = "--"
+                current_value_string = f"{current_value} {value.get('units', '')}".strip()
+                print(f"Resolved value for {prop}: {current_value_string}")
+                subsections[subsection][prop] = current_value_string
+        print("Final Subsections:", subsections)
+        return subsections
+
 
     def add_transformation(self,
                            parent_signal: BaseSignal,

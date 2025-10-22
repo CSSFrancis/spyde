@@ -1,0 +1,63 @@
+metadata_widget:
+  Instrument Metadata:
+    Magnification:
+      key: "Acquisition_instrument.TEM.magnification"
+      type: float
+      description: "The magnification factor of the instrument."
+      default: "--"
+      units: "x"
+    Accelerating Voltage:
+      key: "Acquisition_instrument.TEM.beam_energy"
+      type: float
+      description: "The acceleration voltage used during imaging."
+      default: "--"
+      units: "kV"
+    Camera Length:
+      key: "Acquisition_instrument.TEM.camera_length"
+      type: float
+      description: "The camera length setting of the instrument."
+      default: "--"
+      units: "mm"
+    Convergance Angle:
+        key: "Acquisition_instrument.TEM.convergence_angle"
+        type: float
+        description: "The convergence angle of the electron beam."
+        default: "--"
+        units: "mrad"
+  Root Experiment Details:
+    Name:
+      key: "General.title"
+      type: string
+      description: "Name of the experiment."
+      default: "--"
+    Date:
+      key: "General.date"
+      type: string
+      description: "Date when the experiment was conducted."
+      default: "YYYY-MM-DD"
+    e-/s:
+      type: float
+      key: "Acquisition_instrument.TEM.electrons_per_second"
+      description: "Electrons per second."
+      default: "--"
+      units: "e/s"
+    Dtype:
+      type: string
+      attr: root.data.dtype.name
+      description: "Type of data collected."
+      default: "--"
+    Dimensions:
+        type: string
+        function: root.axes_manager._get_dimension_str()
+        description: "Dimensions of the collected data."
+        default: "--"
+    Exposure Mode:
+        type: string
+        key: "Acquisition_instrument.Detector.exposure_mode"
+        description: "Integrating or counting mode."
+        default: "--"
+    Camera:
+      type: string
+      key: "Acquisition_instrument.Detector.camera_model"
+      description: "The camera model used for data acquisition."
+      default: "--"
