@@ -1,24 +1,24 @@
 metadata_widget:
   Instrument Metadata:
-    Magnification:
+    Mag:
       key: "Acquisition_instrument.TEM.magnification"
       type: float
       description: "The magnification factor of the instrument."
       default: "--"
       units: "x"
-    Accelerating Voltage:
+    Acc. Volt.:
       key: "Acquisition_instrument.TEM.beam_energy"
       type: float
       description: "The acceleration voltage used during imaging."
       default: "--"
       units: "kV"
-    Camera Length:
+    Cam. Len.:
       key: "Acquisition_instrument.TEM.camera_length"
       type: float
       description: "The camera length setting of the instrument."
       default: "--"
       units: "mm"
-    Convergance Angle:
+    Conv. Angle:
         key: "Acquisition_instrument.TEM.convergence_angle"
         type: float
         description: "The convergence angle of the electron beam."
@@ -46,17 +46,17 @@ metadata_widget:
       attr: root.data.dtype.name
       description: "Type of data collected."
       default: "--"
-    Dimensions:
+    Dim.:
         type: string
         function: root.axes_manager._get_dimension_str()
         description: "Dimensions of the collected data."
         default: "--"
-    Exposure Mode:
+    Mode:
         type: string
         key: "Acquisition_instrument.Detector.exposure_mode"
         description: "Integrating or counting mode."
         default: "--"
-    Camera:
+    Cam.:
       type: string
       key: "Acquisition_instrument.Detector.camera_model"
       description: "The camera model used for data acquisition."

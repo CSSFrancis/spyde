@@ -1,6 +1,6 @@
 from pyqtgraph import LinearRegionItem, RectROI, CircleROI, LineROI
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtWidgets, QtGui
 import numpy as np
 
 import pyqtgraph as pg
@@ -81,6 +81,13 @@ class BaseSelector:
         self._last_size_sig = None
         self.selector = None  # to be defined in subclasses
 
+    def apply_transform_to_selector(self, transform: QtGui.QTransform):
+        """
+        Apply a transformation to the selector.
+        """
+        if self.selector is not None:
+            self.selector.resetTransform()
+            self.selector.setTransform(transform)
 
 
     def get_selected_indices(self):
@@ -143,7 +150,7 @@ class BaseSelector:
         vb.enableAutoRange(x=True, y=True)
         vb.autoRange()
 
-    # Called when the user finishes a region change; only autorange on size changes
+    # Called when the user finishes a region change; only auto-range on size changes
     def _on_region_change_finished(self):
         new_sig = self._size_signature()
         size_changed = (new_sig != self._last_size_sig)
@@ -200,17 +207,27 @@ class RectangleSelector(BaseSelector):
         lower_left = self.selector.pos()
         size = self.selector.size()
 
+        # pyqtgraph only knows one coordinate system.  We need to map to scene
+        # to pixels.
+
+        inverted_transform, is_inversion = self.parent.image_item.transform().inverted()
+
+        lower_left_pixel = inverted_transform.map(lower_left)
+
+        size_pixels = (inverted_transform.map(size) -
+                       inverted_transform.map(QtCore.QPointF(0, 0)))
+
         # ignore rotation for now...
         rotation = self.selector.angle()
 
-        y_indices = np.arange(0, np.round(size.y()), dtype=int)
-        x_indices = np.arange(0, np.round(size.x()), dtype=int)
+        y_indices = np.arange(0, np.round(size_pixels.y()), dtype=int)
+        x_indices = np.arange(0, np.round(size_pixels.x()), dtype=int)
 
         indices = np.reshape(np.array(np.meshgrid(x_indices,
                                                   y_indices)).T,
                              (-1, 2))
-        indices[:, 0] += np.round(lower_left.x()).astype(int)
-        indices[:, 1] += np.round(lower_left.y()).astype(int)
+        indices[:, 0] += np.round(lower_left_pixel.x()).astype(int)
+        indices[:, 1] += np.round(lower_left_pixel.y()).astype(int)
         indices = indices.astype(int)
         return indices
 

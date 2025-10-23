@@ -1,6 +1,10 @@
 from PySide6 import QtCore, QtWidgets, QtGui
 
 import pyqtgraph as pg
+from despy.external.pyqtgraph.scale_bar import OutlinedScaleBar as ScaleBar
+from math import floor, log10
+
+
 import numpy as np
 import dask.array as da
 from dask.distributed import Future
@@ -57,6 +61,12 @@ class Plot(QtWidgets.QMdiSubWindow):
             **kwargs,
     ):
         super().__init__(*args, **kwargs)
+
+        self._scale_bar = None
+        self._scale_bar_vb = None
+
+        self._mouse_proxy = None
+        QtCore.QTimer.singleShot(0, self._attach_mouse_move)
 
         # State
         # -----
@@ -122,6 +132,48 @@ class Plot(QtWidgets.QMdiSubWindow):
             tb.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
             tb.show()
 
+        # Defer enabling until the plot/viewbox exists
+        QtCore.QTimer.singleShot(0, self.enable_scale_bar)
+
+    def enable_scale_bar(self, enabled: bool = True):
+        """Enable or disable an auto-updating horizontal scale bar."""
+        vb = getattr(self.plot_item, "vb", None) or getattr(self.plot_item,
+                                                            "getViewBox",
+                                                            lambda: None)()
+        if self.plot_state.dimensions != 2:
+            self._scale_bar = None
+        if enabled:
+            if self._scale_bar is None:
+                # length in data units based on current view range
+                x_range = vb.viewRange()[0] if hasattr(vb, "viewRange") else (0.0, 1.0)
+                nice_length = (x_range[1] - x_range[0]) / 5.0
+                if nice_length <= 0:
+                    nice_length = 1.0
+
+                exponent = np.ceil(log10(nice_length))
+                fraction = nice_length / (10 ** exponent)
+                if fraction < 1.5:
+                    nice_length = 1.0 * (10 ** exponent)
+                elif fraction < 3.0:
+                    nice_length = 2.0 * (10 ** exponent)
+                elif fraction < 7.0:
+                    nice_length = 5.0 * (10 ** exponent)
+                else:
+                    nice_length = 10.0 * (10 ** exponent)
+
+                print("Scale bar length (data units):", nice_length)
+                units = self.plot_state.current_signal.axes_manager.signal_axes[0].units
+                self._scale_bar = ScaleBar(
+                    nice_length,
+                    suffix=units,
+                    pen=pg.mkPen(0, 0, 0, 200),
+                    brush=pg.mkBrush(255, 255, 255, 180),
+                )
+                self._scale_bar.setZValue(1000)
+                self._scale_bar.setParentItem(vb)
+                self._scale_bar.anchor((1, 1), (1, 1), offset=(-12, -12))
+
+
     def set_plot_state(self, signal: BaseSignal):
         """Set the plot state to the state for some signal."""
         # first save the current plot state selectors and child plots
@@ -170,6 +222,7 @@ class Plot(QtWidgets.QMdiSubWindow):
         self.plot_item.getViewBox().autoRange()
         # update the toolbars
         self.update_toolbars()
+        self.update_image_rectangle()
 
     def hide_toolbars(self):
         """Hide all floating toolbars."""
@@ -215,6 +268,44 @@ class Plot(QtWidgets.QMdiSubWindow):
             else:
                 tb.show()
             tb.raise_()
+
+    def update_image_rectangle(self):
+        """Set the x and y range of the plot.
+
+        #TODO: Have for other dimensions?
+        """
+        if self.is_navigator:
+            axes = self.signal_tree.root.axes_manager.navigation_axes
+        else:
+            axes = self.plot_state.current_signal.axes_manager.signal_axes
+
+        if self.plot_state.dimensions != 2:
+            raise ValueError("set_xy_range can only be used for 2D plots with 2 Signal Axes.")
+
+        sx = axes[0].scale or 1.0
+        sy = axes[1].scale or 1.0
+        x = axes[0].offset
+        y = axes[1].offset
+
+        transform = QtGui.QTransform.fromTranslate(x, y).scale(sx, sy)
+        self.image_item.resetTransform()
+        self.image_item.setTransform(transform)
+
+        # Update positions/sizes of any selectors to match the new transform.
+        selectors = []  # type: list[BaseSelector]
+
+        if self.plot_state is not None:
+            selectors += getattr(self.plot_state, "plot_selectors", [])
+            selectors += getattr(self.plot_state, "signal_tree_selectors", [])
+        if getattr(self, "nav_plot_manager", None) is not None:
+            selectors += list(getattr(self.nav_plot_manager, "navigation_selectors", []))
+
+        print("Updating selectors for new image transform:", selectors)
+        for sel in selectors:
+            sel.apply_transform_to_selector(transform)
+        self.enable_scale_bar(True)
+        self.plot_item.getViewBox().autoRange()
+
 
     @property
     def main_window(self) -> "MainWindow":
@@ -310,6 +401,80 @@ class Plot(QtWidgets.QMdiSubWindow):
             selector.widget.hide()
             self.main_window.selectors_layout.removeWidget(selector.widget)
 
+    def _attach_mouse_move(self):
+        """Attach a mouse-move proxy once plot_item exists."""
+        try:
+            pi = getattr(self, "plot_item", None)
+            if pi is None or not hasattr(pi, "scene"):
+                return
+            scene = pi.scene()
+            if scene is None:
+                return
+            # Use pyqtgraph's SignalProxy to rate-limit updates
+            self._mouse_proxy = pg.SignalProxy(scene.sigMouseMoved, rateLimit=60, slot=self._on_mouse_moved)
+        except Exception:
+            pass
+
+    def _on_mouse_moved(self, evt):
+        """Update main-window status with x, y, value under cursor for 1D/2D plots."""
+        try:
+            if not evt:
+                self._update_main_cursor(None, None, None)
+                return
+            pos = evt[0]
+            vb = self.plot_item.getViewBox() if hasattr(self, "plot_item") else None
+            if vb is None or not vb.sceneBoundingRect().contains(pos):
+                self._update_main_cursor(None, None, None)
+                return
+
+            pt = vb.mapSceneToView(pos)
+            x = float(pt.x())
+            y = float(pt.y())
+            value = None
+
+            # 2D image: sample nearest pixel
+            if getattr(self.plot_state, "dimensions", 0) == 2 and hasattr(self, "image_item"):
+                img = np.asarray(self.current_data) if isinstance(getattr(self, "current_data", None),
+                                                                  da.Array) else getattr(self, "current_data", None)
+                if img is not None and hasattr(img, "shape"):
+                    j = int(round(x))
+                    i = int(round(y))
+                    if 0 <= i < img.shape[0] and 0 <= j < img.shape[1]:
+                        try:
+                            value = float(img[i, j])
+                        except Exception:
+                            value = None
+
+            # 1D line: nearest x in axis
+            elif getattr(self.plot_state, "dimensions", 0) == 1 and hasattr(self, "line_item"):
+                ydata = np.asarray(self.current_data) if isinstance(getattr(self, "current_data", None),
+                                                                    da.Array) else getattr(self, "current_data", None)
+                axis = getattr(self.plot_state.current_signal.axes_manager.signal_axes[0], "axis", None) if getattr(
+                    self.plot_state, "current_signal", None) else None
+                if ydata is not None and axis is not None and len(axis) > 0:
+                    idx = int(np.clip(np.searchsorted(axis, x), 0, len(axis) - 1))
+                    # choose the closer neighbor
+                    if idx > 0 and (idx == len(axis) or abs(x - axis[idx - 1]) < abs(x - axis[idx])):
+                        idx -= 1
+                    try:
+                        value = float(ydata[idx]) if 0 <= idx < len(ydata) else None
+                        y = value  # for 1D, 'y' corresponds to the line value at nearest x
+                    except Exception:
+                        pass
+
+            self._update_main_cursor(x, y, value)
+        except Exception:
+            self._update_main_cursor(None, None, None)
+
+    def _update_main_cursor(self, x, y, value):
+        """Push the cursor readout to the main window status bar."""
+        mw = getattr(self, "main_window", None)
+        if mw is not None and hasattr(mw, "set_cursor_readout"):
+            try:
+                mw.set_cursor_readout(x, y, value)
+            except Exception:
+                pass
+
     def update(self):
         """Push the current data to the plot items."""
         if self.plot_state.dimensions == 1:
@@ -324,6 +489,8 @@ class Plot(QtWidgets.QMdiSubWindow):
 
     def closeEvent(self, event):
         """Cleanup toolbar, hide selector widgets, and close attached plots when needed."""
+        self._update_main_cursor(None, None, None)
+        self._mouse_proxy = None
 
         for attr in ("toolbar_right", "toolbar_left", "toolbar_top", "toolbar_bottom"):
             tb = getattr(self, attr, None)

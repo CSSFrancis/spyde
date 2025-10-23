@@ -12,6 +12,7 @@ from PySide6 import QtWidgets, QtCore
 from PySide6.QtGui import QPixmap, QColor
 
 from dask.distributed import Client, Future, LocalCluster
+import numpy as np
 import pyqtgraph as pg
 import hyperspy.api as hs
 import pyxem.data
@@ -35,9 +36,14 @@ class MainWindow(QMainWindow):
 
     def __init__(self, app=None):
         super().__init__()
+        self.btn_reset = None
+        self.btn_auto = None
         self.app = app
         self.metadata_group = None  # type: Union[QtWidgets.QGroupBox, None]
         self.metadata_layout = None  # type: Union[QtWidgets.QVBoxLayout, None]
+
+        self.axes_group = None  # type: Union[QtWidgets.QGroupBox, None]
+        self.axes_layout = None  # type: Union[QtWidgets.QVBoxLayout, None]
 
         # Test if the theme is set correctly
         cpu_count = os.cpu_count()
@@ -84,6 +90,9 @@ class MainWindow(QMainWindow):
 
         self.add_plot_control_widget()
         self.current_selected_signal_tree = None  # type: Union[BaseSignalTree, None]
+
+        self.cursor_readout = QtWidgets.QLabel("x: -, y: -, value: -")
+        self.statusBar().addPermanentWidget(self.cursor_readout)
 
     @property
     def navigation_selectors(self):
@@ -304,12 +313,59 @@ class MainWindow(QMainWindow):
 
                 self.metadata_layout.addWidget(group)
 
-    def on_subwindow_activated(self, window):
+    def update_axes_widget(self, window: "Plot"):
+        """
+        Update the axes widget based on the active window.
+
+        The Axes widget displays the navigation axes for the entire
+        Signal Tree (as they are shared) and the signal axes for the
+        current active signal in the window.
+        """
+        # Clear existing layout (including spacers)
+        if self.axes_layout is None:
+            return
+        while self.axes_layout.count():
+            item = self.axes_layout.takeAt(0)
+            widget_to_remove = item.widget()
+            if widget_to_remove is not None:
+                widget_to_remove.deleteLater()
+            else:
+                del item
+
+        # Add new axes information
+        if hasattr(window, "signal_tree"):
+            plot_state = window.plot_state
+            print("Updating axes widget, plot state:", plot_state)
+            if plot_state is None:
+                current_signal = None
+            else:
+                current_signal = window.plot_state.current_signal
+            groups = window.signal_tree.build_axes_groups(current_signal, window)
+            for group in groups:
+                self.axes_layout.addWidget(group)
+
+    def set_cursor_readout(self, x=None, y=None, value=None):
+        def _fmt(v):
+            if v is None:
+                return "-"
+            try:
+                return f"{float(v):.6g}"
+            except Exception:
+                return str(v)
+
+        txt = f"x: {_fmt(x)}, y: {_fmt(y)}, value: {_fmt(value)}"
+        if hasattr(self, "cursor_readout") and self.cursor_readout is not None:
+            self.cursor_readout.setText(txt)
+
+    def on_subwindow_activated(self, window: "Plot"):
         if hasattr(window, "show_selector_control_widget"):
             window.show_selector_control_widget()
 
         if hasattr(window, "show_toolbars"):
             window.show_toolbars()
+
+        if hasattr(window, "plot_state") and window.plot_state is not None:
+            self.update_axes_widget(window)
 
         if hasattr(window, "plot_state") and window.plot_state is not None and hasattr(window.plot_state, "toolbar"):
             window.plot_state.toolbar.setVisible(True)
@@ -369,17 +425,26 @@ class MainWindow(QMainWindow):
         display_layout.addLayout(cmap_layout)
         layout.addWidget(display_group)
 
+        buttons_layout = QtWidgets.QHBoxLayout()
+        self.btn_auto = QtWidgets.QPushButton("auto")
+        self.btn_reset = QtWidgets.QPushButton("reset")
+        self.btn_auto.clicked.connect(self.on_contrast_auto_click)
+        self.btn_reset.clicked.connect(self.on_contrast_reset_click)
+        buttons_layout.addWidget(self.btn_auto)
+        buttons_layout.addWidget(self.btn_reset)
+        display_layout.addLayout(buttons_layout)
+
         # Create a Group for the metadata
         # ----------------------------------------
         self.metadata_group = QtWidgets.QGroupBox("Metadata")
-        self.metadata_layout = QtWidgets.QVBoxLayout(self.metadata_group)
+        self.metadata_layout = QtWidgets.QHBoxLayout(self.metadata_group)
         layout.addWidget(self.metadata_group)
 
         # Create a Group for the axes
         # ----------------------------------------
-        axes_group = QtWidgets.QGroupBox("Plot Axes")
-        axes_layout = QtWidgets.QVBoxLayout(axes_group)
-        layout.addWidget(axes_group)
+        self.axes_group = QtWidgets.QGroupBox("Plot Axes")
+        self.axes_layout = QtWidgets.QVBoxLayout(self.axes_group)
+        layout.addWidget(self.axes_group)
 
         # Create a Group for the Selector Controls
         # ----------------------------------------
@@ -392,6 +457,91 @@ class MainWindow(QMainWindow):
         dock_widget.setWidget(main_widget)
 
         self.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock_widget)
+
+    def _active_plot_window(self):
+        sub = self.mdi_area.activeSubWindow()
+        return sub
+
+    def on_contrast_auto_click(self):
+        """Set contrast to [min, 95th percentile] for images; y-range for 1D."""
+        w = self._active_plot_window()
+        if w is None or not hasattr(w, "plot_state"):
+            return
+
+        # 2D image
+        if getattr(w.plot_state, "dimensions", 0) == 2 and hasattr(w, "image_item"):
+            img = getattr(w.image_item, "image", None)
+            if img is None and hasattr(w, "current_data"):
+                try:
+                    img = np.asarray(w.current_data)
+                except Exception:
+                    img = None
+            if img is None:
+                return
+            vmin = float(np.nanmin(img))
+            vmax = float(np.nanpercentile(img, 95.0))
+            if np.isfinite(vmin) and np.isfinite(vmax) and vmin < vmax:
+                try:
+                    w.image_item.setLevels((vmin, vmax))
+                except Exception:
+                    pass
+
+        # 1D line
+        elif getattr(w.plot_state, "dimensions", 0) == 1 and hasattr(w, "plot_item"):
+            # Prefer the data currently plotted
+            ydata = None
+            if hasattr(w, "line_item") and hasattr(w.line_item, "yData") and w.line_item.yData is not None:
+                ydata = np.asarray(w.line_item.yData)
+            elif hasattr(w, "current_data") and w.current_data is not None:
+                try:
+                    ydata = np.asarray(w.current_data)
+                except Exception:
+                    ydata = None
+            if ydata is None or ydata.size == 0:
+                return
+            ymin = float(np.nanmin(ydata))
+            y95 = float(np.nanpercentile(ydata, 95.0))
+            if not (np.isfinite(ymin) and np.isfinite(y95)) or ymin >= y95:
+                return
+            try:
+                vb = w.plot_item.getViewBox()
+                vb.enableAutoRange(y=False)
+                vb.setYRange(ymin, y95, padding=0.0)
+            except Exception:
+                pass
+
+    def on_contrast_reset_click(self):
+        """Reset contrast to full data range for images; re-enable y auto-range for 1D."""
+        w = self._active_plot_window()
+        if w is None or not hasattr(w, "plot_state"):
+            return
+
+        # 2D image
+        if getattr(w.plot_state, "dimensions", 0) == 2 and hasattr(w, "image_item"):
+            img = getattr(w.image_item, "image", None)
+            if img is None and hasattr(w, "current_data"):
+                try:
+                    img = np.asarray(w.current_data)
+                except Exception:
+                    img = None
+            if img is None:
+                return
+            vmin = float(np.nanmin(img))
+            vmax = float(np.nanmax(img))
+            if np.isfinite(vmin) and np.isfinite(vmax) and vmin < vmax:
+                try:
+                    w.image_item.setLevels((vmin, vmax))
+                except Exception:
+                    pass
+
+        # 1D line
+        elif getattr(w.plot_state, "dimensions", 0) == 1 and hasattr(w, "plot_item"):
+            try:
+                vb = w.plot_item.getViewBox()
+                vb.enableAutoRange(y=True)
+                vb.autoRange()
+            except Exception:
+                pass
 
     def on_cmap_changed(self, cmap_name: str):
         # Apply colormap to the active plot and sync the histogram widget
