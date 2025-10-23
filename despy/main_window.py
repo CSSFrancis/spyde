@@ -17,9 +17,6 @@ import pyqtgraph as pg
 import hyperspy.api as hs
 import pyxem.data
 
-
-
-
 from despy.misc.dialogs import DatasetSizeDialog, CreateDataDialog
 from despy.drawing.multiplot import Plot
 from despy.signal_tree import BaseSignalTree
@@ -344,16 +341,16 @@ class MainWindow(QMainWindow):
             for group in groups:
                 self.axes_layout.addWidget(group)
 
-    def set_cursor_readout(self, x=None, y=None, value=None):
+    def set_cursor_readout(self, x=None, y=None, xpix=None, ypix=None, value=None):
         def _fmt(v):
             if v is None:
                 return "-"
             try:
-                return f"{float(v):.6g}"
+                return f"{float(v):.4g}"
             except Exception:
                 return str(v)
 
-        txt = f"x: {_fmt(x)}, y: {_fmt(y)}, value: {_fmt(value)}"
+        txt = f"x: {_fmt(x)} ({xpix}), y: {_fmt(y)} ({ypix}), value: {_fmt(value)}"
         if hasattr(self, "cursor_readout") and self.cursor_readout is not None:
             self.cursor_readout.setText(txt)
 

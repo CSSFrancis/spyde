@@ -4,7 +4,6 @@ import pyqtgraph as pg
 from despy.external.pyqtgraph.scale_bar import OutlinedScaleBar as ScaleBar
 from math import floor, log10
 
-
 import numpy as np
 import dask.array as da
 from dask.distributed import Future
@@ -16,7 +15,6 @@ if TYPE_CHECKING:
     from despy.main_window import MainWindow
     from despy.drawing.selector import BaseSelector
 from hyperspy.signal import BaseSignal
-
 
 from despy.drawing.plot_states import PlotState, NavigationManagerState
 from despy.drawing.toolbars.plot_control_toolbar import get_toolbar_actions_for_plot
@@ -82,19 +80,19 @@ class Plot(QtWidgets.QMdiSubWindow):
         self.current_data = None  # type: Union[np.ndarray, da.Array, Future, None]
 
         # Container and plot widget
-        self.container = QtWidgets.QWidget() # type: QtWidgets.QWidget
+        self.container = QtWidgets.QWidget()  # type: QtWidgets.QWidget
         container_layout = QtWidgets.QVBoxLayout(self.container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
 
         # set up the plot widget with pyqtgraph
-        self.plot_widget = pg.PlotWidget(self.container) # type: pg.PlotWidget
+        self.plot_widget = pg.PlotWidget(self.container)  # type: pg.PlotWidget
         container_layout.addWidget(self.plot_widget)
         self.plot_item = self.plot_widget.getPlotItem()  # type: pg.PlotItem
 
         self.image_item = pg.ImageItem()  # type: pg.ImageItem
         self.line_item = pg.PlotDataItem()  # type: pg.PlotDataItem
-        self.nav_plot_manager = nav_plot_manager # type: NavigationPlotManager | None
+        self.nav_plot_manager = nav_plot_manager  # type: NavigationPlotManager | None
 
         # Attach the container to the QMdiSubWindow so content is visible
         self.setWidget(self.container)
@@ -112,21 +110,21 @@ class Plot(QtWidgets.QMdiSubWindow):
         # Creating all the floating toolbars...
 
         self.toolbar_right = RoundedToolBar(title="Plot Controls",
-                                      plot=self,
-                                      parent=self.main_window,
-                                      position="right",)
+                                            plot=self,
+                                            parent=self.main_window,
+                                            position="right", )
         self.toolbar_left = RoundedToolBar(title="Plot Controls",
-                                      plot=self,
-                                      parent=self.main_window,
-                                      position="left",)
+                                           plot=self,
+                                           parent=self.main_window,
+                                           position="left", )
         self.toolbar_top = RoundedToolBar(title="Plot Controls",
-                                      plot=self,
-                                      parent=self.main_window,
-                                      position="top",)
+                                          plot=self,
+                                          parent=self.main_window,
+                                          position="top", )
         self.toolbar_bottom = RoundedToolBar(title="Plot Controls",
-                                      plot=self,
-                                      parent=self.main_window,
-                                      position="bottom",)
+                                             plot=self,
+                                             parent=self.main_window,
+                                             position="bottom", )
         # Ensure they are visible
         for tb in (self.toolbar_right, self.toolbar_left, self.toolbar_top, self.toolbar_bottom):
             tb.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
@@ -173,14 +171,13 @@ class Plot(QtWidgets.QMdiSubWindow):
                 self._scale_bar.setParentItem(vb)
                 self._scale_bar.anchor((1, 1), (1, 1), offset=(-12, -12))
 
-
     def set_plot_state(self, signal: BaseSignal):
         """Set the plot state to the state for some signal."""
         # first save the current plot state selectors and child plots
         old_plot_state = self.plot_state
         if old_plot_state is not None:
             self.plot_states[self.plot_state.current_signal] = old_plot_state
-    
+
             if old_plot_state is not None:
                 # remove all the current selectors and hide child plots
                 for selector in old_plot_state.plot_selectors + old_plot_state.signal_tree_selectors:
@@ -306,7 +303,6 @@ class Plot(QtWidgets.QMdiSubWindow):
         self.enable_scale_bar(True)
         self.plot_item.getViewBox().autoRange()
 
-
     @property
     def main_window(self) -> "MainWindow":
         """Get the main window containing this sub-window."""
@@ -358,7 +354,7 @@ class Plot(QtWidgets.QMdiSubWindow):
         from despy.drawing.selector import RectangleSelector
         from despy.drawing.update_functions import get_fft
         fft_plot = Plot(signal_tree=self.signal_tree,
-                        is_navigator=False,)
+                        is_navigator=False, )
         ps = PlotState(signal=self.plot_state.current_signal, dimensions=2, dynamic=True)
         fft_plot.plot_states[self.plot_state.current_signal] = ps
         fft_plot.set_plot_state(self.plot_state.current_signal)
@@ -417,68 +413,59 @@ class Plot(QtWidgets.QMdiSubWindow):
 
     def _on_mouse_moved(self, evt):
         """Update main-window status with x, y, value under cursor for 1D/2D plots."""
-        try:
-            if not evt:
-                self._update_main_cursor(None, None, None)
-                return
-            pos = evt[0]
-            vb = self.plot_item.getViewBox() if hasattr(self, "plot_item") else None
-            if vb is None or not vb.sceneBoundingRect().contains(pos):
-                self._update_main_cursor(None, None, None)
-                return
+        if not evt:
+            self._update_main_cursor(None, None,None, None, None)
+            return
+        pos = evt[0]
+        vb = self.plot_item.getViewBox() if hasattr(self, "plot_item") else None
+        if vb is None or not vb.sceneBoundingRect().contains(pos):
+            self._update_main_cursor(None, None,None, None, None)
+            return
 
-            pt = vb.mapSceneToView(pos)
-            x = float(pt.x())
-            y = float(pt.y())
-            value = None
+        pt = vb.mapSceneToView(pos)
+        x = float(pt.x())
+        y = float(pt.y())
 
-            # 2D image: sample nearest pixel
-            if getattr(self.plot_state, "dimensions", 0) == 2 and hasattr(self, "image_item"):
-                img = np.asarray(self.current_data) if isinstance(getattr(self, "current_data", None),
-                                                                  da.Array) else getattr(self, "current_data", None)
-                if img is not None and hasattr(img, "shape"):
-                    j = int(round(x))
-                    i = int(round(y))
-                    if 0 <= i < img.shape[0] and 0 <= j < img.shape[1]:
-                        try:
-                            value = float(img[i, j])
-                        except Exception:
-                            value = None
+        if getattr(self.plot_state, "dimensions", 0) == 2:
+            inverted_transform, is_inversion = self.image_item.transform().inverted()
+        elif getattr(self.plot_state, "dimensions", 0) == 1:
+            inverted_transform, is_inversion = self.line_item.transform().inverted()
+        else:
+            inverted_transform = None
+            is_inversion = False
+        pixel_x = None
+        pixel_y = None
+        if is_inversion:
+            img_pt = inverted_transform.map(QtCore.QPointF(x, y))
+            pixel_x = int(np.round(img_pt.x()))
+            pixel_y = int(np.round(img_pt.y()))
+        value = None
 
-            # 1D line: nearest x in axis
-            elif getattr(self.plot_state, "dimensions", 0) == 1 and hasattr(self, "line_item"):
-                ydata = np.asarray(self.current_data) if isinstance(getattr(self, "current_data", None),
-                                                                    da.Array) else getattr(self, "current_data", None)
-                axis = getattr(self.plot_state.current_signal.axes_manager.signal_axes[0], "axis", None) if getattr(
-                    self.plot_state, "current_signal", None) else None
-                if ydata is not None and axis is not None and len(axis) > 0:
-                    idx = int(np.clip(np.searchsorted(axis, x), 0, len(axis) - 1))
-                    # choose the closer neighbor
-                    if idx > 0 and (idx == len(axis) or abs(x - axis[idx - 1]) < abs(x - axis[idx])):
-                        idx -= 1
-                    try:
-                        value = float(ydata[idx]) if 0 <= idx < len(ydata) else None
-                        y = value  # for 1D, 'y' corresponds to the line value at nearest x
-                    except Exception:
-                        pass
+        if pixel_x is not None and pixel_y is not None:
+            if getattr(self.plot_state, "dimensions", 0) == 2 and not isinstance(self.current_data, Future):
+                if (0 <= floor(pixel_y) < self.current_data.shape[0] and
+                        0 <= floor(pixel_x) < self.current_data.shape[1]):
+                    value = self.current_data[floor(pixel_y), floor(pixel_x)]
+            elif getattr(self.plot_state, "dimensions", 0) == 1 and not isinstance(self.current_data, Future):
+                if 0 <= floor(pixel_x) < self.current_data.shape[0]:
+                    value = self.current_data[floor(pixel_x)]
+        self._update_main_cursor(x, y, pixel_x, pixel_y, value)
 
-            self._update_main_cursor(x, y, value)
-        except Exception:
-            self._update_main_cursor(None, None, None)
 
-    def _update_main_cursor(self, x, y, value):
+    def _update_main_cursor(self, x, y, pixel_x, pixel_y, value):
         """Push the cursor readout to the main window status bar."""
         mw = getattr(self, "main_window", None)
         if mw is not None and hasattr(mw, "set_cursor_readout"):
             try:
-                mw.set_cursor_readout(x, y, value)
+                mw.set_cursor_readout(x, y,pixel_x, pixel_y, value)
             except Exception:
                 pass
 
     def update(self):
         """Push the current data to the plot items."""
         if self.plot_state.dimensions == 1:
-            current_data = np.asarray(self.current_data) if isinstance(self.current_data, da.Array) else self.current_data
+            current_data = np.asarray(self.current_data) if isinstance(self.current_data,
+                                                                       da.Array) else self.current_data
             axis = self.plot_state.current_signal.axes_manager.signal_axes[0].axis
             print("Updating 1D plot with axis:", axis)
             print("Data shape:", current_data)
@@ -558,9 +545,9 @@ class NavigationPlotManager:
                  main_window: "MainWindow",
                  signal_tree: "BaseSignalTree"
                  ):
-        self.main_window = main_window # type: MainWindow
+        self.main_window = main_window  # type: MainWindow
         self.plots = []  # type: list[Plot]
-        
+
         self.navigation_selectors = []  # type: list[BaseSelector]
         self.signal_tree = signal_tree  # type: BaseSignalTree
         self.navigation_manager_states = dict()  # type: dict[BaseSignal:NavigationManagerState]
@@ -620,7 +607,7 @@ class NavigationPlotManager:
             The signal for which to set the navigation state.
         """
         self.navigation_manager_state = self.navigation_manager_states.get(signal,
-                                                                           NavigationManagerState(signal=signal, 
+                                                                           NavigationManagerState(signal=signal,
                                                                                                   plot_manager=self)
                                                                            )
         for plot in self.plots:
@@ -669,7 +656,3 @@ class NavigationPlotManager:
             child.update_data(child.current_data, force=True)
             child.plot_item.getViewBox().autoRange()
             self.signal_tree.signal_plots.append(child)
-
-
-
-
