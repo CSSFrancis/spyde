@@ -120,28 +120,43 @@ class BaseSignalTree:
         """
         Slot called when an axis field is edited. Updates the corresponding axis property.
         If the is_nav flag is True, updates __all__ the signals in the signal tree.
+
+        Parameters
+        ----------
+        signal : BaseSignal
+            The signal whose axis is being edited.
+        axis : Axis
+            The axis being edited.
+        field : str
+            The field being edited ("scale", "offset", or "units").
+        line_edit : QtWidgets.QLineEdit
+            The line edit widget where the edit occurred.
+        is_nav : bool
+            Whether the axis belongs to the navigator axes.
+        text : str, optional
+            The new text value (not used, as we get the text from line_edit).
         """
 
         if is_nav:
             for sig in self.signals():
                 # maybe just use the index?
-                print(f"Updating nav axis {axis.name} field {field} to {line_edit.text()} for signal {sig}")
-                sig.axes_manager[axis.name].__setattr__(field, line_edit.text())
+                index = sig.axes_manager._axes.index(axis)
+                sig.axes_manager._axes[index].__setattr__(field, line_edit.text())
             for plot in self.navigator_plot_manager.plots:
                 print("Updating navigator plot image rectangle for: ", plot)
                 plot.update_image_rectangle()
         else:
-            signal.axes_manager[axis.name].__setattr__(field, line_edit.text())
+            index = signal.axes_manager._axes.index(axis)
+            signal.axes_manager._axes[index].__setattr__(field, line_edit.text())
             for signal in self.signal_plots:
                 if signal.plot_state.current_signal == signal:
                     signal.update_image_rectangle()
-
 
     def build_axes_groups(self, signal: Union[BaseSignal, None],
                           plot: "Plot") -> list[QtWidgets.QGroupBox]:
         """
         Build two QGroupBoxes ("Navigation Axes", "Signal Axes") with editable
-        scale, offset, and units fields for each axis. Edits call update_axes().
+        name, scale, offset, and units fields for each axis. Edits call update_axes().
         """
         groups: list[QtWidgets.QGroupBox] = []
 
@@ -162,7 +177,7 @@ class BaseSignalTree:
 
             # column headers
             header_style = "font-size: 9px; font-weight: 600;"
-            h_axis = QtWidgets.QLabel("Axis")
+            h_axis = QtWidgets.QLabel("Name")
             h_axis.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             h_axis.setStyleSheet(header_style)
             h_scale = QtWidgets.QLabel("Scale")
@@ -178,9 +193,14 @@ class BaseSignalTree:
             grid.addWidget(h_units, 0, 3)
 
             for row, axis in enumerate(axes_list, start=1):
-                name_label = QtWidgets.QLabel(f"{axis.name}:")
-                name_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                name_label.setStyleSheet("font-size: 9px;")
+                # Editable axis name
+                name_edit = EditableLabel(str(axis.name))
+                name_edit.setStyleSheet("font-size: 8px;")
+                name_edit.setFixedWidth(72)
+                name_edit.setFixedHeight(18)
+                name_edit.editingFinished.connect(
+                    partial(self._on_axis_field_edit, signal, axis, "name", name_edit, is_nav)
+                )
 
                 scale_edit = EditableLabel(str(axis.scale))
                 offset_edit = EditableLabel(str(axis.offset))
@@ -201,7 +221,7 @@ class BaseSignalTree:
                     partial(self._on_axis_field_edit, signal, axis, "units", units_edit, is_nav)
                 )
 
-                grid.addWidget(name_label, row, 0)
+                grid.addWidget(name_edit, row, 0)
                 grid.addWidget(scale_edit, row, 1)
                 grid.addWidget(offset_edit, row, 2)
                 grid.addWidget(units_edit, row, 3)

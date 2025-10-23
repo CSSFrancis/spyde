@@ -130,37 +130,45 @@ class Plot(QtWidgets.QMdiSubWindow):
             tb.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
             tb.show()
 
-        # Defer enabling until the plot/viewbox exists
-        QtCore.QTimer.singleShot(0, self.enable_scale_bar)
-
     def enable_scale_bar(self, enabled: bool = True):
         """Enable or disable an auto-updating horizontal scale bar."""
         vb = getattr(self.plot_item, "vb", None) or getattr(self.plot_item,
                                                             "getViewBox",
-                                                            lambda: None)()
+                                                            lambda: None)()  # type: pg.ViewBox | None
         if self.plot_state.dimensions != 2:
             self._scale_bar = None
         if enabled:
+            # length in data units
+            if self.is_navigator:
+                axes = self.signal_tree.root.axes_manager.navigation_axes
+            else:
+                axes = self.plot_state.current_signal.axes_manager.signal_axes
+
+            x_range = axes[0].scale * axes[0].size
+
+            target = x_range / 5
+            if not np.isfinite(target) or target <= 0:
+                target = 1.0
+
+            exp = floor(log10(target))
+            base = 10 ** exp
+            norm = target / base
+
+            if norm < 1.5:
+                nice = 1.0
+            elif norm < 2.5:
+                nice = 2.0
+            elif norm < 3.5:
+                nice = 2.5
+            elif norm < 7.5:
+                nice = 5.0
+            else:
+                nice = 10.0
+
+            nice_length = nice * base
+            units = self.plot_state.current_signal.axes_manager.signal_axes[0].units
+
             if self._scale_bar is None:
-                # length in data units based on current view range
-                x_range = vb.viewRange()[0] if hasattr(vb, "viewRange") else (0.0, 1.0)
-                nice_length = (x_range[1] - x_range[0]) / 5.0
-                if nice_length <= 0:
-                    nice_length = 1.0
-
-                exponent = np.ceil(log10(nice_length))
-                fraction = nice_length / (10 ** exponent)
-                if fraction < 1.5:
-                    nice_length = 1.0 * (10 ** exponent)
-                elif fraction < 3.0:
-                    nice_length = 2.0 * (10 ** exponent)
-                elif fraction < 7.0:
-                    nice_length = 5.0 * (10 ** exponent)
-                else:
-                    nice_length = 10.0 * (10 ** exponent)
-
-                print("Scale bar length (data units):", nice_length)
-                units = self.plot_state.current_signal.axes_manager.signal_axes[0].units
                 self._scale_bar = ScaleBar(
                     nice_length,
                     suffix=units,
@@ -170,6 +178,12 @@ class Plot(QtWidgets.QMdiSubWindow):
                 self._scale_bar.setZValue(1000)
                 self._scale_bar.setParentItem(vb)
                 self._scale_bar.anchor((1, 1), (1, 1), offset=(-12, -12))
+            else:
+                self._scale_bar.size = nice_length
+                new_text = f"{nice_length} {units}"
+                self._scale_bar.text.setHtml(new_text)
+                self._scale_bar.update()
+
 
     def set_plot_state(self, signal: BaseSignal):
         """Set the plot state to the state for some signal."""
@@ -217,9 +231,15 @@ class Plot(QtWidgets.QMdiSubWindow):
         else:
             self.update_data(self.plot_state.current_signal.data)
         self.plot_item.getViewBox().autoRange()
+
         # update the toolbars
         self.update_toolbars()
         self.update_image_rectangle()
+
+        if self.plot_state.dimensions == 2:
+            self.enable_scale_bar(True)
+        else:
+            self.enable_scale_bar(False)
 
     def hide_toolbars(self):
         """Hide all floating toolbars."""
@@ -276,32 +296,32 @@ class Plot(QtWidgets.QMdiSubWindow):
         else:
             axes = self.plot_state.current_signal.axes_manager.signal_axes
 
-        if self.plot_state.dimensions != 2:
-            raise ValueError("set_xy_range can only be used for 2D plots with 2 Signal Axes.")
+        if self.plot_state.dimensions == 2:
+            sx = axes[0].scale or 1.0
+            sy = axes[1].scale or 1.0
+            x = axes[0].offset
+            y = axes[1].offset
 
-        sx = axes[0].scale or 1.0
-        sy = axes[1].scale or 1.0
-        x = axes[0].offset
-        y = axes[1].offset
+            transform = QtGui.QTransform.fromTranslate(x, y).scale(sx, sy)
+            self.image_item.resetTransform()
+            self.image_item.setTransform(transform)
 
-        transform = QtGui.QTransform.fromTranslate(x, y).scale(sx, sy)
-        self.image_item.resetTransform()
-        self.image_item.setTransform(transform)
+            # Update positions/sizes of any selectors to match the new transform.
+            selectors = []  # type: list[BaseSelector]
 
-        # Update positions/sizes of any selectors to match the new transform.
-        selectors = []  # type: list[BaseSelector]
+            if self.plot_state is not None:
+                selectors += getattr(self.plot_state, "plot_selectors", [])
+                selectors += getattr(self.plot_state, "signal_tree_selectors", [])
+            if getattr(self, "nav_plot_manager", None) is not None:
+                selectors += list(getattr(self.nav_plot_manager, "navigation_selectors", []))
 
-        if self.plot_state is not None:
-            selectors += getattr(self.plot_state, "plot_selectors", [])
-            selectors += getattr(self.plot_state, "signal_tree_selectors", [])
-        if getattr(self, "nav_plot_manager", None) is not None:
-            selectors += list(getattr(self.nav_plot_manager, "navigation_selectors", []))
-
-        print("Updating selectors for new image transform:", selectors)
-        for sel in selectors:
-            sel.apply_transform_to_selector(transform)
-        self.enable_scale_bar(True)
-        self.plot_item.getViewBox().autoRange()
+            print("Updating selectors for new image transform:", selectors)
+            for sel in selectors:
+                sel.apply_transform_to_selector(transform)
+            self.enable_scale_bar(True)
+            self.plot_item.getViewBox().autoRange()
+        else:
+            self.enable_scale_bar(False)
 
     @property
     def main_window(self) -> "MainWindow":
@@ -476,7 +496,7 @@ class Plot(QtWidgets.QMdiSubWindow):
 
     def closeEvent(self, event):
         """Cleanup toolbar, hide selector widgets, and close attached plots when needed."""
-        self._update_main_cursor(None, None, None)
+        self._update_main_cursor(None, None,None, None, None)
         self._mouse_proxy = None
 
         for attr in ("toolbar_right", "toolbar_left", "toolbar_top", "toolbar_bottom"):
