@@ -30,7 +30,7 @@ class PlotState:
         self.current_signal = signal
 
         # Visualization parameters. The min/max percentile are used to determine the contrast/brightness
-        self.min_percentile = 1
+        self.min_percentile = 100
         self.max_percentile = 0
         self.min_level = 0
         self.max_level = 1

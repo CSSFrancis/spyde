@@ -482,20 +482,17 @@ class MainWindow(QMainWindow):
 
     def on_contrast_auto_click(self):
         """
-        Set image contrast to \[0th, 95th\] percentile for 2D; y-range percentiles for 1D.
+        Set image contrast to \[1st, 99th\] percentile for 2D; y-range percentiles for 1D.
         Persist on PlotState so it remains constant when data changes.
         """
         w = self._active_plot_window()
         if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
             return
 
-        try:
-            if getattr(w.plot_state, "dimensions", 0) == 2 and hasattr(w, "set_intensity_percentiles"):
-                w.set_intensity_percentiles(0.0, 95.0)
-            elif getattr(w.plot_state, "dimensions", 0) == 1 and hasattr(w, "set_y_range_percentiles"):
-                w.set_y_range_percentiles(0.0, 95.0)
-        except Exception:
-            pass
+        if getattr(w.plot_state, "dimensions", 0) == 2:
+            mn, mx = self.histogram.levels2percentile(0.01, 99.0)
+            self.histogram.setLevels(mn, mx)
+
 
     def on_contrast_reset_click(self):
         """
@@ -505,14 +502,9 @@ class MainWindow(QMainWindow):
         w = self._active_plot_window()
         if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
             return
-
-        try:
-            if getattr(w.plot_state, "dimensions", 0) == 2 and hasattr(w, "reset_intensity"):
-                w.reset_intensity()
-            elif getattr(w.plot_state, "dimensions", 0) == 1 and hasattr(w, "reset_y_range"):
-                w.reset_y_range()
-        except Exception:
-            pass
+        if getattr(w.plot_state, "dimensions", 0) == 2:
+            mn, mx = w.image_item.quickMinMax()
+            self.histogram.setLevels(mn, mx)
 
     def on_cmap_changed(self, cmap_name: str):
         # Apply colormap to the active plot and sync the histogram widget
