@@ -5,7 +5,7 @@ from functools import partial
 import webbrowser
 
 from PySide6.QtGui import QAction, QIcon
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QEvent
 from PySide6.QtWidgets import QSplashScreen, QMainWindow, QApplication, QMessageBox, QDialog, QFileDialog
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtGui import QPixmap, QColor
@@ -28,6 +28,7 @@ COLORMAPS = {"gray": pg.colormap.get("CET-L1"),
              "fire": pg.colormap.get("CET-L3"),
              }
 
+SUPPORTED_EXTS = (".hspy", ".mrc")  # extend as needed
 
 class MainWindow(QMainWindow):
     """
@@ -94,6 +95,10 @@ class MainWindow(QMainWindow):
 
         self.cursor_readout = QtWidgets.QLabel("x: -, y: -, value: -")
         self.statusBar().addPermanentWidget(self.cursor_readout)
+
+        # For accepting dropped files into the mdi area
+        self.mdi_area.setAcceptDrops(True)
+        self.mdi_area.installEventFilter(self)
 
     @property
     def navigation_selectors(self):
@@ -170,6 +175,7 @@ class MainWindow(QMainWindow):
             kwargs = {"lazy": True}
             if file_path.endswith(".mrc"):
                 dialog = DatasetSizeDialog(self, filename=file_path)
+                print("Opening Dataset Size Dialog for .mrc file")
                 if dialog.exec() == QDialog.DialogCode.Accepted:
                     x_size = dialog.x_input.value()
                     y_size = dialog.y_input.value()
@@ -186,22 +192,17 @@ class MainWindow(QMainWindow):
                     kwargs["chunks"] = (("auto",) * len(kwargs["navigation_shape"])) + (-1, -1)
 
                 print(f"chunks: {kwargs['chunks']}")
-                kwargs["distributed"] = True
-
+            if kwargs["navigation_shape"] == ():
+                kwargs.pop("navigation_shape")
+                kwargs.pop("chunks")
+            print("Loading signal from file:", file_path, "with kwargs:", kwargs)
             signal = hs.load(file_path, **kwargs)
-            hyper_signal = BaseSignalTree(root_signal=signal,
+            print("Signal loaded:", signal)
+            signal_tree = BaseSignalTree(root_signal=signal,
                                           main_window=self,
                                           distributed_client=self.client)
+            self.signal_trees.append(signal_tree)
 
-            plot = Plot(hyper_signal,
-                        is_signal=False,
-                        key_navigator=True
-                        , main_window=self)
-            plot.main_window = self
-            plot.titleColor = QColor("lightgray")
-            self.add_plot(plot)
-            print("Adding selector and plot")
-            plot.add_selector_and_new_plot()
 
     def open_file(self):
         self.file_dialog = QFileDialog()
@@ -503,7 +504,7 @@ class MainWindow(QMainWindow):
             return
 
         if getattr(w.plot_state, "dimensions", 0) == 2:
-            mn, mx = self.histogram.levels2percentile(0.01, 99.0)
+            mn, mx = self.histogram.percentile2levels(0.01, 99.0)
             self.histogram.setLevels(mn, mx)
 
     def on_contrast_reset_click(self):
@@ -546,6 +547,49 @@ class MainWindow(QMainWindow):
             w.plot_state.max_percentile = percentiles[1]
             w.plot_state.min_percentile = percentiles[0]
         print("Setting levels:", levels, "percentiles:", percentiles, "on plot:", w)
+
+    def _is_supported_file(self, path: str) -> bool:
+        try:
+            return os.path.isfile(path) and path.lower().endswith(SUPPORTED_EXTS)
+        except Exception:
+            return False
+
+    def _extract_file_paths(self, mime) -> list[str]:
+        paths = []
+        if mime is None:
+            return paths
+        if mime.hasUrls():
+            for url in mime.urls():
+                if url.isLocalFile():
+                    p = url.toLocalFile()
+                    if p:
+                        paths.append(p)
+        elif mime.hasText():
+            for chunk in mime.text().split():
+                if os.path.isfile(chunk):
+                    paths.append(chunk)
+        return paths
+
+    def _handle_drop_files(self, paths: list[str]) -> None:
+        files = [p for p in paths if self._is_supported_file(p)]
+        if files:
+            self._create_signals(files)
+
+    # Only handle drag/drop on the MDI area
+    def eventFilter(self, obj, event):
+        if obj is self.mdi_area and event is not None:
+            et = event.type()
+            if et in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
+                paths = self._extract_file_paths(event.mimeData())
+                if any(self._is_supported_file(p) for p in paths):
+                    event.acceptProposedAction()
+                    return True
+            elif et == QEvent.Type.Drop:
+                paths = self._extract_file_paths(event.mimeData())
+                self._handle_drop_files(paths)
+                event.acceptProposedAction()
+                return True
+        return super().eventFilter(obj, event)
 
     def close(self):
         self.client.close()

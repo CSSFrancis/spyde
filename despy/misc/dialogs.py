@@ -29,8 +29,7 @@ class DatasetSizeDialog(QDialog):
             self.reject()
             return
         nav_shape = [a.size for a in data.axes_manager.navigation_axes]
-        x, y, t = nav_shape + ([0,] * (3-len(nav_shape)))
-
+        self.x, self.y, self.t = nav_shape + ([0,] * (3-len(nav_shape)))
         self.total_frames = np.prod(nav_shape)
         print(self.total_frames)
 
@@ -46,20 +45,20 @@ class DatasetSizeDialog(QDialog):
         # Input fields for x, y, and time sizes
         self.x_input = QSpinBox()
         self.x_input.setRange(1, 100000)
-        self.x_input.setValue(x)
+        self.x_input.setValue(self.x)
         set_x = partial(self.update_image_size, 0)
         self.x_input.valueChanged.connect(set_x)
 
         set_y = partial(self.update_image_size, 1)
         self.y_input = QSpinBox()
         self.y_input.setRange(1, 100000)
-        self.y_input.setValue(y)
+        self.y_input.setValue(self.y)
         self.y_input.valueChanged.connect(set_y)
 
         set_t = partial(self.update_image_size, 2)
         self.time_input = QSpinBox()
         self.time_input.setRange(1, 10000)
-        self.time_input.setValue(t)
+        self.time_input.setValue(self.t)
         self.time_input.valueChanged.connect(set_t)
 
         # Labels and inputs
@@ -88,6 +87,16 @@ class DatasetSizeDialog(QDialog):
         layout.addWidget(button_box)
 
         self.update_image_size()
+
+    def exec(self, /):
+        """Override exec to handle immediate acceptance."""
+        print("Executing Dialog",
+              f"x: {self.x}, y: {self.y}, t: {self.t}")
+        if self.x < 1 and self.y < 1 and self.t < 1:
+            self.x_input.setValue(1)
+            self.y_input.setValue(1)
+            return QDialog.DialogCode.Accepted
+        return super().exec()
 
     def update_image_size(self, index=None):
         """Update the image size in pixels based on x and y inputs."""
