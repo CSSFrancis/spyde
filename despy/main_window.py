@@ -4,7 +4,6 @@ from typing import Union
 from functools import partial
 import webbrowser
 
-
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QSplashScreen, QMainWindow, QApplication, QMessageBox, QDialog, QFileDialog
@@ -22,7 +21,12 @@ from despy.drawing.multiplot import Plot
 from despy.signal_tree import BaseSignalTree
 from despy.external.pyqtgraph.histogram_widget import HistogramLUTWidget, HistogramLUTItem
 
-color_maps = ["viridis", "plasma", "magma", "cividis", "grays"]
+COLORMAPS = {"gray": pg.colormap.get("CET-L1"),
+             "viridis": pg.colormap.get("viridis"),
+             "plasma": pg.colormap.get("plasma"),
+             "cividis": pg.colormap.get("cividis"),
+             "fire": pg.colormap.get("CET-L3"),
+             }
 
 
 class MainWindow(QMainWindow):
@@ -43,7 +47,7 @@ class MainWindow(QMainWindow):
 
         # Test if the theme is set correctly
         cpu_count = os.cpu_count()
-        threads = (cpu_count//4) - 1
+        threads = (cpu_count // 4) - 1
         cluster = LocalCluster(n_workers=threads, threads_per_worker=4)
         self.client = Client(cluster)  # Start a local Dask client (this should be settable eventually)
         print(f"Starting Dashboard at: {self.client.dashboard_link}")
@@ -395,8 +399,8 @@ class MainWindow(QMainWindow):
                     pass
 
         if (window is not None and
-            hasattr(window, "signal_tree") and
-            window.signal_tree != self.current_selected_signal_tree):
+                hasattr(window, "signal_tree") and
+                window.signal_tree != self.current_selected_signal_tree):
             self.current_selected_signal_tree = window.signal_tree
             self.update_metadata_widget(window)
 
@@ -417,7 +421,7 @@ class MainWindow(QMainWindow):
 
         # Creating the display group box
         # ------------------------------
-        display_group = QtWidgets.QGroupBox("Plot Display Controls" )
+        display_group = QtWidgets.QGroupBox("Plot Display Controls")
         display_group.setMaximumHeight(250)
         display_layout = QtWidgets.QVBoxLayout(display_group)
 
@@ -433,7 +437,7 @@ class MainWindow(QMainWindow):
 
         # Add a color map selector inside a group box
         self.cmap_selector = QtWidgets.QComboBox()
-        self.cmap_selector.addItems(color_maps)
+        self.cmap_selector.addItems(list(COLORMAPS.keys()))
         self.cmap_selector.setCurrentText("grays")
         self.cmap_selector.currentTextChanged.connect(self.on_cmap_changed)
         cmap_layout = QtWidgets.QHBoxLayout()
@@ -482,8 +486,8 @@ class MainWindow(QMainWindow):
 
     def on_contrast_auto_click(self):
         """
-        Set image contrast to \[1st, 99th\] percentile for 2D; y-range percentiles for 1D.
-        Persist on PlotState so it remains constant when data changes.
+        Set image contrast to [1st, 99th] percentile for 2D; y-range percentiles for 1D.
+        Persist on PlotState, so it remains constant when data changes.
         """
         w = self._active_plot_window()
         if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
@@ -492,7 +496,6 @@ class MainWindow(QMainWindow):
         if getattr(w.plot_state, "dimensions", 0) == 2:
             mn, mx = self.histogram.levels2percentile(0.01, 99.0)
             self.histogram.setLevels(mn, mx)
-
 
     def on_contrast_reset_click(self):
         """
@@ -512,17 +515,13 @@ class MainWindow(QMainWindow):
         if sub is None:
             return
         w = sub.widget()
+        cm = COLORMAPS[cmap_name]
         if hasattr(w, "set_colormap"):
-            w.set_colormap(cmap_name)
-
-        try:
-            cm = pg.colormap.get(cmap_name)
-            if hasattr(self.histogram, "setColorMap"):
-                self.histogram.setColorMap(cm)
-            elif hasattr(self.histogram, "gradient"):
-                self.histogram.gradient.setColorMap(cm)
-        except Exception:
-            pass
+            w.set_colormap(cm)
+        if hasattr(self.histogram, "setColorMap"):
+            self.histogram.setColorMap(cm)
+        elif hasattr(self.histogram, "gradient"):
+            self.histogram.gradient.setColorMap(cm)
 
     def on_histogram_levels_finished(self, signal: HistogramLUTItem):
         """
