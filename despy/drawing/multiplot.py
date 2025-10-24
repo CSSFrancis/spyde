@@ -20,6 +20,13 @@ from despy.drawing.plot_states import PlotState, NavigationManagerState
 from despy.drawing.toolbars.plot_control_toolbar import get_toolbar_actions_for_plot
 from despy.drawing.toolbars.rounded_toolbar import RoundedToolBar
 from despy.drawing.update_functions import update_from_navigation_selection
+COLORMAPS = {"gray": pg.colormap.get("CET-L1"),
+             "viridis": pg.colormap.get("viridis"),
+             "plasma": pg.colormap.get("plasma"),
+             "cividis": pg.colormap.get("cividis"),
+             "fire": pg.colormap.get("CET-L3"),
+             }
+
 
 
 class Plot(QtWidgets.QMdiSubWindow):
@@ -131,6 +138,13 @@ class Plot(QtWidgets.QMdiSubWindow):
         for tb in (self.toolbar_right, self.toolbar_left, self.toolbar_top, self.toolbar_bottom):
             tb.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
             tb.show()
+
+    def set_colormap(self,
+                     colormap: str):
+        """Set the colormap for the image item."""
+        cmap = COLORMAPS.get(colormap, COLORMAPS["gray"])
+        self.image_item.setColorMap(cmap)
+        self.plot_state.colormap = colormap
 
     def enable_scale_bar(self, enabled: bool = True):
         """Enable or disable an auto-updating horizontal scale bar."""

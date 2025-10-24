@@ -361,48 +361,50 @@ class MainWindow(QMainWindow):
             self.cursor_readout.setText(txt)
 
     def on_subwindow_activated(self, window: "Plot"):
+        if window is None:
+            return
+
+        # Show controls for the active window
         if hasattr(window, "show_selector_control_widget"):
             window.show_selector_control_widget()
-
         if hasattr(window, "show_toolbars"):
             window.show_toolbars()
 
-        if hasattr(window, "plot_state") and window.plot_state is not None:
+        ps = getattr(window, "plot_state", None)
+        if ps is not None:
             self.update_axes_widget(window)
+            if hasattr(ps, "toolbar") and ps.toolbar is not None:
+                ps.toolbar.setVisible(True)
 
-        if hasattr(window, "plot_state") and window.plot_state is not None and hasattr(window.plot_state, "toolbar"):
-            window.plot_state.toolbar.setVisible(True)
-
+        # Hide controls for other windows
         for plot in self.plot_subwindows:
-            if window != plot:
-                if hasattr(plot, "hide_toolbars"):
-                    plot.hide_toolbars()
-                if hasattr(plot, "hide_selector_control_widget"):
-                    plot.hide_selector_control_widget()
+            if plot is window:
+                continue
+            if hasattr(plot, "hide_toolbars"):
+                plot.hide_toolbars()
+            if hasattr(plot, "hide_selector_control_widget"):
+                plot.hide_selector_control_widget()
 
-        # Only rebind the histogram if the ImageItem actually changed
-        if window is not None and getattr(window, "image_item", None) is not None:
-            print("Active window has image item:", window.image_item)
-            print("Current histogram image item:", self._histogram_image_item)
-            if self._histogram_image_item != window.image_item:
-                print("Setting histogram to image", window.image_item)
-                try:
-                    print("Setting histogram image item")
-                    self.histogram.setImageItem(window.image_item)
-                    print("Histogram set")
-                    self._histogram_image_item = window.image_item
-                    print("Setting histogram levels")
-                    self.histogram.setLevels(window.plot_state.min_level,
-                                             window.plot_state.max_level)
+        # Rebind histogram only if the ImageItem changed
+        img_item = getattr(window, "image_item", None)
+        if self.histogram is not None and img_item is not None and img_item is not self._histogram_image_item:
+            try:
+                self.histogram.setImageItem(img_item)
+                self._histogram_image_item = img_item
+                if ps is not None:
+                    self.histogram.setLevels(ps.min_level, ps.max_level)
+            except Exception:
+                pass
 
-                except Exception:
-                    pass
-
-        if (window is not None and
-                hasattr(window, "signal_tree") and
-                window.signal_tree != self.current_selected_signal_tree):
-            self.current_selected_signal_tree = window.signal_tree
+        # Update metadata if signal tree changed
+        st = getattr(window, "signal_tree", None)
+        if st is not None and st is not self.current_selected_signal_tree:
+            self.current_selected_signal_tree = st
             self.update_metadata_widget(window)
+
+        # Sync colormap selector
+        if ps is not None and hasattr(self, "cmap_selector") and self.cmap_selector is not None:
+            self.cmap_selector.setCurrentText(ps.colormap)
 
     def add_plot_control_widget(self):
         """
@@ -514,14 +516,9 @@ class MainWindow(QMainWindow):
         sub = self.mdi_area.activeSubWindow()
         if sub is None:
             return
-        w = sub.widget()
-        cm = COLORMAPS[cmap_name]
-        if hasattr(w, "set_colormap"):
-            w.set_colormap(cm)
-        if hasattr(self.histogram, "setColorMap"):
-            self.histogram.setColorMap(cm)
-        elif hasattr(self.histogram, "gradient"):
-            self.histogram.gradient.setColorMap(cm)
+        if hasattr(sub, "set_colormap"):
+            print("Setting colormap on plot:", cmap_name)
+            sub.set_colormap(cmap_name)
 
     def on_histogram_levels_finished(self, signal: HistogramLUTItem):
         """

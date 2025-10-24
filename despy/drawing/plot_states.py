@@ -34,6 +34,7 @@ class PlotState:
         self.max_percentile = 0
         self.min_level = 0
         self.max_level = 1
+        self.colormap = "gray"  # default colormap
 
         self.dynamic = dynamic  # if the image/plot will update based on some selector.
 
