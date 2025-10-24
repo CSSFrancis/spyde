@@ -99,7 +99,8 @@ class MainWindow(QMainWindow):
     def navigation_selectors(self):
         selectors = []
         for s in self.signal_trees:
-            selectors.extend(s.navigator_plot_manager.navigation_selectors)
+            if s.navigator_plot_manager is not None:
+                selectors.extend(s.navigator_plot_manager.navigation_selectors)
         return selectors
 
     def update_plots_loop(self):
@@ -366,12 +367,15 @@ class MainWindow(QMainWindow):
 
         # Show controls for the active window
         if hasattr(window, "show_selector_control_widget"):
+            print("Showing selector control widget for window:", window)
             window.show_selector_control_widget()
         if hasattr(window, "show_toolbars"):
+            print("Showing toolbars for window:", window)
             window.show_toolbars()
 
         ps = getattr(window, "plot_state", None)
         if ps is not None:
+            print("Updating axes widget for window:", window)
             self.update_axes_widget(window)
             if hasattr(ps, "toolbar") and ps.toolbar is not None:
                 ps.toolbar.setVisible(True)
@@ -389,12 +393,14 @@ class MainWindow(QMainWindow):
         img_item = getattr(window, "image_item", None)
         if self.histogram is not None and img_item is not None and img_item is not self._histogram_image_item:
             try:
+                print("Binding histogram to new image item:", img_item)
                 self.histogram.setImageItem(img_item)
                 self._histogram_image_item = img_item
                 if ps is not None:
                     self.histogram.setLevels(ps.min_level, ps.max_level)
             except Exception:
                 pass
+        print("updating histogram levels from plot state:", ps)
 
         # Update metadata if signal tree changed
         st = getattr(window, "signal_tree", None)
@@ -405,6 +411,7 @@ class MainWindow(QMainWindow):
         # Sync colormap selector
         if ps is not None and hasattr(self, "cmap_selector") and self.cmap_selector is not None:
             self.cmap_selector.setCurrentText(ps.colormap)
+        print("Sub-window activated:", window)
 
     def add_plot_control_widget(self):
         """

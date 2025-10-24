@@ -522,6 +522,8 @@ class Plot(QtWidgets.QMdiSubWindow):
                 self.image_item.setLevels((mn, mx))
                 self.plot_state.max_level = mx
                 self.plot_state.min_level = mn
+                self.plot_state.max_percentile = 100.0
+                self.plot_state.min_percentile = 0.0
                 self.needs_auto_level = False
 
     def closeEvent(self, event):

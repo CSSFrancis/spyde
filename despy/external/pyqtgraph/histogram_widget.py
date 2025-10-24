@@ -407,12 +407,12 @@ class HistogramLUTItem(GraphicsWidget):
                 self.region.setRegion([mn, mx])
                 profiler('set region')
             elif min_percentile is not None and max_percentile is not None:
-                mn, mx = self.get_percentile_levels(min_percentile, max_percentile)
+                mn, mx = self.percentile2levels(min_percentile, max_percentile)
                 self.region.setRegion([mn, mx])
                 profiler('set region by percentile')
             else:
                 mn, mx = self.imageItem().getLevels()
-                self.region.setRegion([mn, mx])
+                self.region.setRegion([float(mn), float(mx)])
         else:
             # plot one histogram for each channel
             self.plots[0].setVisible(False)
@@ -434,7 +434,7 @@ class HistogramLUTItem(GraphicsWidget):
             # make sure we are displaying the correct number of channels
             self._showRegions()
 
-    def levels2percentile(self, min_percentile, max_percentile):
+    def percentile2levels(self, min_percentile, max_percentile):
         """Get levels based on percentiles of the image histogram.
 
         Parameters

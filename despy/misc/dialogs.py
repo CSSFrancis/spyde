@@ -116,6 +116,7 @@ class CreateDataDialog(QDialog):
     Dialog to generate synthetic datasets for quick testing.
 
     Tabs:
+    - Image: (x, y) -> 2D image data.
     - insitu TEM: (t, x, y) -> ensures at least 2D spatial data.
     - 4D STEM: (x, y, kx, ky) -> random or multiphase synthetic patterns via `pyxem`.
     - 5D STEM: (t, x, y, kx, ky) -> flexible dimensionality; drops dims with size <= 1.
@@ -156,8 +157,14 @@ class CreateDataDialog(QDialog):
         # Tabs
         self.tabs: QtWidgets.QTabWidget = QtWidgets.QTabWidget()
         layout.addWidget(self.tabs)
+        # Tab 1: Image (x, y)
+        image_tab = QtWidgets.QWidget()
+        image_layout = QtWidgets.QVBoxLayout(image_tab)
+        self.img_x_input = add_spin_row(image_layout, "X Size:", 1, 10000, 256)
+        self.img_y_input = add_spin_row(image_layout, "Y Size:", 1, 10000, 256)
+        self.tabs.addTab(image_tab, "Image")
 
-        # Tab 1: insitu TEM (t, x, y)
+        # Tab 2: insitu TEM (t, x, y)
         insitu_tab = QtWidgets.QWidget()
         insitu_layout = QtWidgets.QVBoxLayout(insitu_tab)
         self.it_t_input = add_spin_row(insitu_layout, "Time Size:", 1, 10000, 10)
@@ -165,7 +172,7 @@ class CreateDataDialog(QDialog):
         self.it_y_input = add_spin_row(insitu_layout, "Y Size:", 1, 10000, 256)
         self.tabs.addTab(insitu_tab, "insitu TEM")
 
-        # Tab 2: 4D STEM (x, y, kx, ky) + mode radios
+        # Tab 3: 4D STEM (x, y, kx, ky) + mode radios
         stem_tab = QtWidgets.QWidget()
         stem_layout = QtWidgets.QVBoxLayout(stem_tab)
         radios_layout = QtWidgets.QHBoxLayout()
@@ -181,7 +188,7 @@ class CreateDataDialog(QDialog):
         self.fs_ky_input = add_spin_row(stem_layout, "Detector KY Size:", 1, 10000, 64)
         self.tabs.addTab(stem_tab, "4D STEM")
 
-        # Tab 3: Random (t, x, y, kx, ky)
+        # Tab 4: Insitu 4D STEM (t, x, y, kx, ky)
         random_tab = QtWidgets.QWidget()
         random_layout = QtWidgets.QVBoxLayout(random_tab)
         self.r_t_input = add_spin_row(random_layout, "Time Size:", 0, 10000, 0)
@@ -238,6 +245,11 @@ class CreateDataDialog(QDialog):
         """
         current_tab = self.tabs.tabText(self.tabs.currentIndex())
         dtype = np.dtype(self.dtype_combo.currentText())
+
+        if current_tab == "Image":
+            size = (self.img_x_input.value(), self.img_y_input.value())
+            data = self._rand_array(size, chunks=self._auto_chunks(2), dtype=dtype)
+            return self._wrap_lazy_signal2d(data)
 
         if current_tab == "insitu TEM":
             # Keep dims with size > 1 and ensure at least 2D spatial data.

@@ -94,8 +94,24 @@ class BaseSignalTree:
         self.signal_plots = []  # type: Union[List[Plot], None]
 
         # setting up plots
-        self.navigator_plot_manager = NavigationPlotManager(main_window=main_window,
-                                                            signal_tree=self)  # type: NavigationPlotManager
+        if self.root.axes_manager.navigation_dimension > 0:  # pass to NavigationPlotManager
+            self.navigator_plot_manager = NavigationPlotManager(main_window=main_window,
+                                                                signal_tree=self)  # type: NavigationPlotManager
+        else:
+            self.navigator_plot_manager = None
+
+            plot = Plot(signal_tree=self,
+                        is_navigator=False,
+                        )
+            self.signal_plots.append(plot)
+
+            plot_states = self.create_plot_states()
+            plot.plot_states = plot_states
+            plot.set_plot_state(self.root)
+            self.signal_plots.append(plot)
+            plot.update()
+
+
         print("Created Signal Tree with root signal: ", self.root)
 
     def _preprocess_navigator(self,
@@ -313,7 +329,11 @@ class BaseSignalTree:
         from despy.drawing.plot_states import PlotState
         plot_states = {}
         for signal in self.signals():
-            plot_state = PlotState(signal=signal)
+            if signal.axes_manager.navigation_dimension == 0:
+                plot_state = PlotState(signal=signal, dynamic=False)
+            else:
+                plot_state = PlotState(signal=signal, dynamic=True)
+
             plot_states[signal] = plot_state
         return plot_states
 
