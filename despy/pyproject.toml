@@ -21,16 +21,19 @@ dependencies = [
     "pillow",
     "matplotlib",
     "scipy",
+    "bokeh",
     "scikit-image",
     "sympy",
     "distributed",
     "dask",
-    "hyperspy",
+    "hyperspy@git+https://github.com/cssfrancis/hyperspy.git@slice-integrate2",
     "pyxem",
-    "pyqtgraph",
-    "pyside6",
+    "fastplotlib",
+    "pyqt6",
+    "PyQt6-WebEngine",
+    "pyqtdarktheme"
 ]
-description = "DE Visualization and Basic Camera Control"
+description = "DE Visualization tool based on HyperSpy"
 version = "0.0.1"
 keywords = [
     "EELS",
@@ -76,4 +79,4 @@ Support = "https://github.com/directelectron/spyde/discussions"
 Source = "https://github.com/directelectron/spyde"
 
 [project.scripts]
-spyde = "spyde.main_window:main"
+spyde = "despy.main_window:main"

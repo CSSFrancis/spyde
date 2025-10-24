@@ -55,7 +55,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("DE-Spy")
         # get screen size and set window size to 3/4 of the screen size
         # get screen size and set subwindow size to 1/4 of the screen size
-
+        self.dock_widget = None
         screen = QApplication.primaryScreen()
         self.screen_size = screen.size()
         self.resize(self.screen_size.width() * 3 // 4, self.screen_size.height() * 3 // 4)
@@ -149,6 +149,18 @@ class MainWindow(QMainWindow):
         view_dashboard_action = QAction("Open Dask Dashboard", self)
         view_dashboard_action.triggered.connect(self.open_dask_dashboard)
         view_menu.addAction(view_dashboard_action)
+
+        view_plot_control_action = QAction("Toggle Plot Control Dock", self)
+        view_plot_control_action.triggered.connect(self.toggle_plot_control_dock)
+        view_menu.addAction(view_plot_control_action)
+
+    def toggle_plot_control_dock(self):
+        """
+        Toggle the visibility of the plot control dock widget.
+        """
+        if self.dock_widget is not None:
+            is_visible = self.dock_widget.isVisible()
+            self.dock_widget.setVisible(not is_visible)
 
     def open_dask_dashboard(self):
         """
@@ -422,8 +434,9 @@ class MainWindow(QMainWindow):
         It updates with the current active plot in the MDI area.
 
         """
-        dock_widget = QtWidgets.QDockWidget("Plot Control", self)
-        dock_widget.setBaseSize(self.width() // 6, self.height() // 6)
+        self.dock_widget = QtWidgets.QDockWidget("Plot Control", self)
+        self.dock_widget.setFeatures(self.dock_widget.features() & ~QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        self.dock_widget.setBaseSize(self.width() // 6, self.height() // 6)
 
         # Create a main widget and layout
         main_widget = QtWidgets.QWidget()
@@ -485,9 +498,9 @@ class MainWindow(QMainWindow):
         self.selectors_layout = QtWidgets.QVBoxLayout(selectors_group)
 
         layout.addWidget(selectors_group)
-        dock_widget.setWidget(main_widget)
+        self.dock_widget.setWidget(main_widget)
 
-        self.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock_widget)
+        self.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
 
     def _active_plot_window(self) -> Union[Plot, None]:
         # The active subwindow is the Plot (subclass of QMdiSubWindow)
