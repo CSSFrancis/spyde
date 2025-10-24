@@ -96,6 +96,7 @@ class BaseSignalTree:
         # setting up plots
         self.navigator_plot_manager = NavigationPlotManager(main_window=main_window,
                                                             signal_tree=self)  # type: NavigationPlotManager
+        print("Created Signal Tree with root signal: ", self.root)
 
     def _preprocess_navigator(self,
                               signal: BaseSignal) -> BaseSignal:

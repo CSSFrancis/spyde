@@ -65,6 +65,7 @@ class Plot(QtWidgets.QMdiSubWindow):
 
         self._mouse_proxy = None
         QtCore.QTimer.singleShot(0, self._attach_mouse_move)
+        self.needs_auto_level = True
 
         # State
         # -----
@@ -106,6 +107,7 @@ class Plot(QtWidgets.QMdiSubWindow):
         # Register with the main window
         print("Registering plot with main window")
         self.main_window.add_plot(self)
+
 
         # Creating all the floating toolbars...
 
@@ -189,6 +191,7 @@ class Plot(QtWidgets.QMdiSubWindow):
         """Set the plot state to the state for some signal."""
         # first save the current plot state selectors and child plots
         old_plot_state = self.plot_state
+        self.needs_auto_level = True
         if old_plot_state is not None:
             self.plot_states[self.plot_state.current_signal] = old_plot_state
 
@@ -368,6 +371,7 @@ class Plot(QtWidgets.QMdiSubWindow):
             self.update()
         else:
             self.update()
+        print("Plot data updated.")
 
     def add_fft_selector(self):
         """Add an FFT selector to the plot."""
@@ -483,6 +487,8 @@ class Plot(QtWidgets.QMdiSubWindow):
 
     def update(self):
         """Push the current data to the plot items."""
+        print("Plot update called with data:", self.current_data,
+              " with type:", type(self.current_data))
         if self.plot_state.dimensions == 1:
             current_data = np.asarray(self.current_data) if isinstance(self.current_data,
                                                                        da.Array) else self.current_data
@@ -492,7 +498,17 @@ class Plot(QtWidgets.QMdiSubWindow):
             self.line_item.setData(axis, current_data)
         elif self.plot_state.dimensions == 2:
             img = np.asarray(self.current_data) if isinstance(self.current_data, da.Array) else self.current_data
-            self.image_item.setImage(img, autoLevels=True)
+
+            self.image_item.setImage(img, levels=(self.plot_state.min_level,
+                                                  self.plot_state.max_level)
+                                     )
+
+            if self.needs_auto_level and img is not None:
+                mn, mx = self.image_item.quickMinMax()
+                self.image_item.setLevels((mn, mx))
+                self.plot_state.max_level = mx
+                self.plot_state.min_level = mn
+                self.needs_auto_level = False
 
     def closeEvent(self, event):
         """Cleanup toolbar, hide selector widgets, and close attached plots when needed."""
@@ -513,6 +529,7 @@ class Plot(QtWidgets.QMdiSubWindow):
         if self.parent_selector is not None:
             print("Closing parent selector")
             self.parent_selector.close()
+            self.parent_selector.parent.nav_plot_manager.navigation_selectors.remove(self.parent_selector)
         # need to delete the current selectors and child plots
         for child_plot in self.plot_state.plot_selectors_children + self.plot_state.signal_tree_selectors_children:
             try:
@@ -674,5 +691,13 @@ class NavigationPlotManager:
             # Auto range...
             selector.update_data()
             child.update_data(child.current_data, force=True)
+            print("Auto-ranging child plot")
             child.plot_item.getViewBox().autoRange()
+            print()
             self.signal_tree.signal_plots.append(child)
+            child.needs_auto_level = True
+            print("Added navigation selector and signal plot:", selector, child)
+
+
+
+

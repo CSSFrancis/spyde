@@ -29,9 +29,12 @@ class PlotState:
                  ):
         self.current_signal = signal
 
-        # Visualization parameters
-        self.brightness_max = 1
-        self.brightness_min = 0
+        # Visualization parameters. The min/max percentile are used to determine the contrast/brightness
+        self.min_percentile = 1
+        self.max_percentile = 0
+        self.min_level = 0
+        self.max_level = 1
+
         self.dynamic = dynamic  # if the image/plot will update based on some selector.
 
         # Selectors which are tied to this particular "State" of the signal...

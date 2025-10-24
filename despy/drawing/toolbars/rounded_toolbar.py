@@ -6,7 +6,7 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from despy.drawing.plot import Plot
+    from despy.drawing.multiplot import Plot
 
 
 class RoundedToolBar(QtWidgets.QToolBar):
@@ -94,7 +94,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
         icon = QIcon(icon_path)
 
         new_action = self.addAction(icon, name)
-        partial_function = partial(function, self.plot)
+        partial_function = partial(function, self)
         new_action.triggered.connect(partial_function)
 
     def num_actions(self) -> int:

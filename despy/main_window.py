@@ -20,8 +20,7 @@ import pyxem.data
 from despy.misc.dialogs import DatasetSizeDialog, CreateDataDialog
 from despy.drawing.multiplot import Plot
 from despy.signal_tree import BaseSignalTree
-
-
+from despy.external.pyqtgraph.histogram_widget import HistogramLUTWidget, HistogramLUTItem
 
 color_maps = ["viridis", "plasma", "magma", "cividis", "grays"]
 
@@ -56,6 +55,7 @@ class MainWindow(QMainWindow):
         self.screen_size = screen.size()
         self.resize(self.screen_size.width() * 3 // 4, self.screen_size.height() * 3 // 4)
         self.histogram = None
+        self._histogram_image_item = None  # track bound ImageItem to avoid LUT resets
 
         # center the main window on the screen
         self.move(
@@ -105,7 +105,7 @@ class MainWindow(QMainWindow):
         """
         for p in self.plot_subwindows:
             if isinstance(p.current_data, Future) and p.current_data.done():
-                print("Updating Plot")
+                print("Updating Plot in loop...")
                 p.current_data = p.current_data.result()
                 p.update()
 
@@ -224,6 +224,7 @@ class MainWindow(QMainWindow):
                                                 main_window=self,
                                                 distributed_client=self.client)
                                  )
+        print("Signal Tree Created")
 
     def load_example_data(self, name):
         """
@@ -231,6 +232,7 @@ class MainWindow(QMainWindow):
         """
         signal = getattr(pyxem.data, name)(allow_download=True, lazy=True)
         self.add_signal(signal)
+        print("Example data loaded:", name)
 
     def add_plot(self, plot: Plot):
         """Add a plot to the MDI area.
@@ -366,17 +368,32 @@ class MainWindow(QMainWindow):
 
         if hasattr(window, "plot_state") and window.plot_state is not None and hasattr(window.plot_state, "toolbar"):
             window.plot_state.toolbar.setVisible(True)
+
         for plot in self.plot_subwindows:
             if window != plot:
-                # hide the toolbars
                 if hasattr(plot, "hide_toolbars"):
                     plot.hide_toolbars()
                 if hasattr(plot, "hide_selector_control_widget"):
                     plot.hide_selector_control_widget()
-        # if an image then set the histogram to the image
+
+        # Only rebind the histogram if the ImageItem actually changed
         if window is not None and getattr(window, "image_item", None) is not None:
-            print("Setting histogram to image", window.image_item)
-            self.histogram.setImageItem(window.image_item)
+            print("Active window has image item:", window.image_item)
+            print("Current histogram image item:", self._histogram_image_item)
+            if self._histogram_image_item != window.image_item:
+                print("Setting histogram to image", window.image_item)
+                try:
+                    print("Setting histogram image item")
+                    self.histogram.setImageItem(window.image_item)
+                    print("Histogram set")
+                    self._histogram_image_item = window.image_item
+                    print("Setting histogram levels")
+                    self.histogram.setLevels(window.plot_state.min_level,
+                                             window.plot_state.max_level)
+
+                except Exception:
+                    pass
+
         if (window is not None and
             hasattr(window, "signal_tree") and
             window.signal_tree != self.current_selected_signal_tree):
@@ -405,10 +422,13 @@ class MainWindow(QMainWindow):
         display_layout = QtWidgets.QVBoxLayout(display_group)
 
         # Create a Histogram plot LUT widget
-        self.histogram = pg.HistogramLUTWidget(orientation="horizontal",)
+        self.histogram = HistogramLUTWidget(orientation="horizontal",
+                                            autoLevel=False,
+                                            constantLevel=True)  # type: HistogramLUTWidget
         self.histogram.setMinimumWidth(200)
         self.histogram.setMinimumHeight(100)
         self.histogram.setMaximumHeight(150)
+        self.histogram.item.sigLevelChangeFinished.connect(self.on_histogram_levels_finished)
         display_layout.addWidget(self.histogram)
 
         # Add a color map selector inside a group box
@@ -455,90 +475,44 @@ class MainWindow(QMainWindow):
 
         self.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock_widget)
 
-    def _active_plot_window(self):
+    def _active_plot_window(self) -> Union[Plot, None]:
+        # The active subwindow is the Plot (subclass of QMdiSubWindow)
         sub = self.mdi_area.activeSubWindow()
-        return sub
+        return sub if sub is not None else None
 
     def on_contrast_auto_click(self):
-        """Set contrast to [min, 95th percentile] for images; y-range for 1D."""
+        """
+        Set image contrast to \[0th, 95th\] percentile for 2D; y-range percentiles for 1D.
+        Persist on PlotState so it remains constant when data changes.
+        """
         w = self._active_plot_window()
-        if w is None or not hasattr(w, "plot_state"):
+        if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
             return
 
-        # 2D image
-        if getattr(w.plot_state, "dimensions", 0) == 2 and hasattr(w, "image_item"):
-            img = getattr(w.image_item, "image", None)
-            if img is None and hasattr(w, "current_data"):
-                try:
-                    img = np.asarray(w.current_data)
-                except Exception:
-                    img = None
-            if img is None:
-                return
-            vmin = float(np.nanmin(img))
-            vmax = float(np.nanpercentile(img, 95.0))
-            if np.isfinite(vmin) and np.isfinite(vmax) and vmin < vmax:
-                try:
-                    w.image_item.setLevels((vmin, vmax))
-                except Exception:
-                    pass
-
-        # 1D line
-        elif getattr(w.plot_state, "dimensions", 0) == 1 and hasattr(w, "plot_item"):
-            # Prefer the data currently plotted
-            ydata = None
-            if hasattr(w, "line_item") and hasattr(w.line_item, "yData") and w.line_item.yData is not None:
-                ydata = np.asarray(w.line_item.yData)
-            elif hasattr(w, "current_data") and w.current_data is not None:
-                try:
-                    ydata = np.asarray(w.current_data)
-                except Exception:
-                    ydata = None
-            if ydata is None or ydata.size == 0:
-                return
-            ymin = float(np.nanmin(ydata))
-            y95 = float(np.nanpercentile(ydata, 95.0))
-            if not (np.isfinite(ymin) and np.isfinite(y95)) or ymin >= y95:
-                return
-            try:
-                vb = w.plot_item.getViewBox()
-                vb.enableAutoRange(y=False)
-                vb.setYRange(ymin, y95, padding=0.0)
-            except Exception:
-                pass
+        try:
+            if getattr(w.plot_state, "dimensions", 0) == 2 and hasattr(w, "set_intensity_percentiles"):
+                w.set_intensity_percentiles(0.0, 95.0)
+            elif getattr(w.plot_state, "dimensions", 0) == 1 and hasattr(w, "set_y_range_percentiles"):
+                w.set_y_range_percentiles(0.0, 95.0)
+        except Exception:
+            pass
 
     def on_contrast_reset_click(self):
-        """Reset contrast to full data range for images; re-enable y auto-range for 1D."""
+        """
+        Reset contrast to full range for 2D; re-enable y auto-range for 1D.
+        Persist on PlotState.
+        """
         w = self._active_plot_window()
-        if w is None or not hasattr(w, "plot_state"):
+        if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
             return
 
-        # 2D image
-        if getattr(w.plot_state, "dimensions", 0) == 2 and hasattr(w, "image_item"):
-            img = getattr(w.image_item, "image", None)
-            if img is None and hasattr(w, "current_data"):
-                try:
-                    img = np.asarray(w.current_data)
-                except Exception:
-                    img = None
-            if img is None:
-                return
-            vmin = float(np.nanmin(img))
-            vmax = float(np.nanmax(img))
-            if np.isfinite(vmin) and np.isfinite(vmax) and vmin < vmax:
-                try:
-                    w.image_item.setLevels((vmin, vmax))
-                except Exception:
-                    pass
-
-        # 1D line
-        elif getattr(w.plot_state, "dimensions", 0) == 1 and hasattr(w, "plot_item"):
-            try:
-                vb = w.plot_item.getViewBox()
-                vb.enableAutoRange(y=True)
-                vb.autoRange()
-            except Exception:
-                pass
+        try:
+            if getattr(w.plot_state, "dimensions", 0) == 2 and hasattr(w, "reset_intensity"):
+                w.reset_intensity()
+            elif getattr(w.plot_state, "dimensions", 0) == 1 and hasattr(w, "reset_y_range"):
+                w.reset_y_range()
+        except Exception:
+            pass
 
     def on_cmap_changed(self, cmap_name: str):
         # Apply colormap to the active plot and sync the histogram widget
@@ -557,6 +531,26 @@ class MainWindow(QMainWindow):
                 self.histogram.gradient.setColorMap(cm)
         except Exception:
             pass
+
+    def on_histogram_levels_finished(self, signal: HistogramLUTItem):
+        """
+        On histogram level change, update the active plot's contrast via PlotState
+        and apply immediately. Guard against missing histogram data.
+        """
+        # Guard: histogram not ready yet
+        if signal is None or getattr(signal, "bins", None) is None or getattr(signal, "counts", None) is None:
+            return
+        percentiles = signal.get_percentile_levels()
+        levels = signal.getLevels()
+        w = self._active_plot_window()
+        if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
+            return
+        else:
+            w.plot_state.max_level = levels[1]
+            w.plot_state.min_level = levels[0]
+            w.plot_state.max_percentile = percentiles[1]
+            w.plot_state.min_percentile = percentiles[0]
+        print("Setting levels:", levels, "percentiles:", percentiles, "on plot:", w)
 
     def close(self):
         self.client.close()
