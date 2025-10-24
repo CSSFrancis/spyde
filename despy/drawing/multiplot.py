@@ -257,6 +257,7 @@ class Plot(QtWidgets.QMdiSubWindow):
             self.enable_scale_bar(True)
         else:
             self.enable_scale_bar(False)
+        self.main_window.on_subwindow_activated(self)
 
     def hide_toolbars(self):
         """Hide all floating toolbars."""
