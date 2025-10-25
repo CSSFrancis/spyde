@@ -20,6 +20,8 @@ from despy.misc.dialogs import DatasetSizeDialog, CreateDataDialog
 from despy.drawing.multiplot import Plot
 from despy.signal_tree import BaseSignalTree
 from despy.external.pyqtgraph.histogram_widget import HistogramLUTWidget, HistogramLUTItem
+from despy.workers.plot_update_worker import PlotUpdateWorker
+
 
 COLORMAPS = {"gray": pg.colormap.get("CET-L1"),
              "viridis": pg.colormap.get("viridis"),
@@ -81,10 +83,18 @@ class MainWindow(QMainWindow):
         self.s_list_widget = None
         self.file_dialog = None
 
-        self.timer = QTimer()
-        self.timer.setInterval(10)  # Every 10ms we will check to update the plots??
-        self.timer.timeout.connect(self.update_plots_loop)
-        self.timer.start()
+        # Start background worker thread to poll plot Futures
+        self._update_thread = QtCore.QThread(self)
+        self._plot_update_worker = PlotUpdateWorker(lambda: list(self.plot_subwindows), interval_ms=25)
+        self._plot_update_worker.moveToThread(self._update_thread)
+        self._update_thread.started.connect(self._plot_update_worker.start)
+        self._plot_update_worker.plot_ready.connect(self.on_plot_future_ready)
+        self._update_thread.start()
+
+        #self.timer = QTimer()
+        #self.timer.setInterval(10)  # Every 10ms we will check to update the plots??
+        #self.timer.timeout.connect(self.update_plots_loop)
+        #self.timer.start()
 
         self.mdi_area.setStyleSheet("background-color: #2b2b2b;")  # Dark gray background
 
@@ -118,6 +128,25 @@ class MainWindow(QMainWindow):
                 print("Updating Plot in loop...")
                 p.current_data = p.current_data.result()
                 p.update()
+
+    @QtCore.Slot(object, object)
+    def on_plot_future_ready(self, plot: Plot, result: object) -> None:
+        """
+        Receive finished compute results from the worker and apply them on the GUI thread.
+
+        Parameters:
+            plot: Plot to update.
+            result: Either the computed data or an Exception.
+        """
+        if isinstance(result, Exception):
+            print(f"Plot update failed: {result}")
+            return
+        try:
+            print("Updating Plot from worker signal...")
+            plot.current_data = result
+            plot.update()
+        except Exception as e:
+            print(f"Failed to update plot: {e}")
 
     def create_menu(self):
         """
@@ -605,7 +634,18 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
 
     def close(self):
-        self.client.close()
+        try:
+            if hasattr(self, "_plot_update_worker") and self._plot_update_worker is not None:
+                self._plot_update_worker.stop()
+            if hasattr(self, "_update_thread") and self._update_thread is not None:
+                self._update_thread.quit()
+                self._update_thread.wait(1000)
+        except Exception:
+            pass
+        try:
+            self.client.close()
+        except Exception:
+            pass
         super().close()
 
 
