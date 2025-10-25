@@ -41,8 +41,10 @@ def update_from_navigation_selection(selector: "BaseSelector",
         indices = np.mean(indices, axis=0).astype(int)
 
     if current_signal._lazy:
+        # Always return the future...
         current_img = current_signal._get_cache_dask_chunk(indices,
-                                                           get_result=get_result)
+                                                           get_result=get_result,
+                                                           return_future=True)
     else:
         tuple_inds = tuple([indices[ind]
                             for ind in np.arange(len(indices))])
