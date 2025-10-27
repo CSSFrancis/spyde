@@ -16,7 +16,7 @@ import pyqtgraph as pg
 import hyperspy.api as hs
 import pyxem.data
 
-from despy.misc.dialogs import DatasetSizeDialog, CreateDataDialog
+from despy.misc.dialogs import DatasetSizeDialog, CreateDataDialog, MovieExportDialog
 from despy.drawing.multiplot import Plot
 from despy.signal_tree import BaseSignalTree
 from despy.external.pyqtgraph.histogram_widget import HistogramLUTWidget, HistogramLUTItem
@@ -31,6 +31,7 @@ COLORMAPS = {"gray": pg.colormap.get("CET-L1"),
              }
 
 SUPPORTED_EXTS = (".hspy", ".mrc")  # extend as needed
+
 
 class MainWindow(QMainWindow):
     """
@@ -171,6 +172,11 @@ class MainWindow(QMainWindow):
             action = example_data.addAction(n)
             action.triggered.connect(partial(self.load_example_data, n))
 
+        export_file = QAction("Export Current Signal...", self)
+        export_file.triggered.connect(self.export_current_signal)
+        file_menu.addAction(export_file)
+
+
         # Add View Menu
         view_menu = menubar.addMenu("View")
 
@@ -190,6 +196,12 @@ class MainWindow(QMainWindow):
         if self.dock_widget is not None:
             is_visible = self.dock_widget.isVisible()
             self.dock_widget.setVisible(not is_visible)
+
+    def export_current_signal(self):
+        if not isinstance(self._active_plot_window(), Plot):
+            QMessageBox.warning(self, "Error", "No active plot window to export from.")
+            return
+        export_dialog = MovieExportDialog(plot=self._active_plot_window(), parent=self).exec()
 
     def open_dask_dashboard(self):
         """

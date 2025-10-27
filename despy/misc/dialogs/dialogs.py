@@ -267,7 +267,10 @@ class CreateDataDialog(QDialog):
             if len(size) < 2:
                 size = (max(2, self.it_x_input.value()), max(2, self.it_y_input.value()))
             data = self._rand_array(size, chunks=self._auto_chunks(len(size)), dtype=dtype)
-            return self._wrap_lazy_signal2d(data), None
+            s = self._wrap_lazy_signal2d(data)
+            temp_nav = hs.signals.Signal1D(np.arange(s.axes_manager.navigation_shape[0]))
+            temp_nav.metadata.set_item("General.title", "Temperature")
+            return self._wrap_lazy_signal2d(data), [temp_nav]
 
         if current_tab == "4D STEM":
             if self.fs_random_radio.isChecked():

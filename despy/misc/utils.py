@@ -1,6 +1,6 @@
 import dask.array as da
 import numpy as np
-
+from math import log10, floor
 
 def fast_index_virtual(arr, indexes, method="sum", reverse=True):
     """
@@ -68,3 +68,42 @@ def fast_index_virtual(arr, indexes, method="sum", reverse=True):
 
     raise ValueError(f"Unsupported reduction method: {method}")
 
+
+def get_nice_length(signal, is_navigator=False):
+    """
+    Get a nice length for plotting axes.
+
+    Returns
+    -------
+    int
+        A nice length value.
+    """
+    if is_navigator:
+        axes = signal.axes_manager.navigation_axes
+    else:
+        axes = signal.axes_manager.signal_axes
+
+    x_range = axes[0].scale * axes[0].size
+
+    target = x_range / 5
+    if not np.isfinite(target) or target <= 0:
+        target = 1.0
+
+    exp = floor(log10(target))
+    base = 10 ** exp
+    norm = target / base
+
+    if norm < 1.5:
+        nice = 1.0
+    elif norm < 2.5:
+        nice = 2.0
+    elif norm < 3.5:
+        nice = 2.5
+    elif norm < 7.5:
+        nice = 5.0
+    else:
+        nice = 10.0
+
+    nice_length = nice * base
+    units = signal.axes_manager.signal_axes[0].units
+    return nice_length, units
