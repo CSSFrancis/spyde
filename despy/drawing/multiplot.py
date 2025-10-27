@@ -28,7 +28,6 @@ COLORMAPS = {"gray": pg.colormap.get("CET-L1"),
              }
 
 
-
 class Plot(QtWidgets.QMdiSubWindow):
     """
     A QMdi sub-window that displays either a 2D image or a 1D line plot from a BaseSignalTree.
@@ -278,22 +277,22 @@ class Plot(QtWidgets.QMdiSubWindow):
                 tb.show()
 
     def update_toolbars(self):
-        functions, icons, names, toolbar_sides = get_toolbar_actions_for_plot(self)
+        functions, icons, names, toolbar_sides, toggles = get_toolbar_actions_for_plot(self)
         # Clear existing toolbars
         for tb in [self.toolbar_right, self.toolbar_left, self.toolbar_top, self.toolbar_bottom]:
             tb.clear()
 
         # Add actions to the appropriate toolbars
-        for func, icon, name, side in zip(functions, icons, names, toolbar_sides):
+        for func, icon, name, side, toggle in zip(functions, icons, names, toolbar_sides, toggles):
             if side == "right":
-                self.toolbar_right.add_action(name, icon, func)
+                self.toolbar_right.add_action(name, icon, func, toggle )
 
             elif side == "left":
-                self.toolbar_left.add_action(name, icon, func)
+                self.toolbar_left.add_action(name, icon, func, toggle)
             elif side == "top":
-                self.toolbar_top.add_action(name, icon, func)
+                self.toolbar_top.add_action(name, icon, func, toggle)
             elif side == "bottom":
-                self.toolbar_bottom.add_action(name, icon, func)
+                self.toolbar_bottom.add_action(name, icon, func, toggle)
 
         for tb in [self.toolbar_right, self.toolbar_left, self.toolbar_top, self.toolbar_bottom]:
             tb.set_size()
@@ -652,14 +651,18 @@ class NavigationPlotManager:
         """Return a list of navigation signals managed by this NavigationPlotManager."""
         return self.signal_tree.navigator_signals
 
-    def set_navigation_manager_state(self, signal: BaseSignal):
+    def set_navigation_manager_state(self, signal: Union[BaseSignal,str]):
         """Set the navigation state to the state for some signal.
         
         Parameters
         ----------
-        signal : BaseSignal
+        signal : BaseSignal | str
             The signal for which to set the navigation state.
         """
+        print(self.navigation_manager_states)
+        print("Setting navigation manager state for signal:", signal)
+        if isinstance(signal, str):
+            signal = self.navigation_signals[signal]
         self.navigation_manager_state = self.navigation_manager_states.get(signal,
                                                                            NavigationManagerState(signal=signal,
                                                                                                   plot_manager=self)

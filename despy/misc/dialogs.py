@@ -248,7 +248,7 @@ class CreateDataDialog(QDialog):
         s.cache_pad = 2
         return s
 
-    def get_data(self) -> hs.signals.BaseSignal:
+    def get_data(self) -> (hs.signals.BaseSignal, hs.signals.BaseSignal):
         """
         Create and return a synthetic dataset according to the selected tab.
         """
@@ -258,7 +258,7 @@ class CreateDataDialog(QDialog):
         if current_tab == "Image":
             size = (self.img_x_input.value(), self.img_y_input.value())
             data = self._rand_array(size, chunks=self._auto_chunks(2), dtype=dtype)
-            return self._wrap_lazy_signal2d(data)
+            return self._wrap_lazy_signal2d(data), None
 
         if current_tab == "insitu TEM":
             # Keep dims with size > 1 and ensure at least 2D spatial data.
@@ -267,7 +267,7 @@ class CreateDataDialog(QDialog):
             if len(size) < 2:
                 size = (max(2, self.it_x_input.value()), max(2, self.it_y_input.value()))
             data = self._rand_array(size, chunks=self._auto_chunks(len(size)), dtype=dtype)
-            return self._wrap_lazy_signal2d(data)
+            return self._wrap_lazy_signal2d(data), None
 
         if current_tab == "4D STEM":
             if self.fs_random_radio.isChecked():
@@ -278,7 +278,10 @@ class CreateDataDialog(QDialog):
                     self.fs_ky_input.value(),
                 )
                 data = self._rand_array(size, chunks=("auto", "auto", -1, -1), dtype=dtype)
-                return self._wrap_lazy_signal2d(data)
+                s = self._wrap_lazy_signal2d(data)
+                navigator_1 = hs.signals.Signal2D(np.random.random(s.axes_manager.navigation_shape))  # random navigator data
+                navigator_2 = hs.signals.Signal2D(np.random.random(s.axes_manager.navigation_shape))  # random navigator data
+                return s, (navigator_1, navigator_2)
             # Multiphase synthetic pattern from pyxem.
             s = pyxem.data.fe_multi_phase_grains(
                 size=self.fs_x_input.value(),
@@ -287,12 +290,16 @@ class CreateDataDialog(QDialog):
             ).as_lazy(chunks=("auto", "auto", -1, -1))
             s.cache_pad = 2
             # Cast to selected dtype (clip+round for integer)
+
+            navigator_1 = np.random.random(s.axes_manager.navigation_shape)  # random navigator data
+            navigator_2 = np.random.random(s.axes_manager.navigation_shape)  # random navigator data
+
             if np.issubdtype(dtype, np.integer):
                 info = np.iinfo(dtype)
                 s.data = da.clip(s.data, info.min, info.max).round().astype(dtype)
             else:
                 s.data = s.data.astype(dtype)
-            return s
+            return s, (navigator_1, navigator_2)
 
         # Random tab: drop dims with size <= 1
         size = (
@@ -304,4 +311,4 @@ class CreateDataDialog(QDialog):
         )
         size = tuple(s for s in size if s > 1)
         data = self._rand_array(size, chunks=self._auto_chunks(len(size)), dtype=dtype)
-        return self._wrap_lazy_signal2d(data)
+        return self._wrap_lazy_signal2d(data), None

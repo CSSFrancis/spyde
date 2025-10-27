@@ -35,3 +35,12 @@ functions:
     function: despy.actions.base.add_fft_selector
     plot_dim: [ 2 ]
     toolbar_side: right
+  Select Navigator:
+    description: Selects the navigator for the data view.
+    icon: drawing/toolbars/icons/navigator.svg
+    parameters: [ ]
+    function: despy.actions.base.toggle_navigation_plots
+    plot_dim: [ 1, 2 ]
+    toolbar_side: right
+    navigation: True
+    toggle: True

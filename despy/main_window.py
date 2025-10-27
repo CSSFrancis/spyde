@@ -206,10 +206,10 @@ class MainWindow(QMainWindow):
         print("Creating Data")
         if dialog.exec() == QDialog.DialogCode.Accepted:
             print("Dialog accepted")
-            data = dialog.get_data()
+            data, navigators = dialog.get_data()
             print("Data created")
             if data is not None:
-                self.add_signal(data)
+                self.add_signal(data, navigators=navigators)
 
     def _create_signals(self, file_paths):
         for file_path in file_paths:
@@ -255,7 +255,7 @@ class MainWindow(QMainWindow):
             if file_paths:
                 self._create_signals(file_paths)
 
-    def add_signal(self, signal):
+    def add_signal(self, signal, navigators = None):
         """Add a signal to the main window.
 
         This will "plant" a new seed for a signal tree and set up the associated plots.
@@ -266,12 +266,18 @@ class MainWindow(QMainWindow):
             The hyperspy signal to add.
 
         """
-
-        self.signal_trees.append(BaseSignalTree(root_signal=signal,
-                                                main_window=self,
-                                                distributed_client=self.client)
-                                 )
+        signal_tree = BaseSignalTree(root_signal=signal,
+                       main_window=self,
+                       distributed_client=self.client)
+        self.signal_trees.append(signal_tree)
         print("Signal Tree Created")
+        if navigators is not None:
+            for i, nav in enumerate(navigators):
+                title = nav.metadata.get_item("General.title", default="navigation_"+str(i))
+                if title == "":
+                    title = "navigation_"+str(i)
+                print("Adding navigator signal:", title)
+                signal_tree.add_navigator_signal(title, nav)
 
     def load_example_data(self, name):
         """

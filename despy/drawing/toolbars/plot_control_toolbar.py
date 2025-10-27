@@ -6,12 +6,15 @@ if TYPE_CHECKING:
 
 from despy import TOOLBAR_ACTIONS
 
+from functools import partial
+
 
 def get_toolbar_actions_for_plot(plot: "Plot"):
     functions = []
     icons = []
     names = []
     toolbar_sides = []
+    toggles = []
 
     for action in TOOLBAR_ACTIONS["functions"]:
 
@@ -25,19 +28,23 @@ def get_toolbar_actions_for_plot(plot: "Plot"):
                       (plot.plot_state.dimensions in plot_dim) and
                       (navigation_only is None or navigation_only == plot.is_navigator))
 
-        print("Add Action", add_action)
-        print(action)
         if add_action:
             print(f"Adding toolbar action: {action}")
             function = TOOLBAR_ACTIONS["functions"][action]['function']
             module_path, _, attr = function.rpartition('.')
             resolved_func = getattr(importlib.import_module(module_path), attr)
 
+            print(f"Resolved function: {TOOLBAR_ACTIONS["functions"][action]}")
+            print("toggle is ", TOOLBAR_ACTIONS["functions"][action].get('toggle', False))
+            resolved_func = partial(resolved_func,
+                                    action_name=action,
+                                    )
             functions.append(resolved_func)
             icons.append(TOOLBAR_ACTIONS["functions"][action]['icon'])
             names.append(action)
             toolbar_sides.append(TOOLBAR_ACTIONS["functions"][action].get('toolbar_side', 'left'))
+            toggles.append(TOOLBAR_ACTIONS["functions"][action].get('toggle', False))
 
-    return functions, icons, names, toolbar_sides
+    return functions, icons, names, toolbar_sides, toggles
 
 
