@@ -307,7 +307,7 @@ class MovieExportDialog(QDialog):
                 "fps": fps,
                 "format": "FFMPEG",
                 "codec": "libx264",
-                "ffmpeg_params": ["-crf", "18", "-preset", "slow", "-pix_fmt", "yuv420p"],
+                "ffmpeg_params": ["-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p"],
             })
 
         # Render via pyqtgraph: ImageItem + optional axes + scale bar, then export to QImage
@@ -345,7 +345,6 @@ class MovieExportDialog(QDialog):
             )
             sb.setParentItem(vb)
             sb.anchor((1, 1), (1, 1), offset=(-12, -12))
-
         with imageio.get_writer(path, **writer_kw) as writer:
             from pyqtgraph.exporters import ImageExporter
             exporter = ImageExporter(plot_item)
@@ -360,20 +359,29 @@ class MovieExportDialog(QDialog):
             progress.setAutoClose(True)
             progress.setAutoReset(True)
             progress.setValue(0)
+            progress.setCancelButtonText("Cancel")
             progress.show()
 
             for i in range(frame_count):
+                if progress.wasCanceled():
+                    break
+
                 if s_cropped._lazy:
                     s_frame = s_cropped._get_cache_dask_chunk((i,), get_result=True)
                     if isinstance(s_frame, Future):
                         s_frame = s_frame.result()
                 else:
                     s_frame = s_cropped.inav[i].data
+
                 img_item.setImage(s_frame)
                 qimg = exporter.export(toBytes=True)
+
                 # Convert to RGB numpy array for imageio
                 img = pg.functions.ndarray_from_qimage(qimg)
                 writer.append_data(img)
+
+                # Explicitly delete large objects to free memory
+                del s_frame, qimg, img
 
                 progress.setValue(i + 1)
                 QCoreApplication.processEvents()
