@@ -4,7 +4,6 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 from hyperspy.signal import BaseSignal
 
-
 from typing import TYPE_CHECKING, Union, List
 
 if TYPE_CHECKING:
@@ -14,6 +13,7 @@ if TYPE_CHECKING:
 from despy.drawing.multiplot import NavigationPlotManager, Plot
 from despy.external.qt.labels import EditableLabel
 from despy import METADATA_WIDGET_CONFIG
+
 
 class BaseSignalTree:
     """
@@ -84,7 +84,14 @@ class BaseSignalTree:
         # The tree structure. This defines the relationship between signals.
         # i.e. parent -> child.  Broken transformations create new seeds and
         # spawn new trees.
-        self._tree = {"root": {"signal": root_signal, "children": {}}}  # type: dict
+        self._tree = {"root":
+                          {"signal": root_signal,
+                           "function": None,
+                           "args": None,
+                           "kwargs": None,
+                           "children": {}
+                           }
+                      }  # type: dict
 
         # set up the navigator plots:
         navigator = self._initialize_navigator(root_signal)
@@ -110,7 +117,6 @@ class BaseSignalTree:
             plot.set_plot_state(self.root)
             self.signal_plots.append(plot)
             plot.update()
-
 
         print("Created Signal Tree with root signal: ", self.root)
 
@@ -337,6 +343,18 @@ class BaseSignalTree:
             plot_states[signal] = plot_state
         return plot_states
 
+    def update_plot_states(self, new_signal: BaseSignal):
+        """
+        Update all plot states in the signal tree.
+        """
+        from despy.drawing.plot_states import PlotState
+        for plot in self.signal_plots:
+            if new_signal not in plot.plot_states:
+                if new_signal.axes_manager.navigation_dimension == 0:
+                    plot.plot_states[new_signal] = PlotState(signal=new_signal, dynamic=False)
+                else:
+                    plot.plot_states[new_signal] = PlotState(signal=new_signal, dynamic=True)
+
     @property
     def nav_dim(self) -> int:
         """
@@ -393,7 +411,7 @@ class BaseSignalTree:
                 print(f"Processing property: {prop} with value: {value}")
                 if "key" in value:
                     current_value = self.root.metadata.get_item(item_path=value["key"],
-                                                default=value.get("default", "--"))
+                                                                default=value.get("default", "--"))
                 elif "attr" in value:
                     current_value = self.get_nested_attr(value["attr"])
                 elif "function" in value:
@@ -412,11 +430,64 @@ class BaseSignalTree:
         print("Final Subsections:", subsections)
         return subsections
 
+    def get_node(self, signal: BaseSignal):
+        """
+        Get the node in the tree corresponding to the given signal.
+
+        Parameters
+        ----------
+        signal : BaseSignal
+            The signal to find in the tree.
+
+        Returns
+        -------
+        dict
+            The node corresponding to the signal, or None if not found.
+        """
+        result_node = None
+
+        def _traverse_children(node):
+            nonlocal result_node
+            if node["signal"] is signal:
+                result_node = node
+                return
+            for child in node["children"].values():
+                _traverse_children(child)
+
+        _traverse_children(self._tree["root"])
+        return result_node
+
+    def add_node(self,
+                 parent_node,
+                 new_signal,
+                 transformation: str):
+        """
+        Add a new node to the signal tree.
+        Parameters
+        ----------
+        parent_node : dict
+            The parent node in the tree.
+        new_signal : BaseSignal
+            The new signal to add.
+        transformation : str
+            The transformation applied to create the new signal.
+        """
+
+        parent_node = self.get_node(parent_node)
+        if parent_node is None:
+            raise ValueError("Parent node not found in the tree.")
+        parent_node["children"][transformation] = {
+            "signal": new_signal,
+            "children": {}
+        }
 
     def add_transformation(self,
                            parent_signal: BaseSignal,
-                           transformation: str,
-                           new_signal: BaseSignal,):
+                           method: str = None,
+                           function: callable = None,
+                           node_name: str = None,
+                           *args,
+                           **kwargs):
         """
         Add a transformation to the tree.
 
@@ -424,9 +495,53 @@ class BaseSignalTree:
         ----------
         parent_signal : Signal
             The parent signal to which the transformation is applied.
-        transformation : str
-            The name of the transformation.
-        new_signal : Signal
-            The new signal created by applying the transformation.
+        method : str, optional
+            The method of the signal to call as a method.
+        function : callable, optional
+            The function to apply to the parent signal.
+        node_name : str, optional
+            The name of the new node in the tree.
+        *args
+            Positional arguments to pass to the function or method.
+        **kwargs
+            Keyword arguments to pass to the function or method.
         """
-        pass
+        if method is not None:
+            try:
+                new_signal = getattr(parent_signal, method)(*args, **kwargs)
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self.main_window,
+                    "Transformation error",
+                    f"An error occurred while applying transformation '{method or (function.__name__ if function else '')}':\n{e}"
+                )
+                return
+        else:
+            new_signal = function(parent_signal, *args, **kwargs)
+
+        parent_node = self.get_node(parent_signal)
+        if parent_node is None:
+            raise ValueError("Parent signal not found in the tree.")
+        transformation_name = method if method is not None else function.__name__
+
+        if node_name is not None:
+            node_name = transformation_name
+        if node_name in parent_node["children"]:
+            # handle name collision
+            count = 1
+            new_name = f"{node_name}_{count}"
+            while new_name in parent_node["children"]:
+                count += 1
+                new_name = f"{node_name}_{count}"
+            node_name = new_name
+        parent_node["children"][node_name] = {
+            "signal": new_signal,
+            "method": method,
+            "function": function,
+            "args": args,
+            "kwargs": kwargs,
+            "children": {}
+        }
+        print(f"Added transformation '{node_name}' to the tree under parent signal.")
+        self.update_plot_states(new_signal)
+        return new_signal

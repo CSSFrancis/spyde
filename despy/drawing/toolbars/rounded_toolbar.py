@@ -97,18 +97,38 @@ class RoundedToolBar(QtWidgets.QToolBar):
                    name: str,
                    icon_path: str,
                    function: Callable,
-                   toggle: bool = False) -> QtGui.QAction:
+                   toggle: bool = False,
+                   parameters: dict = None) -> QtGui.QAction:
         """
         Add an action to the toolbar.
         """
+        if parameters is None:
+            parameters = dict()
         action = self.addAction(QIcon(icon_path), name)
         print(f"Adding action '{name}' to toolbar.")
         print("  Toggle:", toggle)
-        if toggle:
+
+        if parameters != {}:
+            #  create a popout menu for the action with a submit button
+            from despy.drawing.toolbars.caret_group import CaretParams
+            popout = CaretParams(title=name,
+                                 parameters=parameters,
+                                 function=function,
+                                 toolbar=self,
+                                 action_name=name,
+                                 auto_attach=True)
+            # bind action to show the popout
+            popout.hide()
             action.setCheckable(True)
-            action.toggled.connect(lambda checked, f=function: f(self, toggle=checked))
+            self.add_action_widget(name, popout, None)
+            action.toggled.connect(lambda checked: popout.show() if checked else popout.hide())
+
         else:
-            action.triggered.connect(lambda _, f=function: f(self))
+            if toggle:
+                action.setCheckable(True)
+                action.toggled.connect(lambda checked, f=function: f(self, toggle=checked))
+            else:
+                action.triggered.connect(lambda _, f=function: f(self))
         return action
 
     def num_actions(self) -> int:

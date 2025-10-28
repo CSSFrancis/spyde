@@ -66,6 +66,7 @@ class Plot(QtWidgets.QMdiSubWindow):
     ):
         super().__init__(*args, **kwargs)
 
+        self.needs_update_range = None # type: bool | None
         self._scale_bar = None
         self._scale_bar_vb = None
 
@@ -199,7 +200,6 @@ class Plot(QtWidgets.QMdiSubWindow):
                 self._scale_bar.text.setHtml(new_text)
                 self._scale_bar.update()
 
-
     def set_plot_state(self, signal: BaseSignal):
         """Set the plot state to the state for some signal."""
         # first save the current plot state selectors and child plots
@@ -257,6 +257,12 @@ class Plot(QtWidgets.QMdiSubWindow):
         else:
             self.enable_scale_bar(False)
         self.main_window.on_subwindow_activated(self)
+        # update the plot
+        if self.parent_selector is not None:
+            self.parent_selector.delayed_update_data(force=True)
+            self.needs_update_range = True
+            # update the plot range
+            self.update_range()
 
     def hide_toolbars(self):
         """Hide all floating toolbars."""
@@ -277,22 +283,24 @@ class Plot(QtWidgets.QMdiSubWindow):
                 tb.show()
 
     def update_toolbars(self):
-        functions, icons, names, toolbar_sides, toggles = get_toolbar_actions_for_plot(self)
+        functions, icons, names, toolbar_sides, toggles, params = get_toolbar_actions_for_plot(self)
+        print(params)
         # Clear existing toolbars
         for tb in [self.toolbar_right, self.toolbar_left, self.toolbar_top, self.toolbar_bottom]:
             tb.clear()
 
         # Add actions to the appropriate toolbars
-        for func, icon, name, side, toggle in zip(functions, icons, names, toolbar_sides, toggles):
+        for func, icon, name, side, toggle, param in zip(functions, icons, names, toolbar_sides, toggles, params):
+            print(f"Adding toolbar action: {name} to {side} toolbar")
+            print(f"Function: {func}, Icon: {icon}, Toggle: {toggle}, Params: {param}")
             if side == "right":
-                self.toolbar_right.add_action(name, icon, func, toggle )
-
+                self.toolbar_right.add_action(name, icon, func, toggle, param)
             elif side == "left":
-                self.toolbar_left.add_action(name, icon, func, toggle)
+                self.toolbar_left.add_action(name, icon, func, toggle, param)
             elif side == "top":
-                self.toolbar_top.add_action(name, icon, func, toggle)
+                self.toolbar_top.add_action(name, icon, func, toggle, param)
             elif side == "bottom":
-                self.toolbar_bottom.add_action(name, icon, func, toggle)
+                self.toolbar_bottom.add_action(name, icon, func, toggle, param)
 
         for tb in [self.toolbar_right, self.toolbar_left, self.toolbar_top, self.toolbar_bottom]:
             tb.set_size()
@@ -525,6 +533,9 @@ class Plot(QtWidgets.QMdiSubWindow):
                 self.plot_state.max_percentile = 100.0
                 self.plot_state.min_percentile = 0.0
                 self.needs_auto_level = False
+            if self.needs_update_range:
+                self.update_range()
+                self.needs_update_range = False
 
     def closeEvent(self, event):
         """Cleanup toolbar, hide selector widgets, and close attached plots when needed."""

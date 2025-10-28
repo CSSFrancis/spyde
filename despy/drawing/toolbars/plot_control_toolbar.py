@@ -15,12 +15,14 @@ def get_toolbar_actions_for_plot(plot: "Plot"):
     names = []
     toolbar_sides = []
     toggles = []
+    parameters = []
 
     for action in TOOLBAR_ACTIONS["functions"]:
 
         signal_types = TOOLBAR_ACTIONS["functions"][action].get('signal_types', None)
         plot_dim = TOOLBAR_ACTIONS["functions"][action].get('plot_dim', [1, 2])
         navigation_only = TOOLBAR_ACTIONS["functions"][action].get('navigation', None)
+        params = TOOLBAR_ACTIONS["functions"][action].get('parameters', {})
 
         plot_signal_type = plot.plot_state.current_signal._signal_type
 
@@ -44,7 +46,8 @@ def get_toolbar_actions_for_plot(plot: "Plot"):
             names.append(action)
             toolbar_sides.append(TOOLBAR_ACTIONS["functions"][action].get('toolbar_side', 'left'))
             toggles.append(TOOLBAR_ACTIONS["functions"][action].get('toggle', False))
+            parameters.append(params)
 
-    return functions, icons, names, toolbar_sides, toggles
+    return functions, icons, names, toolbar_sides, toggles, parameters
 
 

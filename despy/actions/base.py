@@ -151,3 +151,29 @@ def toggle_navigation_plots(toolbar: "RoundedToolBar",
         group.setVisible(toggle)
 
 
+def rebin2d(toolbar: "RoundedToolBar",
+            scale_x:int,
+            scale_y:int,
+            *args,
+            **kwargs):
+    """
+    Rebin 2D action for the plot.
+
+    Parameters
+    ----------
+    toolbar : RoundedToolBar
+        The plot to rebin.
+    """
+
+    current_selected_signal = toolbar.plot.plot_state.current_signal
+
+    num_nav_axes = current_selected_signal.axes_manager.navigation_dimension
+    if current_selected_signal.axes_manager.signal_dimension != 2:
+        raise RuntimeError("Current signal is not 2D, cannot rebin2d.")
+
+    scale = [1] * num_nav_axes + [scale_x, scale_y]
+
+    return toolbar.plot.signal_tree.add_transformation(parent_signal=current_selected_signal,
+                                                method="rebin",
+                                                node_name=f"Rebin (x{scale_x}, y{scale_y})",
+                                                scale=scale)

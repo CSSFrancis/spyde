@@ -1,5 +1,10 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
+# python
+from PySide6 import QtCore, QtGui, QtWidgets
+from despy.drawing.toolbars.floating_button_trees import RoundedButton
+from despy.drawing.toolbars.rounded_toolbar import RoundedToolBar
+
 
 class CaretGroup(QtWidgets.QGroupBox):
     """
@@ -10,6 +15,7 @@ class CaretGroup(QtWidgets.QGroupBox):
     - Thin cosmetic light outline
     side: one of "top", "bottom", "left", "right"
     """
+
     def __init__(
         self,
         title: str = "",
@@ -21,8 +27,24 @@ class CaretGroup(QtWidgets.QGroupBox):
         border_width: int = 1,
         padding: int = 8,
         use_mask: bool = False,  # keep False for smooth edges
+        *,
+        toolbar: RoundedToolBar | None = None,
+        action_name: str | None = None,
+        auto_attach: bool = False,
     ):
+        # Optionally derive side from toolbar position when requested.
+        def _opposite(pos: str) -> str:
+            return {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}.get(pos, "bottom")
+
+        if toolbar is not None and (side is None or side == "auto"):
+            side = _opposite(getattr(toolbar, "position", "right"))
+
         super().__init__(title, parent)
+
+        # Store context (optional)
+        self._toolbar = toolbar
+        self._action_name = action_name
+
         self._side = side
         self._radius = float(radius)
         self._carrot_base = int(caret_base)
@@ -32,8 +54,7 @@ class CaretGroup(QtWidgets.QGroupBox):
         self._use_mask = bool(use_mask)
 
         # Visuals to match RoundedToolBar
-        self._bg_color = QtGui.QColor(50, 50, 50,
-                                      200)  # 200 ≈ less transparent; use 255 for fully opaque
+        self._bg_color = QtGui.QColor(50, 50, 50, 200)
         self._pen_color = QtGui.QColor(255, 255, 255, 60)
 
         # Transparent background, no default frame
@@ -41,6 +62,40 @@ class CaretGroup(QtWidgets.QGroupBox):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFlat(True)
         self.setStyleSheet("QGroupBox { border: none; }")
+
+        # Ensure this group has a vertical layout (like the ad-hoc code)
+        if self.layout() is None:
+            vlay = QtWidgets.QVBoxLayout()
+            vlay.setContentsMargins(0, 0, 0, 0)
+            self.setLayout(vlay)
+
+        # Optional auto-attach to the toolbar's parent and register in action_widgets
+        if auto_attach and toolbar is not None:
+            parent_widget = toolbar.parent() or toolbar.parentWidget()
+            if parent_widget is not None:
+                parent_layout = parent_widget.layout()
+                if parent_layout is None:
+                    parent_layout = QtWidgets.QVBoxLayout(parent_widget)
+                    parent_widget.setLayout(parent_layout)
+                parent_layout.addWidget(self)
+
+            # Match the original fixed policy
+            self.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Fixed,
+                QtWidgets.QSizePolicy.Policy.Fixed,
+            )
+
+            # Register into toolbar.action_widgets[action_name]
+            if action_name:
+                try:
+                    aw = getattr(toolbar, "action_widgets", None)
+                    if isinstance(aw, dict):
+                        entry = aw.get(action_name, {})
+                        entry["widget"] = self
+                        entry["layout"] = self.layout()
+                        aw[action_name] = entry
+                except Exception:
+                    pass  # Keep init robust
 
         self._update_margins()
         self._update_mask()
@@ -164,3 +219,86 @@ class CaretGroup(QtWidgets.QGroupBox):
         p.setPen(pen)
 
         p.drawPath(path)
+
+
+class CaretParams(CaretGroup):
+    """
+    A Caret Group specialized for parameter controls and submitting parameters for some action.
+    """
+
+    def __init__(
+        self,
+        title: str = "",
+        parent=None,
+        side: str = None,
+        radius: int = 8,
+        caret_base: int = 14,
+        caret_depth: int = 8,
+        border_width: int = 1,
+        padding: int = 8,
+        use_mask: bool = False,  # keep False for smooth edges
+        parameters: dict = None,
+        function: callable = None,
+        *,
+        toolbar: RoundedToolBar | None = None,
+        action_name: str | None = None,
+        auto_attach: bool = False,
+    ):
+        super().__init__(title, parent, side, radius, caret_base,
+                         caret_depth, border_width, padding, use_mask,
+                         toolbar=toolbar, action_name=action_name,
+                         auto_attach=auto_attach)
+        self.setStyleSheet("QGroupBox { border: none; } QLabel { background-color: transparent; }")
+
+        self.kwargs = {}
+        print("Creating CaretParams with parameters:", parameters)
+        for key, item in parameters.items():
+            dtype = item.get("type", "str")
+            name = item.get("name", key)
+            default = item.get("default", "")
+
+            h_layout = QtWidgets.QHBoxLayout()
+            h_layout.setContentsMargins(0, 0, 0, 0)
+            h_layout.setSpacing(4)
+            label = QtWidgets.QLabel(name)
+            if dtype == "int":
+                line_edit = QtWidgets.QLineEdit(str(default))
+                line_edit.setValidator(QtGui.QIntValidator())
+            elif dtype == "float":
+                line_edit = QtWidgets.QLineEdit(str(default))
+                line_edit.setValidator(QtGui.QDoubleValidator())
+            else:  # default to string
+                line_edit = QtWidgets.QLineEdit(str(default))
+            h_layout.addWidget(label)
+            h_layout.addWidget(line_edit)
+            self.kwargs[key] = line_edit
+            self.layout().addLayout(h_layout)  # or .addWidget(widget)
+
+        self.submit_button = RoundedButton(text="Submit", parent=self)
+        self.layout().addWidget(self.submit_button)
+
+        layout = self.layout()
+        layout.setContentsMargins(2, 2, 2, 2)
+        self.submit_button.clicked.connect(self._on_submit_clicked)
+
+        self.toolbar = toolbar
+        self.function = function
+
+    def _on_submit_clicked(self):
+        if self.function is not None:
+            params = {}
+            for key, line_edit in self.kwargs.items():
+
+                if isinstance(line_edit.validator(), QtGui.QDoubleValidator):
+                    params[key] = float(line_edit.text())
+                elif isinstance(line_edit.validator(), QtGui.QIntValidator):
+                    params[key] = int(line_edit.text())
+                else:
+                    params[key] = line_edit.text()
+            new_signal = self.function(toolbar=self.toolbar, **params)
+            if new_signal is not None and self.toolbar is not None and hasattr(self.toolbar, "plot"):
+                self.toolbar.plot.set_plot_state(new_signal)
+
+
+
+
