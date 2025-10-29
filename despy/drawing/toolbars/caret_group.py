@@ -20,7 +20,7 @@ class CaretGroup(QtWidgets.QGroupBox):
         self,
         title: str = "",
         parent=None,
-        side: str = "right",
+        side: str = "auto",
         radius: int = 8,
         caret_base: int = 14,
         caret_depth: int = 8,
@@ -37,6 +37,7 @@ class CaretGroup(QtWidgets.QGroupBox):
             return {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}.get(pos, "bottom")
 
         if toolbar is not None and (side is None or side == "auto"):
+            print("Setting CaretGroup side opposite to toolbar position:", toolbar.position)
             side = _opposite(getattr(toolbar, "position", "right"))
 
         super().__init__(title, parent)

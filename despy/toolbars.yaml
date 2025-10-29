@@ -1,4 +1,12 @@
 functions:
+  Navigate Signal Tree:
+    description: Navigate the signal tree structure.
+    icon: drawing/toolbars/icons/signal_tree.svg
+    function: despy.actions.base.toggle_signal_tree
+    plot_dim: [ 1, 2 ]
+    toolbar_side: right
+    navigation: False
+    toggle: True
   Reset:
     description: Resets the data to its original view.
     icon: drawing/toolbars/icons/fullsize.svg
