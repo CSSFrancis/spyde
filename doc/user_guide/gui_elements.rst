@@ -1,3 +1,7 @@
+.. |signal-tree-icon| image:: ../../drawing/toolbars/icons/signal_tree.svg
+   :height: 1.1em
+   :alt: Signal Tree
+
 GUI Elements
 ============
 
@@ -17,4 +21,21 @@ associated toolbar that can be customized with different buttons and controls. E
 - Right Toolbar
 
 Each toolbar is initialized when the `Plot` becomes the active plot in the application. The actions available
-in the toolbar are decided by the toolbars.yaml file. This can also be customized using extensions.
+in the toolbar are decided by the toolbars.yaml file. This can also be customized using extensions
+(Not yet implemented).
+
+Plot Control Dock
+~~~~~~~~~~~~~~~~~
+The Plot Control Dock provides a centralized location for managing plot settings and configurations.
+This allows users to easily adjust plot parameters, such as axis limits, color maps. The Plot Control Dock
+can be hidden or shown as needed, providing a flexible and customizable user experience and moved to different
+locations within the application window.
+
+Plots
+~~~~~
+The `Plot` is the central element of the application, responsible for displaying data visualizations. Each `Plot`
+is either a Navigation Plot or a Signal Plot.  Navigation Plots are used to navigate through datasets, while Signal
+Plots are used to display specific data signals.  For a each BaseSignalTree you can toggle the navigator images and the
+signal plotted. Each `Plot` has a set of different \`PlotStates\` to explore different signals in the SignalTree. You
+can switch between them by toggling the |signal-tree-icon| icon in the toolbar.
+
