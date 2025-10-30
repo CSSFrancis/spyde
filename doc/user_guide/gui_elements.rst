@@ -1,4 +1,4 @@
-.. |signal-tree-icon| image:: ../../drawing/toolbars/icons/signal_tree.svg
+.. |signal-tree-icon| image:: ../../spyde/drawing/toolbars/icons/signal_tree.svg
    :height: 1.1em
    :alt: Signal Tree
 

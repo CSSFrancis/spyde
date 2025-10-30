@@ -24,4 +24,4 @@ two sections:
    :maxdepth: 2
 
    gui_elements
-   examples/index
+   ../examples/index

@@ -1,8 +1,60 @@
 # Configuration file for the Sphinx documentation builder.
+from __future__ import annotations
 
 import os
 import pathlib
 import importlib.util
+
+from spyde.qt.shared import ensure_app, iter_registered_windows, clear_registered_windows, grab_and_save
+from sphinx_gallery.scrapers import figure_rst
+import os
+from typing import List
+from PySide6 import QtWidgets, QtTest
+
+
+def qt_sg_scraper(block, block_vars, gallery_conf) -> List[str]:
+    """
+    Sphinx-Gallery image scraper for Qt.
+    Strategy:
+      1) Use explicitly registered windows, if any.
+      2) Otherwise, capture all visible QMainWindow/QDialog top-levels.
+    Saves to the 'image_path' prefix provided by Sphinx-Gallery.
+    """
+
+    print("Qt scraper activated!!")
+    ensure_app()
+    QtWidgets.QApplication.processEvents()
+    QtTest.QTest.qWait(50)
+
+    # Preferred: explicitly registered windows
+    targets = list(iter_registered_windows())
+
+    print(f"Registered windows found: {len(targets)}")
+
+    # Fallback: visible top-level windows (main windows and dialogs)
+    if not targets:
+        for w in QtWidgets.QApplication.topLevelWidgets():
+            if isinstance(w, (QtWidgets.QMainWindow, QtWidgets.QDialog)) and w.isVisible():
+                targets.append(w)
+
+
+    saved: List[str] = []
+    base = block_vars.get("image_path", "")
+    if not base:
+        return saved
+
+    # Normalize base without extension; append _N.png
+    root, _ = os.path.splitext(base)
+    for i, w in enumerate(targets):
+        path = f"{root}_{i}.png"
+        saved.append(grab_and_save(w, path))
+
+    # Reset registry between blocks
+    clear_registered_windows()
+    print("Stored images:", saved)
+    print(f"Qt scraper saved {len(saved)} images.")
+    return figure_rst(saved, gallery_conf['src_dir'])
+
 
 # -- Project information -----------------------------------------------------
 project = "spyde"
@@ -28,8 +80,8 @@ if importlib.util.find_spec("pydata_sphinx_theme") is None:
     raise RuntimeError("pydata-sphinx-theme is not installed in this environment")
 
 html_theme = "pydata_sphinx_theme"
-html_static_path = ["_static"]
-html_logo = "spyde/Spyde.svg"
+#html_static_path = ["_static"]
+html_logo = "../spyde/spyde_banner_dark.svg"
 
 master_doc = "index"
 
@@ -49,4 +101,6 @@ sphinx_gallery_conf = {
     "backreferences_dir": "spyde",
     "doc_module": ("spyde",),
     "reference_url": {"spyde": None},
+    "image_scrapers": ("spyde.qt_scrapper.qt_sg_scraper", ),
+    'capture_repr': (),  # Disable text output capture
 }

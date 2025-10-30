@@ -245,7 +245,7 @@ class MainWindow(QMainWindow):
                     kwargs["chunks"] = (("auto",) * len(kwargs["navigation_shape"])) + (-1, -1)
 
                 print(f"chunks: {kwargs['chunks']}")
-            if kwargs["navigation_shape"] == ():
+            if hasattr(kwargs, "navigation_shape") and kwargs["navigation_shape"] == ():
                 kwargs.pop("navigation_shape")
                 kwargs.pop("chunks")
             print("Loading signal from file:", file_path, "with kwargs:", kwargs)
@@ -256,11 +256,10 @@ class MainWindow(QMainWindow):
                                           distributed_client=self.client)
             self.signal_trees.append(signal_tree)
 
-
     def open_file(self):
         self.file_dialog = QFileDialog()
         self.file_dialog.setFileMode(QtWidgets.QFileDialog.FileMode.ExistingFiles)
-        self.file_dialog.setNameFilter("Hyperspy Files (*.hspy), mrc Files (*.mrc)")
+        self.file_dialog.setNameFilter("Hyperspy Files (*.hspy);; mrc Files (*.mrc)")
 
         if self.file_dialog.exec():
             file_paths = self.file_dialog.selectedFiles()
@@ -669,7 +668,7 @@ class MainWindow(QMainWindow):
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("DeSpy")  # Set the application name
+    app.setApplicationName("SpyDe")  # Set the application name
     # Create and show the splash screen
     logo_path = "SpydeDark.png"  # Replace with the actual path to your logo
     pixmap = QPixmap(logo_path).scaled(300, 300,
@@ -683,7 +682,7 @@ if __name__ == '__main__':
     app.processEvents()
     main_window = MainWindow(app=app)
 
-    main_window.setWindowTitle("DE Spy")  # Set the window title
+    main_window.setWindowTitle("SpyDE")  # Set the window title
 
     if sys.platform == "darwin":
         logo_path = "Spyde.icns"
