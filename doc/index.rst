@@ -3,6 +3,7 @@
   :hidden:
 
   User Guide <user_guide/index>
+  Examples <examples/index>
   Get Help <help>
   Contribute <dev_guide/index>
 
