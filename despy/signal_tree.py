@@ -100,10 +100,11 @@ class BaseSignalTree:
         self.client = distributed_client
         self.signal_plots = []  # type: Union[List[Plot], None]
 
+        self.navigator_plot_manager = None  # type: Union[NavigationPlotManager, None]
         # setting up plots
         if self.root.axes_manager.navigation_dimension > 0:  # pass to NavigationPlotManager
             self.navigator_plot_manager = NavigationPlotManager(main_window=main_window,
-                                                                signal_tree=self)  # type: NavigationPlotManager
+                                                                signal_tree=self)
         else:
             self.navigator_plot_manager = None
 

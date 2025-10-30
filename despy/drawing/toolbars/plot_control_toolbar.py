@@ -1,5 +1,6 @@
 import importlib
 from typing import TYPE_CHECKING
+from pathlib import Path
 
 if TYPE_CHECKING:
     from despy.drawing.multiplot import Plot
@@ -8,6 +9,24 @@ from despy import TOOLBAR_ACTIONS
 
 from functools import partial
 
+
+def resolve_icon_path(icon_value: str) -> str:
+    # Keep Qt resource paths (e.g., ":/icons/foo.png") as-is
+    if isinstance(icon_value, str) and icon_value.startswith(":"):
+        return icon_value
+
+    p = Path(icon_value)
+    if p.is_absolute():
+        return str(p)
+
+    # Resolve relative to the despy package directory
+    try:
+        import despy
+        base = Path(despy.__file__).resolve().parent
+    except Exception:
+        base = Path(__file__).resolve().parent
+
+    return str((base / icon_value).resolve())
 
 def get_toolbar_actions_for_plot(plot: "Plot"):
     functions = []
@@ -42,7 +61,7 @@ def get_toolbar_actions_for_plot(plot: "Plot"):
                                     action_name=action,
                                     )
             functions.append(resolved_func)
-            icons.append(TOOLBAR_ACTIONS["functions"][action]['icon'])
+            icons.append(resolve_icon_path(TOOLBAR_ACTIONS["functions"][action]['icon']))
             names.append(action)
             toolbar_sides.append(TOOLBAR_ACTIONS["functions"][action].get('toolbar_side', 'left'))
             toggles.append(TOOLBAR_ACTIONS["functions"][action].get('toggle', False))

@@ -211,7 +211,7 @@ class Plot(QtWidgets.QMdiSubWindow):
             if old_plot_state is not None:
                 # remove all the current selectors and hide child plots
                 for selector in old_plot_state.plot_selectors + old_plot_state.signal_tree_selectors:
-                    selector.widget.remove()
+                    selector.widget.hide()
                 for child_plot in old_plot_state.plot_selectors_children + old_plot_state.signal_tree_selectors_children:
                     child_plot.hide()
         # set the new plot state
