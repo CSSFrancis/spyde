@@ -68,66 +68,23 @@ class TestOpenExampleData:
         win.close()
 
     # Add 5D STEM once supported
-    @pytest.mark.parametrize("signal_type", ("Image",
-                                         "Insitu TEM",
-                                         "4D STEM"))
-    def test_create_test_data(self, qtbot, signal_type):
-        app = QtWidgets.QApplication.instance()
-        win = MainWindow(app=app)
-        qtbot.addWidget(win)
-        win.show()
-        QTest.qWaitForWindowExposed(win)
-
-        menubar = win.menuBar()
-        assert menubar is not None
-        file_menu_action = _find_menu_action(menubar, "File")
-        assert file_menu_action is not None
-        create_data_action = _find_menu_action(file_menu_action, "Create Data")
-
-        # Create some test data
-        def _accept_dialog(signal_type=signal_type):
-            # Find the dialog, switch to the requested tab, then click OK (fallback to accept)
-            app = QtWidgets.QApplication.instance()
-            for w in app.topLevelWidgets():
-                if isinstance(w, QtWidgets.QDialog) and w.isVisible():
-                    # Try to switch the QTabWidget to the provided signal_type
-                    try:
-                        tabs = w.findChild(QtWidgets.QTabWidget)
-                        if tabs and signal_type:
-                            target = (signal_type or "").strip().lower()
-                            for i in range(tabs.count()):
-                                label = (tabs.tabText(i) or "").strip().lower()
-                                if label == target or label.startswith(target):
-                                    tabs.setCurrentIndex(i)
-                                    app.processEvents()
-                                    QTest.qWait(50)
-                                    break
-                    except Exception:
-                        pass
-
-                    box = w.findChild(QtWidgets.QDialogButtonBox)
-                    if box:
-                        ok_btn = box.button(QtWidgets.QDialogButtonBox.Ok)
-                        if ok_btn and ok_btn.isEnabled():
-                            ok_btn.click()
-                            return
-                    w.accept()
-                    return
-
-        QtCore.QTimer.singleShot(0, create_data_action.trigger)
-        QtCore.QTimer.singleShot(100, _accept_dialog)
-
-        # assert that there is a single subwindow with the created data
-        qtbot.waitUntil(lambda: len(getattr(win, "mdi_area").subWindowList()) > 0, timeout=5000)
+    def test_create_test_2d_data(self, qtbot, tem_2d_dataset):
+        win = tem_2d_dataset["window"]
         subwindows = win.mdi_area.subWindowList()
+        assert len(subwindows) == 1
+        win.close()
 
-        if signal_type == "5D STEM":
-            expected_plots = 3
-        elif signal_type == "4D STEM" or signal_type == "Insitu TEM":
-            expected_plots = 2
-        else:
-            expected_plots = 1
-        assert len(subwindows) == expected_plots
+    def test_create_test_3d_data(self, qtbot, insitu_tem_2d_dataset):
+        win = insitu_tem_2d_dataset["window"]
+        subwindows = win.mdi_area.subWindowList()
+        assert len(subwindows) == 2
+        win.close()
+
+    def test_create_test_4d_data(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        subwindows = win.mdi_area.subWindowList()
+        assert len(subwindows) == 2
+        win.close()
 
 
 
