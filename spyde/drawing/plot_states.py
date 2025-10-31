@@ -1,6 +1,7 @@
 from hyperspy.signal import BaseSignal
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from spyde.drawing.multiplot import NavigationPlotManager, Plot
 
@@ -22,11 +23,12 @@ class PlotState:
 
     """
 
-    def __init__(self,
-                 signal: BaseSignal,
-                 dimensions: int = None,
-                 dynamic: bool = True,
-                 ):
+    def __init__(
+        self,
+        signal: BaseSignal,
+        dimensions: int = None,
+        dynamic: bool = True,
+    ):
         self.current_signal = signal
 
         # Visualization parameters. The min/max percentile are used to determine the contrast/brightness
@@ -46,7 +48,9 @@ class PlotState:
         self.signal_tree_selectors = []
 
         self.plot_selectors_children = []  # child plots spawned from the plot selectors
-        self.signal_tree_selectors_children = []  # child plots spawned from the signal tree selectors
+        self.signal_tree_selectors_children = (
+            []
+        )  # child plots spawned from the signal tree selectors
 
         # for navigation plots make sure we transpose to get the plot dimensions correct...
         if dimensions is not None:
@@ -55,9 +59,11 @@ class PlotState:
             self.dimensions = self.current_signal.axes_manager.signal_dimension
 
     def __repr__(self):
-        return (f"<PlotState signal={self.current_signal}, "
-                f"dimensions={self.dimensions},"
-                f" dynamic={self.dynamic}>")
+        return (
+            f"<PlotState signal={self.current_signal}, "
+            f"dimensions={self.dimensions},"
+            f" dynamic={self.dynamic}>"
+        )
 
 
 class NavigationManagerState:
@@ -68,25 +74,39 @@ class NavigationManagerState:
     it.  Each state is tied to a particular signal and Navigation Manager.
     """
 
-    def __init__(self,
-                 signal: BaseSignal,
-                 plot_manager: "NavigationPlotManager",
-                 ):
+    def __init__(
+        self,
+        signal: BaseSignal,
+        plot_manager: "NavigationPlotManager",
+    ):
         # only up to 4 navigation dimensions supported for now...
-        dimensions = signal.axes_manager.signal_dimension + signal.axes_manager.navigation_dimension
+        dimensions = (
+            signal.axes_manager.signal_dimension
+            + signal.axes_manager.navigation_dimension
+        )
         if dimensions > 4:
-            raise ValueError("NavigationManagerState only supports up to 4D signals for now.")
+            raise ValueError(
+                "NavigationManagerState only supports up to 4D signals for now."
+            )
 
-        if signal.axes_manager.signal_dimension > 2 or signal.axes_manager.navigation_dimension > 2:
+        if (
+            signal.axes_manager.signal_dimension > 2
+            or signal.axes_manager.navigation_dimension > 2
+        ):
             #  Force it to be 2D signals for now...
             signal = signal.transpose(2)
 
         self.current_signal = signal  # the navigation signal for the current "state"
         self.plot_manager = plot_manager
 
-        self.dimensions = [signal.axes_manager.signal_dimension, signal.axes_manager.navigation_dimension]
+        self.dimensions = [
+            signal.axes_manager.signal_dimension,
+            signal.axes_manager.navigation_dimension,
+        ]
 
         # The list of plot states for each plot in the navigation manager
-        self.plot_states = [PlotState(signal=signal, dimensions=dim) for dim in self.dimensions if dim > 0]
-
-
+        self.plot_states = [
+            PlotState(signal=signal, dimensions=dim)
+            for dim in self.dimensions
+            if dim > 0
+        ]

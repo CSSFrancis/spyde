@@ -7,7 +7,11 @@ from spyde.main_window import MainWindow
 
 def _find_menu_action(menu_or_bar, action_name: str):
     # Normalize: if a QAction with a submenu, use its QMenu
-    if hasattr(menu_or_bar, "menu") and callable(getattr(menu_or_bar, "menu")) and not hasattr(menu_or_bar, "actions"):
+    if (
+        hasattr(menu_or_bar, "menu")
+        and callable(getattr(menu_or_bar, "menu"))
+        and not hasattr(menu_or_bar, "actions")
+    ):
         menu_or_bar = menu_or_bar.menu()
     if menu_or_bar is None or not hasattr(menu_or_bar, "actions"):
         return None
@@ -38,7 +42,9 @@ class TestOpenExampleData:
         small_ptyco.trigger()
 
         # this should load the example data and create a new MDI subwindow
-        qtbot.waitUntil(lambda: len(getattr(win, "mdi_area").subWindowList()) > 0, timeout=5000)
+        qtbot.waitUntil(
+            lambda: len(getattr(win, "mdi_area").subWindowList()) > 0, timeout=5000
+        )
 
         # assert that there are two subwindows: one for the plot and one for the navigation
         subwindows = win.mdi_area.subWindowList()
@@ -51,7 +57,9 @@ class TestOpenExampleData:
         assert len(win.signal_trees[0].navigator_plot_manager.plots) == 1
         assert len(win.signal_trees[0].navigator_plot_manager.navigation_selectors) == 1
 
-        win.signal_trees[0].navigator_plot_manager.add_navigation_selector_and_signal_plot()
+        win.signal_trees[
+            0
+        ].navigator_plot_manager.add_navigation_selector_and_signal_plot()
         assert len(win.signal_trees[0].navigator_plot_manager.navigation_selectors) == 2
         assert len(win.signal_trees[0].signal_plots) == 2
 
@@ -85,9 +93,3 @@ class TestOpenExampleData:
         subwindows = win.mdi_area.subWindowList()
         assert len(subwindows) == 2
         win.close()
-
-
-
-
-
-

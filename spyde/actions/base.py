@@ -1,5 +1,5 @@
-
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
 from spyde.drawing.toolbars.floating_button_trees import RoundedButton, ButtonTree
@@ -50,7 +50,7 @@ def reset_view(toolbar: "RoundedToolBar", *args, **kwargs):
     vb.autoRange()
 
 
-def add_selector(toolbar: "RoundedToolBar", toggled=None,  *args, **kwargs):
+def add_selector(toolbar: "RoundedToolBar", toggled=None, *args, **kwargs):
     """
     Add selector action for the plot.
 
@@ -74,11 +74,9 @@ def add_fft_selector(toolbar: "RoundedToolBar", *args, **kwargs):
     toolbar.plot.add_fft_selector()
 
 
-def toggle_navigation_plots(toolbar: "RoundedToolBar",
-                        action_name="",
-                        toggle=None,
-                        *args,
-                        **kwargs):
+def toggle_navigation_plots(
+    toolbar: "RoundedToolBar", action_name="", toggle=None, *args, **kwargs
+):
     """
     Makes a series of buttons to the side of the action bar for toggling/ adding
     additional navigation plots.
@@ -93,11 +91,13 @@ def toggle_navigation_plots(toolbar: "RoundedToolBar",
 
     signal_options = toolbar.plot.nav_plot_manager.navigation_signals.keys()
 
-    if action_name not in toolbar.action_widgets or toolbar.action_widgets[action_name].get("widget", None) is None:
-        group = CaretGroup(title="",
-                           toolbar=toolbar,
-                           action_name=action_name,
-                           auto_attach=True)
+    if (
+        action_name not in toolbar.action_widgets
+        or toolbar.action_widgets[action_name].get("widget", None) is None
+    ):
+        group = CaretGroup(
+            title="", toolbar=toolbar, action_name=action_name, auto_attach=True
+        )
         layout = group.layout()
         toolbar.add_action_widget(action_name, group, layout)
     else:
@@ -115,8 +115,11 @@ def toggle_navigation_plots(toolbar: "RoundedToolBar",
     for signal_name in signal_options:
         if signal_name not in current_buttons:
             button = RoundedButton(text=signal_name, parent=group)
-            button.clicked.connect(lambda _,
-                                   sn=signal_name: toolbar.plot.nav_plot_manager.set_navigation_manager_state(sn))
+            button.clicked.connect(
+                lambda _, sn=signal_name: toolbar.plot.nav_plot_manager.set_navigation_manager_state(
+                    sn
+                )
+            )
             layout.addWidget(button)
             current_buttons[signal_name] = button
 
@@ -127,8 +130,8 @@ def toggle_navigation_plots(toolbar: "RoundedToolBar",
             btn_widget.setParent(None)
 
     # add final button for adding a new navigation plot using a system dialog
-    #add_button_name = "+ Add Plot"
-    #if add_button_name not in current_buttons:
+    # add_button_name = "+ Add Plot"
+    # if add_button_name not in current_buttons:
     #    add_button = RoundedButton(text=add_button_name, parent=group)
     #    add_button.clicked.connect(lambda _: toolbar.plot.nav_plot_manager.add_navigation_plot_via_dialog())
     #    layout.addWidget(add_button)
@@ -142,11 +145,7 @@ def toggle_navigation_plots(toolbar: "RoundedToolBar",
         group.setVisible(toggle)
 
 
-def rebin2d(toolbar: "RoundedToolBar",
-            scale_x:int,
-            scale_y:int,
-            *args,
-            **kwargs):
+def rebin2d(toolbar: "RoundedToolBar", scale_x: int, scale_y: int, *args, **kwargs):
     """
     Rebin 2D action for the plot.
 
@@ -164,17 +163,17 @@ def rebin2d(toolbar: "RoundedToolBar",
 
     scale = [1] * num_nav_axes + [scale_x, scale_y]
 
-    return toolbar.plot.signal_tree.add_transformation(parent_signal=current_selected_signal,
-                                                method="rebin",
-                                                node_name=f"Rebin (x{scale_x}, y{scale_y})",
-                                                scale=scale)
+    return toolbar.plot.signal_tree.add_transformation(
+        parent_signal=current_selected_signal,
+        method="rebin",
+        node_name=f"Rebin (x{scale_x}, y{scale_y})",
+        scale=scale,
+    )
 
 
-def toggle_signal_tree(toolbar: "RoundedToolBar",
-                        action_name="",
-                        toggle=None,
-                        *args,
-                        **kwargs):
+def toggle_signal_tree(
+    toolbar: "RoundedToolBar", action_name="", toggle=None, *args, **kwargs
+):
     """Makes a series of buttons to the side of the action bar for switching between different signal plots.
 
     This is similar to toggle_navigation_plots, but for signal plots and instead of creating a list
@@ -188,13 +187,14 @@ def toggle_signal_tree(toolbar: "RoundedToolBar",
 
     signal_tree = toolbar.plot.signal_tree._tree
 
-
     # we can can simplify this tree into just buttons
     # [root]: {child1: {..}, child2: {..}, ...}
 
     def node2button(key, node):
         button = RoundedButton(text=key, parent=None)
-        button.clicked.connect(lambda _, n=node: toolbar.plot.set_plot_state(n["signal"]))
+        button.clicked.connect(
+            lambda _, n=node: toolbar.plot.set_plot_state(n["signal"])
+        )
         return button
 
     def tree2buttons(tree):
@@ -208,20 +208,23 @@ def toggle_signal_tree(toolbar: "RoundedToolBar",
             else:
                 new_tree[button] = {}
         return new_tree
+
     button_tree_dict = tree2buttons(signal_tree)
 
-    if action_name not in toolbar.action_widgets or toolbar.action_widgets[action_name].get("widget", None) is None:
-        group = CaretGroup(title="",
-                           toolbar=toolbar,
-                           action_name=action_name,
-                           auto_attach=True)
+    if (
+        action_name not in toolbar.action_widgets
+        or toolbar.action_widgets[action_name].get("widget", None) is None
+    ):
+        group = CaretGroup(
+            title="", toolbar=toolbar, action_name=action_name, auto_attach=True
+        )
         layout = group.layout()
         toolbar.add_action_widget(action_name, group, layout)
 
-
-        button_tree = ButtonTree("Signal Tree",
-                                 button_tree_dict,
-                                 )
+        button_tree = ButtonTree(
+            "Signal Tree",
+            button_tree_dict,
+        )
 
         layout.addWidget(button_tree)
 

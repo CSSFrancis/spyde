@@ -1,13 +1,15 @@
-
 from pyqtgraph import functions as fn  # to avoid linting error
 from pyqtgraph import getConfigOption  # to avoid linting error
 from pyqtgraph.Point import Point  # to avoid linting error
 from pyqtgraph.Qt import QtCore, QtWidgets  # to avoid linting error
-from pyqtgraph.graphicsItems.GraphicsObject import GraphicsObject  # to avoid linting error
-from pyqtgraph.graphicsItems.GraphicsWidgetAnchor import GraphicsWidgetAnchor  # to avoid linting error
+from pyqtgraph.graphicsItems.GraphicsObject import (
+    GraphicsObject,
+)  # to avoid linting error
+from pyqtgraph.graphicsItems.GraphicsWidgetAnchor import (
+    GraphicsWidgetAnchor,
+)  # to avoid linting error
 from pyqtgraph.graphicsItems.TextItem import TextItem  # to avoid linting error
 import re
-
 
 
 import html
@@ -21,48 +23,50 @@ def tex_to_html(s: str) -> str:
     Note: Qt does not support MathML; do not emit MathML here.
     """
     # match unescaped $...$ or $$...$$, non-greedy, across lines
-    pattern = re.compile(r'(?<!\\)(\${1,2})(.+?)(?<!\\)\1', re.DOTALL)
+    pattern = re.compile(r"(?<!\\)(\${1,2})(.+?)(?<!\\)\1", re.DOTALL)
 
     def simple_tex_to_html(tex: str) -> str:
         # escape HTML first, then inject sup/sub
         t = html.escape(tex)
 
         # superscripts with braces: x^{...}
-        t = re.sub(r'([A-Za-z0-9\)\]\}])\^\{([^}]*)\}', r'\1<sup>\2</sup>', t)
+        t = re.sub(r"([A-Za-z0-9\)\]\}])\^\{([^}]*)\}", r"\1<sup>\2</sup>", t)
         # superscripts single char: x^y or x^-
-        t = re.sub(r'([A-Za-z0-9\)\]\}])\^([A-Za-z0-9\+\-\=])', r'\1<sup>\2</sup>', t)
+        t = re.sub(r"([A-Za-z0-9\)\]\}])\^([A-Za-z0-9\+\-\=])", r"\1<sup>\2</sup>", t)
 
         # subscripts with braces: x_{...}
-        t = re.sub(r'([A-Za-z0-9\)\]\}])_\{([^}]*)\}', r'\1<sub>\2</sub>', t)
+        t = re.sub(r"([A-Za-z0-9\)\]\}])_\{([^}]*)\}", r"\1<sub>\2</sub>", t)
         # subscripts single char: x_y
-        t = re.sub(r'([A-Za-z0-9\)\]\}])_([A-Za-z0-9])', r'\1<sub>\2</sub>', t)
+        t = re.sub(r"([A-Za-z0-9\)\]\}])_([A-Za-z0-9])", r"\1<sub>\2</sub>", t)
 
-        return t.replace('\n', '<br/>')
+        return t.replace("\n", "<br/>")
 
     parts: list[str] = []
     pos = 0
 
     for m in pattern.finditer(s):
         # plain text before the match
-        plain = s[pos:m.start()].replace(r'\$', '$')
-        parts.append(html.escape(plain).replace('\n', '<br/>'))
+        plain = s[pos : m.start()].replace(r"\$", "$")
+        parts.append(html.escape(plain).replace("\n", "<br/>"))
 
         # convert inline/block TeX to simple HTML
         tex = m.group(2)
-        is_block = (len(m.group(1)) == 2)
+        is_block = len(m.group(1)) == 2
         rendered = simple_tex_to_html(tex)
         if is_block:
-            parts.append(f'<div style="display:block;text-align:center">{rendered}</div>')
+            parts.append(
+                f'<div style="display:block;text-align:center">{rendered}</div>'
+            )
         else:
             parts.append(f'<span class="math">{rendered}</span>')
 
         pos = m.end()
 
     # trailing plain text
-    tail = s[pos:].replace(r'\$', '$')
-    parts.append(html.escape(tail).replace('\n', '<br/>'))
+    tail = s[pos:].replace(r"\$", "$")
+    parts.append(html.escape(tail).replace("\n", "<br/>"))
 
-    return ''.join(parts)
+    return "".join(parts)
 
 
 class OutlinedScaleBar(GraphicsWidgetAnchor, GraphicsObject):
@@ -71,15 +75,18 @@ class OutlinedScaleBar(GraphicsWidgetAnchor, GraphicsObject):
 
 
     """
-    def __init__(self,
-                 size,
-                 width=5,
-                 brush=None,
-                 pen=None,
-                 border_pen=None,
-                 fill_brush=None,
-                 suffix="m",
-                 offset=None):
+
+    def __init__(
+        self,
+        size,
+        width=5,
+        brush=None,
+        pen=None,
+        border_pen=None,
+        fill_brush=None,
+        suffix="m",
+        offset=None,
+    ):
         GraphicsObject.__init__(self)
         GraphicsWidgetAnchor.__init__(self)
         self.setFlag(self.GraphicsItemFlag.ItemHasNoContents)
@@ -90,8 +97,7 @@ class OutlinedScaleBar(GraphicsWidgetAnchor, GraphicsObject):
         self.brush = fn.mkBrush(brush)
         self.pen = fn.mkPen(pen)
 
-        self.text = TextItem(text="",
-                             anchor=(0.5, 1))
+        self.text = TextItem(text="", anchor=(0.5, 1))
 
         new_text = f"{size} {suffix}"
 
@@ -151,7 +157,9 @@ class OutlinedScaleBar(GraphicsWidgetAnchor, GraphicsObject):
         try:
             bar_rect = self.bar.mapRectToParent(self.bar.rect())
             text_rect = self.text.mapRectToParent(self.text.boundingRect())
-            rect = bar_rect.united(text_rect).adjusted(-self._pad, -self._pad, self._pad, self._pad)
+            rect = bar_rect.united(text_rect).adjusted(
+                -self._pad, -self._pad, self._pad, self._pad
+            )
             self.background.setRect(rect)
         except Exception:
             pass

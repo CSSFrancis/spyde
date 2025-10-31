@@ -11,7 +11,9 @@ class ClickableLabel(QtWidgets.QLabel):
         super().__init__(text, parent)
 
     def mouseReleaseEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton and self.rect().contains(e.position().toPoint()):
+        if e.button() == Qt.MouseButton.LeftButton and self.rect().contains(
+            e.position().toPoint()
+        ):
             self.clicked.emit()
         super().mouseReleaseEvent(e)
 
@@ -50,6 +52,7 @@ class EditableLabel(QtWidgets.QWidget):
             "  background-color: rgba(231, 241, 255, 0.12);"
             "}"
         )
+
     def _start_editing(self):
         self._line_edit.setText(self._raw_text)
         self._stack.setCurrentWidget(self._line_edit)

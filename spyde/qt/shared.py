@@ -15,7 +15,9 @@ def ensure_app() -> QtWidgets.QApplication:
     return app or QtWidgets.QApplication([])
 
 
-def wait_until(predicate: Callable[[], bool], timeout: int = 5000, interval: int = 50) -> None:
+def wait_until(
+    predicate: Callable[[], bool], timeout: int = 5000, interval: int = 50
+) -> None:
     """Minimal waitUntil usable without pytest-qt."""
     deadline = QtCore.QDeadlineTimer(timeout)
     while not predicate():
@@ -35,7 +37,11 @@ def open_window() -> MainWindow:
 
 
 def _find_menu_action(menu_or_bar, action_name: str):
-    if hasattr(menu_or_bar, "menu") and callable(getattr(menu_or_bar, "menu")) and not hasattr(menu_or_bar, "actions"):
+    if (
+        hasattr(menu_or_bar, "menu")
+        and callable(getattr(menu_or_bar, "menu"))
+        and not hasattr(menu_or_bar, "actions")
+    ):
         menu_or_bar = menu_or_bar.menu()
     if menu_or_bar is None or not hasattr(menu_or_bar, "actions"):
         return None

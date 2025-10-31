@@ -10,6 +10,7 @@ class PlotUpdateWorker(QtCore.QObject):
     Worker that periodically scans plots for completed Dask Futures and emits results.
     Runs in its own thread; GUI updates happen via a signal on the main thread.
     """
+
     plot_ready = QtCore.Signal(object, object)  # (plot, result)
 
     def __init__(

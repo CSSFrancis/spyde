@@ -2,6 +2,7 @@ import dask.array as da
 import numpy as np
 from math import log10, floor
 
+
 def fast_index_virtual(arr, indexes, method="sum", reverse=True):
     """
     Fast gather-and-reduce over a set of N-D integer index coordinates.
@@ -62,9 +63,13 @@ def fast_index_virtual(arr, indexes, method="sum", reverse=True):
     if method == "mean":
         # Replace non-selected values by NaN, then nanmean across indexed dims
         subf = sub.astype(float)
-        masked = da.where(bmask, subf, np.nan) if is_dask else np.where(bmask, subf, np.nan)
+        masked = (
+            da.where(bmask, subf, np.nan) if is_dask else np.where(bmask, subf, np.nan)
+        )
         axes = tuple(range(-mask.ndim, 0))
-        return da.nanmean(masked, axis=axes) if is_dask else np.nanmean(masked, axis=axes)
+        return (
+            da.nanmean(masked, axis=axes) if is_dask else np.nanmean(masked, axis=axes)
+        )
 
     raise ValueError(f"Unsupported reduction method: {method}")
 
@@ -90,7 +95,7 @@ def get_nice_length(signal, is_navigator=False):
         target = 1.0
 
     exp = floor(log10(target))
-    base = 10 ** exp
+    base = 10**exp
     norm = target / base
 
     if norm < 1.5:

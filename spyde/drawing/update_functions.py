@@ -5,18 +5,19 @@ Module containing functions to update a plot based on a selector.  These functio
 called on the move or change events of a selector.
 
 """
+
 import numpy as np
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from spyde.drawing.selector import BaseSelector
     from spyde.drawing.multiplot import Plot
 
 
-def update_from_navigation_selection(selector: "BaseSelector",
-                                     child: "Plot",
-                                     indices,
-                                     get_result: bool = False):
+def update_from_navigation_selection(
+    selector: "BaseSelector", child: "Plot", indices, get_result: bool = False
+):
     """
     Update the plot based on the navigation selection. This is the most common update function for using some
     navigation selector (on a parent) and updating a child plot.
@@ -42,20 +43,16 @@ def update_from_navigation_selection(selector: "BaseSelector",
 
     if current_signal._lazy:
         # Always return the future...
-        current_img = current_signal._get_cache_dask_chunk(indices,
-                                                           get_result=get_result,
-                                                           return_future=True)
+        current_img = current_signal._get_cache_dask_chunk(
+            indices, get_result=get_result, return_future=True
+        )
     else:
-        tuple_inds = tuple([indices[ind]
-                            for ind in np.arange(len(indices))])
+        tuple_inds = tuple([indices[ind] for ind in np.arange(len(indices))])
         current_img = np.sum(current_signal.data[tuple_inds], axis=0)
     return current_img
 
 
-def get_fft(selector: "BaseSelector",
-            child: "Plot",
-            indices,
-            get_result: bool = False):
+def get_fft(selector: "BaseSelector", child: "Plot", indices, get_result: bool = False):
     """
     Get the FFT of the image.
 
@@ -88,4 +85,3 @@ def get_fft(selector: "BaseSelector",
     sliced_img = selector.parent.current_data[slice_x, slice_y]
     fft_img = np.fft.fftshift(np.fft.fft2(sliced_img))
     return fft_img.real
-

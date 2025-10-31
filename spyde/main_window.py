@@ -6,7 +6,14 @@ import webbrowser
 
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtCore import Qt, QTimer, QEvent
-from PySide6.QtWidgets import QSplashScreen, QMainWindow, QApplication, QMessageBox, QDialog, QFileDialog
+from PySide6.QtWidgets import (
+    QSplashScreen,
+    QMainWindow,
+    QApplication,
+    QMessageBox,
+    QDialog,
+    QFileDialog,
+)
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtGui import QPixmap, QColor
 
@@ -19,16 +26,20 @@ import pyxem.data
 from spyde.misc.dialogs import DatasetSizeDialog, CreateDataDialog, MovieExportDialog
 from spyde.drawing.multiplot import Plot
 from spyde.signal_tree import BaseSignalTree
-from spyde.external.pyqtgraph.histogram_widget import HistogramLUTWidget, HistogramLUTItem
+from spyde.external.pyqtgraph.histogram_widget import (
+    HistogramLUTWidget,
+    HistogramLUTItem,
+)
 from spyde.workers.plot_update_worker import PlotUpdateWorker
 
 
-COLORMAPS = {"gray": pg.colormap.get("CET-L1"),
-             "viridis": pg.colormap.get("viridis"),
-             "plasma": pg.colormap.get("plasma"),
-             "cividis": pg.colormap.get("cividis"),
-             "fire": pg.colormap.get("CET-L3"),
-             }
+COLORMAPS = {
+    "gray": pg.colormap.get("CET-L1"),
+    "viridis": pg.colormap.get("viridis"),
+    "plasma": pg.colormap.get("plasma"),
+    "cividis": pg.colormap.get("cividis"),
+    "fire": pg.colormap.get("CET-L3"),
+}
 
 SUPPORTED_EXTS = (".hspy", ".mrc")  # extend as needed
 
@@ -53,7 +64,9 @@ class MainWindow(QMainWindow):
         cpu_count = os.cpu_count()
         threads = (cpu_count // 4) - 1
         cluster = LocalCluster(n_workers=threads, threads_per_worker=4)
-        self.client = Client(cluster)  # Start a local Dask client (this should be settable eventually)
+        self.client = Client(
+            cluster
+        )  # Start a local Dask client (this should be settable eventually)
         print(f"Starting Dashboard at: {self.client.dashboard_link}")
         self.setWindowTitle("DE-Spy")
         # get screen size and set window size to 3/4 of the screen size
@@ -61,14 +74,16 @@ class MainWindow(QMainWindow):
         self.dock_widget = None
         screen = QApplication.primaryScreen()
         self.screen_size = screen.size()
-        self.resize(self.screen_size.width() * 3 // 4, self.screen_size.height() * 3 // 4)
+        self.resize(
+            self.screen_size.width() * 3 // 4, self.screen_size.height() * 3 // 4
+        )
         self.histogram = None
         self._histogram_image_item = None  # track bound ImageItem to avoid LUT resets
 
         # center the main window on the screen
         self.move(
             (self.screen_size.width() - self.width()) // 2,
-            (self.screen_size.height() - self.height()) // 2
+            (self.screen_size.height() - self.height()) // 2,
         )
         # create an MDI area
         self.mdi_area = QtWidgets.QMdiArea()
@@ -86,18 +101,22 @@ class MainWindow(QMainWindow):
 
         # Start background worker thread to poll plot Futures
         self._update_thread = QtCore.QThread(self)
-        self._plot_update_worker = PlotUpdateWorker(lambda: list(self.plot_subwindows), interval_ms=25)
+        self._plot_update_worker = PlotUpdateWorker(
+            lambda: list(self.plot_subwindows), interval_ms=25
+        )
         self._plot_update_worker.moveToThread(self._update_thread)
         self._update_thread.started.connect(self._plot_update_worker.start)
         self._plot_update_worker.plot_ready.connect(self.on_plot_future_ready)
         self._update_thread.start()
 
-        #self.timer = QTimer()
-        #self.timer.setInterval(10)  # Every 10ms we will check to update the plots??
-        #self.timer.timeout.connect(self.update_plots_loop)
-        #self.timer.start()
+        # self.timer = QTimer()
+        # self.timer.setInterval(10)  # Every 10ms we will check to update the plots??
+        # self.timer.timeout.connect(self.update_plots_loop)
+        # self.timer.start()
 
-        self.mdi_area.setStyleSheet("background-color: #2b2b2b;")  # Dark gray background
+        self.mdi_area.setStyleSheet(
+            "background-color: #2b2b2b;"
+        )  # Dark gray background
 
         self.signal_trees = []  # type: list[BaseSignalTree]
 
@@ -167,7 +186,12 @@ class MainWindow(QMainWindow):
 
         example_data = file_menu.addMenu("Load Example Data...")
 
-        names = ["mgo_nanocrystals", "small_ptychography", "zrnb_precipitate", "pdcusi_insitu"]
+        names = [
+            "mgo_nanocrystals",
+            "small_ptychography",
+            "zrnb_precipitate",
+            "pdcusi_insitu",
+        ]
         for n in names:
             action = example_data.addAction(n)
             action.triggered.connect(partial(self.load_example_data, n))
@@ -175,7 +199,6 @@ class MainWindow(QMainWindow):
         export_file = QAction("Export Current Signal...", self)
         export_file.triggered.connect(self.export_current_signal)
         file_menu.addAction(export_file)
-
 
         # Add View Menu
         view_menu = menubar.addMenu("View")
@@ -201,7 +224,9 @@ class MainWindow(QMainWindow):
         if not isinstance(self._active_plot_window(), Plot):
             QMessageBox.warning(self, "Error", "No active plot window to export from.")
             return
-        export_dialog = MovieExportDialog(plot=self._active_plot_window(), parent=self).exec()
+        export_dialog = MovieExportDialog(
+            plot=self._active_plot_window(), parent=self
+        ).exec()
 
     def open_dask_dashboard(self):
         """
@@ -233,16 +258,23 @@ class MainWindow(QMainWindow):
                     x_size = dialog.x_input.value()
                     y_size = dialog.y_input.value()
                     time_size = dialog.time_input.value()
-                    kwargs["navigation_shape"] = tuple([val for val in (x_size, y_size, time_size) if val > 1])
+                    kwargs["navigation_shape"] = tuple(
+                        [val for val in (x_size, y_size, time_size) if val > 1]
+                    )
                     print(f"{kwargs['navigation_shape']}")
                 else:
                     print("Dialog cancelled")
                     return
                 # .mrc always have 2 signal axes.  Maybe needs changed for eels.
                 if len(kwargs["navigation_shape"]) == 3:
-                    kwargs["chunks"] = ((1,) + ("auto",) * (len(kwargs["navigation_shape"]) - 1)) + (-1, -1)
+                    kwargs["chunks"] = (
+                        (1,) + ("auto",) * (len(kwargs["navigation_shape"]) - 1)
+                    ) + (-1, -1)
                 else:
-                    kwargs["chunks"] = (("auto",) * len(kwargs["navigation_shape"])) + (-1, -1)
+                    kwargs["chunks"] = (("auto",) * len(kwargs["navigation_shape"])) + (
+                        -1,
+                        -1,
+                    )
 
                 print(f"chunks: {kwargs['chunks']}")
             if hasattr(kwargs, "navigation_shape") and kwargs["navigation_shape"] == ():
@@ -251,9 +283,9 @@ class MainWindow(QMainWindow):
             print("Loading signal from file:", file_path, "with kwargs:", kwargs)
             signal = hs.load(file_path, **kwargs)
             print("Signal loaded:", signal)
-            signal_tree = BaseSignalTree(root_signal=signal,
-                                          main_window=self,
-                                          distributed_client=self.client)
+            signal_tree = BaseSignalTree(
+                root_signal=signal, main_window=self, distributed_client=self.client
+            )
             self.signal_trees.append(signal_tree)
 
     def open_file(self):
@@ -266,7 +298,7 @@ class MainWindow(QMainWindow):
             if file_paths:
                 self._create_signals(file_paths)
 
-    def add_signal(self, signal, navigators = None):
+    def add_signal(self, signal, navigators=None):
         """Add a signal to the main window.
 
         This will "plant" a new seed for a signal tree and set up the associated plots.
@@ -277,16 +309,18 @@ class MainWindow(QMainWindow):
             The hyperspy signal to add.
 
         """
-        signal_tree = BaseSignalTree(root_signal=signal,
-                       main_window=self,
-                       distributed_client=self.client)
+        signal_tree = BaseSignalTree(
+            root_signal=signal, main_window=self, distributed_client=self.client
+        )
         self.signal_trees.append(signal_tree)
         print("Signal Tree Created")
         if navigators is not None:
             for i, nav in enumerate(navigators):
-                title = nav.metadata.get_item("General.title", default="navigation_"+str(i))
+                title = nav.metadata.get_item(
+                    "General.title", default="navigation_" + str(i)
+                )
                 if title == "":
-                    title = "navigation_"+str(i)
+                    title = "navigation_" + str(i)
                 print("Adding navigator signal:", title)
                 signal_tree.add_navigator_signal(title, nav)
 
@@ -337,8 +371,10 @@ class MainWindow(QMainWindow):
                 group = QtWidgets.QGroupBox(str(subsection))
 
                 # Keep each group a constant height and allow scrolling inside
-                group.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
-                                    QtWidgets.QSizePolicy.Policy.Fixed)
+                group.setSizePolicy(
+                    QtWidgets.QSizePolicy.Policy.Expanding,
+                    QtWidgets.QSizePolicy.Policy.Fixed,
+                )
                 group.setFixedHeight(120)
 
                 # Group layout that holds the scroll area
@@ -349,7 +385,9 @@ class MainWindow(QMainWindow):
                 # Scroll area inside the group
                 scroll = QtWidgets.QScrollArea()
                 scroll.setWidgetResizable(True)
-                scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+                scroll.setHorizontalScrollBarPolicy(
+                    Qt.ScrollBarPolicy.ScrollBarAsNeeded
+                )
                 scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
                 # Container for the metadata rows
@@ -450,7 +488,11 @@ class MainWindow(QMainWindow):
 
         # Rebind histogram only if the ImageItem changed
         img_item = getattr(window, "image_item", None)
-        if self.histogram is not None and img_item is not None and img_item is not self._histogram_image_item:
+        if (
+            self.histogram is not None
+            and img_item is not None
+            and img_item is not self._histogram_image_item
+        ):
             try:
                 print("Binding histogram to new image item:", img_item)
                 self.histogram.setImageItem(img_item)
@@ -468,7 +510,11 @@ class MainWindow(QMainWindow):
             self.update_metadata_widget(window)
 
         # Sync colormap selector
-        if ps is not None and hasattr(self, "cmap_selector") and self.cmap_selector is not None:
+        if (
+            ps is not None
+            and hasattr(self, "cmap_selector")
+            and self.cmap_selector is not None
+        ):
             self.cmap_selector.setCurrentText(ps.colormap)
         print("Sub-window activated:", window)
 
@@ -481,7 +527,10 @@ class MainWindow(QMainWindow):
 
         """
         self.dock_widget = QtWidgets.QDockWidget("Plot Control", self)
-        self.dock_widget.setFeatures(self.dock_widget.features() & ~QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        self.dock_widget.setFeatures(
+            self.dock_widget.features()
+            & ~QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
         self.dock_widget.setBaseSize(self.width() // 6, self.height() // 6)
 
         # Create a main widget and layout
@@ -495,13 +544,15 @@ class MainWindow(QMainWindow):
         display_layout = QtWidgets.QVBoxLayout(display_group)
 
         # Create a Histogram plot LUT widget
-        self.histogram = HistogramLUTWidget(orientation="horizontal",
-                                            autoLevel=False,
-                                            constantLevel=True)  # type: HistogramLUTWidget
+        self.histogram = HistogramLUTWidget(
+            orientation="horizontal", autoLevel=False, constantLevel=True
+        )  # type: HistogramLUTWidget
         self.histogram.setMinimumWidth(200)
         self.histogram.setMinimumHeight(100)
         self.histogram.setMaximumHeight(150)
-        self.histogram.item.sigLevelChangeFinished.connect(self.on_histogram_levels_finished)
+        self.histogram.item.sigLevelChangeFinished.connect(
+            self.on_histogram_levels_finished
+        )
         display_layout.addWidget(self.histogram)
 
         # Add a color map selector inside a group box
@@ -546,7 +597,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(selectors_group)
         self.dock_widget.setWidget(main_widget)
 
-        self.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
+        self.addDockWidget(
+            QtCore.Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget
+        )
 
     def _active_plot_window(self) -> Union[Plot, None]:
         # The active subwindow is the Plot (subclass of QMdiSubWindow)
@@ -593,7 +646,11 @@ class MainWindow(QMainWindow):
         and apply immediately. Guard against missing histogram data.
         """
         # Guard: histogram not ready yet
-        if signal is None or getattr(signal, "bins", None) is None or getattr(signal, "counts", None) is None:
+        if (
+            signal is None
+            or getattr(signal, "bins", None) is None
+            or getattr(signal, "counts", None) is None
+        ):
             return
         percentiles = signal.get_percentile_levels()
         levels = signal.getLevels()
@@ -652,7 +709,10 @@ class MainWindow(QMainWindow):
 
     def close(self):
         try:
-            if hasattr(self, "_plot_update_worker") and self._plot_update_worker is not None:
+            if (
+                hasattr(self, "_plot_update_worker")
+                and self._plot_update_worker is not None
+            ):
                 self._plot_update_worker.stop()
             if hasattr(self, "_update_thread") and self._update_thread is not None:
                 self._update_thread.quit()
@@ -666,17 +726,19 @@ class MainWindow(QMainWindow):
         super().close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("SpyDe")  # Set the application name
     # Create and show the splash screen
     logo_path = "SpydeDark.png"  # Replace with the actual path to your logo
-    pixmap = QPixmap(logo_path).scaled(300, 300,
-                                       Qt.AspectRatioMode.KeepAspectRatio,
-                                       Qt.TransformationMode.SmoothTransformation)
+    pixmap = QPixmap(logo_path).scaled(
+        300,
+        300,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
 
-    splash = QSplashScreen(pixmap,
-                           Qt.WindowType.FramelessWindowHint)
+    splash = QSplashScreen(pixmap, Qt.WindowType.FramelessWindowHint)
     splash.show()
     splash.raise_()  # Bring the splash screen to the front
     app.processEvents()

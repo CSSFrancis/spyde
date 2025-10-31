@@ -16,6 +16,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
     This toolbar is designed to be used alongside a Plot widget, allowing for floating
     tools around some plot area. ("top", "bottom", "left", "right")
     """
+
     def __init__(
         self,
         title: str,
@@ -42,8 +43,11 @@ class RoundedToolBar(QtWidgets.QToolBar):
         self.action_widgets: dict[str, dict] = {}
 
         # set up fixed style
-        self.setOrientation(QtCore.Qt.Orientation.Vertical if vertical
-                            else QtCore.Qt.Orientation.Horizontal)
+        self.setOrientation(
+            QtCore.Qt.Orientation.Vertical
+            if vertical
+            else QtCore.Qt.Orientation.Horizontal
+        )
 
         # Compact buttons
         self.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonIconOnly)
@@ -88,17 +92,21 @@ class RoundedToolBar(QtWidgets.QToolBar):
         # Track geometry to keep the toolbar and spawned widgets positioned
         self._position_tracker = self._make_position_tracker(self.move_next_to_plot)
         self.installEventFilter(self._position_tracker)
-        if (container := self._resolve_container_parent(self.parentWidget())) is not None:
+        if (
+            container := self._resolve_container_parent(self.parentWidget())
+        ) is not None:
             container.installEventFilter(self._position_tracker)
         if self.plot is not None:
             self.plot.installEventFilter(self._position_tracker)
 
-    def add_action(self,
-                   name: str,
-                   icon_path: str,
-                   function: Callable,
-                   toggle: bool = False,
-                   parameters: dict = None) -> QtGui.QAction:
+    def add_action(
+        self,
+        name: str,
+        icon_path: str,
+        function: Callable,
+        toggle: bool = False,
+        parameters: dict = None,
+    ) -> QtGui.QAction:
         """
         Add an action to the toolbar.
         """
@@ -111,22 +119,29 @@ class RoundedToolBar(QtWidgets.QToolBar):
         if parameters != {}:
             #  create a popout menu for the action with a submit button
             from spyde.drawing.toolbars.caret_group import CaretParams
-            popout = CaretParams(title=name,
-                                 parameters=parameters,
-                                 function=function,
-                                 toolbar=self,
-                                 action_name=name,
-                                 auto_attach=True)
+
+            popout = CaretParams(
+                title=name,
+                parameters=parameters,
+                function=function,
+                toolbar=self,
+                action_name=name,
+                auto_attach=True,
+            )
             # bind action to show the popout
             popout.hide()
             action.setCheckable(True)
             self.add_action_widget(name, popout, None)
-            action.toggled.connect(lambda checked: popout.show() if checked else popout.hide())
+            action.toggled.connect(
+                lambda checked: popout.show() if checked else popout.hide()
+            )
 
         else:
             if toggle:
                 action.setCheckable(True)
-                action.toggled.connect(lambda checked, f=function: f(self, toggle=checked))
+                action.toggled.connect(
+                    lambda checked, f=function: f(self, toggle=checked)
+                )
             else:
                 action.triggered.connect(lambda _, f=function: f(self))
         return action
@@ -142,8 +157,9 @@ class RoundedToolBar(QtWidgets.QToolBar):
 
     def set_size(self):
         # Lock size so it doesn't change when moved
-        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed,
-                           QtWidgets.QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
+        )
         self.setFixedSize(self.sizeHint())
 
         # Initial placement
@@ -172,7 +188,9 @@ class RoundedToolBar(QtWidgets.QToolBar):
         super().paintEvent(ev)
 
     @staticmethod
-    def _resolve_container_parent(parent: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]:
+    def _resolve_container_parent(
+        parent: Optional[QtWidgets.QWidget],
+    ) -> Optional[QtWidgets.QWidget]:
         # Prefer a content container instead of QMainWindow for overlays
         if isinstance(parent, QtWidgets.QMainWindow):
             cw = parent.centralWidget()
@@ -181,10 +199,12 @@ class RoundedToolBar(QtWidgets.QToolBar):
             return cw or parent
         return parent
 
-    def add_action_widget(self,
-                          action_name: str,
-                          widget: QtWidgets.QWidget,
-                          layout: Optional[QtWidgets.QLayout]) -> None:
+    def add_action_widget(
+        self,
+        action_name: str,
+        widget: QtWidgets.QWidget,
+        layout: Optional[QtWidgets.QLayout],
+    ) -> None:
         """Add a custom widget which spawns from clicking some action in the toolbar."""
         if action_name not in self.action_widgets:
             self.action_widgets[action_name] = {}
@@ -204,7 +224,9 @@ class RoundedToolBar(QtWidgets.QToolBar):
                 widget.setLayout(layout)
 
         # Find the tool button for the action
-        def _find_toolbutton_for_action(act: Optional[QtGui.QAction]) -> Optional[QtWidgets.QToolButton]:
+        def _find_toolbutton_for_action(
+            act: Optional[QtGui.QAction],
+        ) -> Optional[QtWidgets.QToolButton]:
             if act is None:
                 return None
             for btn in self.findChildren(QtWidgets.QToolButton):
@@ -276,22 +298,41 @@ class RoundedToolBar(QtWidgets.QToolBar):
         # Auto-bind to an action with the same name
         action = self._find_action(action_name)
         print(f"Auto-binding action widget '{action_name}' to toolbar action.")
-        print(f"  Found action: {action}, isCheckable={action.isCheckable() if action else 'N/A'}")
+        print(
+            f"  Found action: {action}, isCheckable={action.isCheckable() if action else 'N/A'}"
+        )
         if action is not None:
             if action.isCheckable():
                 print(f"Binding action widget '{action_name}' to toggle action.")
                 print("Positioning widget on toggle.")
-                action.toggled.connect(lambda checked: (widget.setVisible(checked), position_widget()))
+                action.toggled.connect(
+                    lambda checked: (widget.setVisible(checked), position_widget())
+                )
                 action.setChecked(False)  # Start hidden
             else:
-                action.triggered.connect(lambda: (widget.setVisible(not widget.isVisible()), position_widget()))
-                
+                action.triggered.connect(
+                    lambda: (
+                        widget.setVisible(not widget.isVisible()),
+                        position_widget(),
+                    )
+                )
+
         # this is a little buggy. This should cleaner but likely requires more robust Toolbar creating logic
-        QtCore.QTimer.singleShot(1, position_widget)  # Initial placement delay to ensure correct position
-        QtCore.QTimer.singleShot(3, position_widget)  # Initial placement delay to ensure correct position
-        QtCore.QTimer.singleShot(5, position_widget)  # Initial placement delay to ensure correct position
-        QtCore.QTimer.singleShot(10, position_widget)  # Initial placement delay to ensure correct position
-        QtCore.QTimer.singleShot(20, position_widget)  # Initial placement delay to ensure correct position
+        QtCore.QTimer.singleShot(
+            1, position_widget
+        )  # Initial placement delay to ensure correct position
+        QtCore.QTimer.singleShot(
+            3, position_widget
+        )  # Initial placement delay to ensure correct position
+        QtCore.QTimer.singleShot(
+            5, position_widget
+        )  # Initial placement delay to ensure correct position
+        QtCore.QTimer.singleShot(
+            10, position_widget
+        )  # Initial placement delay to ensure correct position
+        QtCore.QTimer.singleShot(
+            20, position_widget
+        )  # Initial placement delay to ensure correct position
 
     def _find_action(self, name: str) -> Optional[QtGui.QAction]:
         for a in self.actions():
@@ -316,22 +357,22 @@ class RoundedToolBar(QtWidgets.QToolBar):
         if self.position == "left":
             desired_global = QtCore.QPoint(
                 plot_global_tl.x() - self.width() - self._margin,
-                plot_global_tl.y() + self._margin
+                plot_global_tl.y() + self._margin,
             )
         elif self.position == "right":
             desired_global = QtCore.QPoint(
                 plot_global_tl.x() + self.plot.width() + self._margin,
-                plot_global_tl.y() + self._margin
+                plot_global_tl.y() + self._margin,
             )
         elif self.position == "top":
             desired_global = QtCore.QPoint(
                 plot_global_tl.x() + self._margin,
-                plot_global_tl.y() - self.height() - self._margin
+                plot_global_tl.y() - self.height() - self._margin,
             )
         else:  # "bottom"
             desired_global = QtCore.QPoint(
                 plot_global_tl.x() + self._margin,
-                plot_global_tl.y() + self.plot.height() + self._margin
+                plot_global_tl.y() + self.plot.height() + self._margin,
             )
 
         desired_in_parent = parent.mapFromGlobal(desired_global)
@@ -347,11 +388,14 @@ class RoundedToolBar(QtWidgets.QToolBar):
     def _make_position_tracker(callback: Callable[[], None]) -> QtCore.QObject:
         class _Tracker(QtCore.QObject):
             def eventFilter(self, obj, event):
-                if event.type() in (QtCore.QEvent.Type.Move,
-                                    QtCore.QEvent.Type.Resize,
-                                    QtCore.QEvent.Type.Show):
+                if event.type() in (
+                    QtCore.QEvent.Type.Move,
+                    QtCore.QEvent.Type.Resize,
+                    QtCore.QEvent.Type.Show,
+                ):
                     QtCore.QTimer.singleShot(0, callback)
                 return False
+
         return _Tracker()
 
     def _remove_event_filter_safe(self, tracker: QtCore.QObject) -> None:
@@ -419,5 +463,3 @@ class RoundedToolBar(QtWidgets.QToolBar):
             self._remove_event_filter_safe(tracker)
 
         super().closeEvent(ev)
-
-

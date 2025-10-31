@@ -1,7 +1,14 @@
 from functools import partial
 
 import numpy as np
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QSpinBox, QLabel, QPushButton, QDialogButtonBox
+from PySide6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QSpinBox,
+    QLabel,
+    QPushButton,
+    QDialogButtonBox,
+)
 import hyperspy.api as hs
 
 from PySide6 import QtWidgets
@@ -47,4 +54,3 @@ class AddNavigator(QDialog):
         # Stub: implement a signal picker as needed
         self.selected_source = ("signal", None)
         self.accept()
-

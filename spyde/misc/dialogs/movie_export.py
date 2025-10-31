@@ -3,6 +3,7 @@ Export some Signal as a movie.
 
 This dialog allows the user to select parameters for exporting a movie from a selected signal.
 """
+
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
@@ -49,15 +50,15 @@ class MovieExportDialog(QDialog):
     - Control FPS and output path
     """
 
-    def __init__(self,
-                 plot: "Plot",
-                 parent=None):
+    def __init__(self, plot: "Plot", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Export Movie")
-        self._plot = plot   # type: Plot
+        self._plot = plot  # type: Plot
         self._signal = self._plot.plot_state.current_signal
         if self._signal is None:
-            raise ValueError("MovieExportDialog: Could not find a HyperSpy Signal in the provided Plot.")
+            raise ValueError(
+                "MovieExportDialog: Could not find a HyperSpy Signal in the provided Plot."
+            )
 
         self._output_path = None
 
@@ -167,7 +168,9 @@ class MovieExportDialog(QDialog):
         layout.addWidget(out_row_widget)
 
         # Buttons
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -175,7 +178,6 @@ class MovieExportDialog(QDialog):
         self._toggle_roi_enabled()
 
     # ---------------- Helpers ----------------
-
 
     def _populate_axes(self):
         self.axis_combo.clear()
@@ -303,18 +305,27 @@ class MovieExportDialog(QDialog):
                     self.out_label.setText(f"Output: {path}")
                 except Exception:
                     pass
-            writer_kw.update({
-                "fps": fps,
-                "format": "FFMPEG",
-                "codec": "libx264",
-                "ffmpeg_params": ["-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p"],
-            })
+            writer_kw.update(
+                {
+                    "fps": fps,
+                    "format": "FFMPEG",
+                    "codec": "libx264",
+                    "ffmpeg_params": [
+                        "-crf",
+                        "18",
+                        "-preset",
+                        "medium",
+                        "-pix_fmt",
+                        "yuv420p",
+                    ],
+                }
+            )
 
         # Render via pyqtgraph: ImageItem + optional axes + scale bar, then export to QImage
         plot_item = pg.PlotItem()
 
         self._export_glw = pg.GraphicsLayoutWidget()
-        self._export_glw.setBackground('w')
+        self._export_glw.setBackground("w")
         self._export_glw.resize(int(w), int(h))
         self._export_glw.addItem(plot_item)
         vb = plot_item.getViewBox()
@@ -322,14 +333,14 @@ class MovieExportDialog(QDialog):
 
         # Axes visibility
         if not self.cb_show_axes.isChecked():
-            plot_item.hideAxis('left')
-            plot_item.hideAxis('bottom')
+            plot_item.hideAxis("left")
+            plot_item.hideAxis("bottom")
         else:
-            plot_item.showAxis('left')
-            plot_item.showAxis('bottom')
+            plot_item.showAxis("left")
+            plot_item.showAxis("bottom")
 
         # crop the signal:
-        s_cropped = s.inav[start:end + 1].isig[y:y + h, x:x + w]
+        s_cropped = s.inav[start : end + 1].isig[y : y + h, x : x + w]
 
         img_item = pg.ImageItem(image=np.zeros((h, w)))
         plot_item.addItem(img_item)
@@ -347,6 +358,7 @@ class MovieExportDialog(QDialog):
             sb.anchor((1, 1), (1, 1), offset=(-12, -12))
         with imageio.get_writer(path, **writer_kw) as writer:
             from pyqtgraph.exporters import ImageExporter
+
             exporter = ImageExporter(plot_item)
             params = exporter.parameters()
             scale = max(1, int(round(self._export_glw.devicePixelRatioF())))

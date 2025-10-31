@@ -8,11 +8,11 @@ class RoundedButton(QtWidgets.QPushButton):
     """
 
     def __init__(
-            self,
-            icon_path: Optional[str] = None,
-            text: Optional[str] = None,
-            tooltip: Optional[str] = None,
-            parent: Optional[QtWidgets.QWidget] = None,
+        self,
+        icon_path: Optional[str] = None,
+        text: Optional[str] = None,
+        tooltip: Optional[str] = None,
+        parent: Optional[QtWidgets.QWidget] = None,
     ):
         super().__init__(parent)
 
@@ -45,8 +45,6 @@ class RoundedButton(QtWidgets.QPushButton):
         )
 
 
-
-
 class ButtonTree(QtWidgets.QWidget):
     """
     Layout a tree of buttons using the Reingold-Tilford tidy tree algorithm (Buchheim et al., 2002),
@@ -55,7 +53,14 @@ class ButtonTree(QtWidgets.QWidget):
     """
 
     class _TreeNode:
-        def __init__(self, label: str, button: Optional[QtWidgets.QPushButton], children: Optional[List["ButtonTree._TreeNode"]] = None, parent: Optional["ButtonTree._TreeNode"] = None, is_dummy: bool = False):
+        def __init__(
+            self,
+            label: str,
+            button: Optional[QtWidgets.QPushButton],
+            children: Optional[List["ButtonTree._TreeNode"]] = None,
+            parent: Optional["ButtonTree._TreeNode"] = None,
+            is_dummy: bool = False,
+        ):
             self.label = label
             self.button = button
             self.children: List["ButtonTree._TreeNode"] = children or []
@@ -100,8 +105,12 @@ class ButtonTree(QtWidgets.QWidget):
 
         self.graphics_view = QtWidgets.QGraphicsView(self)
         self.graphics_view.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        self.graphics_view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.graphics_view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.graphics_view.setHorizontalScrollBarPolicy(
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.graphics_view.setVerticalScrollBarPolicy(
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
 
         self.graphics_scene = QtWidgets.QGraphicsScene(self)
         self.graphics_view.setScene(self.graphics_scene)
@@ -110,8 +119,8 @@ class ButtonTree(QtWidgets.QWidget):
         # Node geometry and spacing (px)
         self.node_w = 80
         self.node_h = 25
-        self.level_gap = 30       # gap between parent and child columns (x direction)
-        self.sibling_gap = 20     # gap between siblings (y direction)
+        self.level_gap = 30  # gap between parent and child columns (x direction)
+        self.sibling_gap = 20  # gap between siblings (y direction)
 
         # Build tidy layout and paint
         root = self._build_tree(tree)
@@ -142,12 +151,20 @@ class ButtonTree(QtWidgets.QWidget):
         super_root.children = roots
         return super_root
 
-    def _build_subtree(self, label: str, subtree: Any, button: QtWidgets.QPushButton, parent: Optional["_TreeNode"]) -> "_TreeNode":
+    def _build_subtree(
+        self,
+        label: str,
+        subtree: Any,
+        button: QtWidgets.QPushButton,
+        parent: Optional["_TreeNode"],
+    ) -> "_TreeNode":
         node = ButtonTree._TreeNode(label, button, [], parent, is_dummy=False)
         if isinstance(subtree, dict):
             for i, (child_label, child_subtree) in enumerate(subtree.items()):
                 child_btn = child_label
-                child_node = self._build_subtree(child_label, child_subtree, child_btn, node)
+                child_node = self._build_subtree(
+                    child_label, child_subtree, child_btn, node
+                )
                 child_node.number = i
                 node.children.append(child_node)
         # Treat None or non-dict as leaf
@@ -161,6 +178,7 @@ class ButtonTree(QtWidgets.QWidget):
             for i, c in enumerate(n.children):
                 c.number = i
                 assign_numbers(c)
+
         assign_numbers(root)
 
         # First and second walks
@@ -221,8 +239,8 @@ class ButtonTree(QtWidgets.QWidget):
                 sor += shift
             sil += vil.mod
             sir += vir.mod
-            sol += (vol.mod if vol else 0.0)
-            sor += (vor.mod if vor else 0.0)
+            sol += vol.mod if vol else 0.0
+            sor += vor.mod if vor else 0.0
 
         if vil.right() and not (vor and vor.right()):
             if vor:
@@ -236,7 +254,7 @@ class ButtonTree(QtWidgets.QWidget):
         return default_ancestor
 
     def _move_subtree(self, wl: "_TreeNode", wr: "_TreeNode", shift: float) -> None:
-        subtrees = (wr.number - wl.number)
+        subtrees = wr.number - wl.number
         if subtrees <= 0:
             return
         ratio = shift / subtrees
@@ -253,7 +271,9 @@ class ButtonTree(QtWidgets.QWidget):
             change += w.change
             shift += w.shift + change
 
-    def _ancestor(self, vil: "_TreeNode", v: "_TreeNode", default_ancestor: "_TreeNode") -> "_TreeNode":
+    def _ancestor(
+        self, vil: "_TreeNode", v: "_TreeNode", default_ancestor: "_TreeNode"
+    ) -> "_TreeNode":
         if vil.ancestor and vil.ancestor in (v.parent.children if v.parent else []):
             return vil.ancestor
         return default_ancestor
@@ -272,7 +292,6 @@ class ButtonTree(QtWidgets.QWidget):
             self._shift_tree(w, dx)
 
     # --- Render to QGraphicsScene ----------------------------------------------
-
 
     def _render_tree(self, root: "_TreeNode") -> None:
         self.graphics_scene.clear()
@@ -306,11 +325,17 @@ class ButtonTree(QtWidgets.QWidget):
             for child in parent.children:
                 if child.is_dummy:
                     continue
-                p0 = pos[parent] + QtCore.QPointF(self.node_w, self.node_h / 2.0)  # right-center of parent
-                p1 = pos[child] + QtCore.QPointF(0.0, self.node_h / 2.0)  # left-center of child
+                p0 = pos[parent] + QtCore.QPointF(
+                    self.node_w, self.node_h / 2.0
+                )  # right-center of parent
+                p1 = pos[child] + QtCore.QPointF(
+                    0.0, self.node_h / 2.0
+                )  # left-center of child
                 path = QtGui.QPainterPath(p0)
                 dx = max(20.0, (self.level_gap + self.node_w) * 0.35)
-                path.cubicTo(p0 + QtCore.QPointF(dx, 0.0), p1 - QtCore.QPointF(dx, 0.0), p1)
+                path.cubicTo(
+                    p0 + QtCore.QPointF(dx, 0.0), p1 - QtCore.QPointF(dx, 0.0), p1
+                )
                 edge_item = self.graphics_scene.addPath(path, pen)
                 edge_item.setZValue(-1.0)  # keep edges behind nodes
 

@@ -1,7 +1,14 @@
 from functools import partial
 
 import numpy as np
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QSpinBox, QLabel, QPushButton, QDialogButtonBox
+from PySide6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QSpinBox,
+    QLabel,
+    QPushButton,
+    QDialogButtonBox,
+)
 import hyperspy.api as hs
 
 from PySide6 import QtWidgets
@@ -29,12 +36,22 @@ class DatasetSizeDialog(QDialog):
             self.reject()
             return
         nav_shape = [a.size for a in data.axes_manager.navigation_axes]
-        self.x, self.y, self.t = nav_shape + ([0,] * (3-len(nav_shape)))
+        self.x, self.y, self.t = nav_shape + (
+            [
+                0,
+            ]
+            * (3 - len(nav_shape))
+        )
         self.total_frames = np.prod(nav_shape)
         print(self.total_frames)
 
         sig_shape = [a.size for a in data.axes_manager.signal_axes]
-        kx, ky, kz = sig_shape + ([0,] * (3-len(sig_shape)))
+        kx, ky, kz = sig_shape + (
+            [
+                0,
+            ]
+            * (3 - len(sig_shape))
+        )
         print("setting_size")
 
         self.setWindowTitle("Dataset Size Configuration")
@@ -90,8 +107,7 @@ class DatasetSizeDialog(QDialog):
 
     def exec(self, /):
         """Override exec to handle immediate acceptance."""
-        print("Executing Dialog",
-              f"x: {self.x}, y: {self.y}, t: {self.t}")
+        print("Executing Dialog", f"x: {self.x}, y: {self.y}, t: {self.t}")
         if self.x < 1 and self.y < 1 and self.t < 1:
             self.x_input.setValue(1)
             self.y_input.setValue(1)
@@ -110,10 +126,10 @@ class DatasetSizeDialog(QDialog):
         else:
             if index == 0:
                 x_size = self.x_input.value()
-                self.y_input.setValue(self.total_frames//x_size)
+                self.y_input.setValue(self.total_frames // x_size)
             else:
                 y_size = self.y_input.value()
-                self.x_input.setValue(self.total_frames//y_size)
+                self.x_input.setValue(self.total_frames // y_size)
 
     def toggle_time_input(self, checked):
         """Enable or disable the time input box."""
@@ -140,11 +156,13 @@ class CreateDataDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        def add_spin_row(parent_layout: QtWidgets.QVBoxLayout,
-                         label_text: str,
-                         min_val: int,
-                         max_val: int,
-                         default: int) -> QtWidgets.QSpinBox:
+        def add_spin_row(
+            parent_layout: QtWidgets.QVBoxLayout,
+            label_text: str,
+            min_val: int,
+            max_val: int,
+            default: int,
+        ) -> QtWidgets.QSpinBox:
             """Add a labeled QSpinBox row to a layout and return the spin box."""
             row = QtWidgets.QHBoxLayout()
             row.addWidget(QtWidgets.QLabel(label_text))
@@ -235,7 +253,9 @@ class CreateDataDialog(QDialog):
         """
         if np.issubdtype(dtype, np.integer):
             info = np.iinfo(dtype)
-            return da.random.randint(info.min, info.max + 1, size=size, chunks=chunks, dtype=dtype)
+            return da.random.randint(
+                info.min, info.max + 1, size=size, chunks=chunks, dtype=dtype
+            )
         # float
         return da.random.random(size, chunks=chunks).astype(dtype)
 
@@ -262,13 +282,24 @@ class CreateDataDialog(QDialog):
 
         if current_tab == "insitu TEM":
             # Keep dims with size > 1 and ensure at least 2D spatial data.
-            size = (self.it_t_input.value(), self.it_x_input.value(), self.it_y_input.value())
+            size = (
+                self.it_t_input.value(),
+                self.it_x_input.value(),
+                self.it_y_input.value(),
+            )
             size = tuple(s for s in size if s > 1)
             if len(size) < 2:
-                size = (max(2, self.it_x_input.value()), max(2, self.it_y_input.value()))
-            data = self._rand_array(size, chunks=self._auto_chunks(len(size)), dtype=dtype)
+                size = (
+                    max(2, self.it_x_input.value()),
+                    max(2, self.it_y_input.value()),
+                )
+            data = self._rand_array(
+                size, chunks=self._auto_chunks(len(size)), dtype=dtype
+            )
             s = self._wrap_lazy_signal2d(data)
-            temp_nav = hs.signals.Signal1D(np.arange(s.axes_manager.navigation_shape[0]))
+            temp_nav = hs.signals.Signal1D(
+                np.arange(s.axes_manager.navigation_shape[0])
+            )
             temp_nav.metadata.set_item("General.title", "Temperature")
             return self._wrap_lazy_signal2d(data), [temp_nav]
 
@@ -280,10 +311,16 @@ class CreateDataDialog(QDialog):
                     self.fs_kx_input.value(),
                     self.fs_ky_input.value(),
                 )
-                data = self._rand_array(size, chunks=("auto", "auto", -1, -1), dtype=dtype)
+                data = self._rand_array(
+                    size, chunks=("auto", "auto", -1, -1), dtype=dtype
+                )
                 s = self._wrap_lazy_signal2d(data)
-                navigator_1 = hs.signals.Signal2D(np.random.random(s.axes_manager.navigation_shape))  # random navigator data
-                navigator_2 = hs.signals.Signal2D(np.random.random(s.axes_manager.navigation_shape))  # random navigator data
+                navigator_1 = hs.signals.Signal2D(
+                    np.random.random(s.axes_manager.navigation_shape)
+                )  # random navigator data
+                navigator_2 = hs.signals.Signal2D(
+                    np.random.random(s.axes_manager.navigation_shape)
+                )  # random navigator data
                 return s, (navigator_1, navigator_2)
             # Multiphase synthetic pattern from pyxem.
             s = pyxem.data.fe_multi_phase_grains(
@@ -294,8 +331,12 @@ class CreateDataDialog(QDialog):
             s.cache_pad = 2
             # Cast to selected dtype (clip+round for integer)
 
-            navigator_1 = np.random.random(s.axes_manager.navigation_shape)  # random navigator data
-            navigator_2 = np.random.random(s.axes_manager.navigation_shape)  # random navigator data
+            navigator_1 = np.random.random(
+                s.axes_manager.navigation_shape
+            )  # random navigator data
+            navigator_2 = np.random.random(
+                s.axes_manager.navigation_shape
+            )  # random navigator data
 
             if np.issubdtype(dtype, np.integer):
                 info = np.iinfo(dtype)

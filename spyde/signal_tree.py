@@ -66,11 +66,12 @@ class BaseSignalTree:
 
     """
 
-    def __init__(self,
-                 root_signal: BaseSignal,
-                 main_window: "MainWindow",
-                 distributed_client=None
-                 ):
+    def __init__(
+        self,
+        root_signal: BaseSignal,
+        main_window: "MainWindow",
+        distributed_client=None,
+    ):
 
         # The root signal of the tree
         self.root = root_signal  # type: BaseSignal
@@ -84,14 +85,15 @@ class BaseSignalTree:
         # The tree structure. This defines the relationship between signals.
         # i.e. parent -> child.  Broken transformations create new seeds and
         # spawn new trees.
-        self._tree = {"root":
-                          {"signal": root_signal,
-                           "function": None,
-                           "args": None,
-                           "kwargs": None,
-                           "children": {}
-                           }
-                      }  # type: dict
+        self._tree = {
+            "root": {
+                "signal": root_signal,
+                "function": None,
+                "args": None,
+                "kwargs": None,
+                "children": {},
+            }
+        }  # type: dict
 
         # set up the navigator plots:
         navigator = self._initialize_navigator(root_signal)
@@ -102,15 +104,19 @@ class BaseSignalTree:
 
         self.navigator_plot_manager = None  # type: Union[NavigationPlotManager, None]
         # setting up plots
-        if self.root.axes_manager.navigation_dimension > 0:  # pass to NavigationPlotManager
-            self.navigator_plot_manager = NavigationPlotManager(main_window=main_window,
-                                                                signal_tree=self)
+        if (
+            self.root.axes_manager.navigation_dimension > 0
+        ):  # pass to NavigationPlotManager
+            self.navigator_plot_manager = NavigationPlotManager(
+                main_window=main_window, signal_tree=self
+            )
         else:
             self.navigator_plot_manager = None
 
-            plot = Plot(signal_tree=self,
-                        is_navigator=False,
-                        )
+            plot = Plot(
+                signal_tree=self,
+                is_navigator=False,
+            )
             self.signal_plots.append(plot)
 
             plot_states = self.create_plot_states()
@@ -121,26 +127,30 @@ class BaseSignalTree:
 
         print("Created Signal Tree with root signal: ", self.root)
 
-    def _preprocess_navigator(self,
-                              signal: BaseSignal) -> BaseSignal:
+    def _preprocess_navigator(self, signal: BaseSignal) -> BaseSignal:
         """
         Preprocess the navigator signal before adding it to the navigator plot manager.
         """
-        if ((signal.axes_manager.navigation_shape + signal.axes_manager.signal_shape) !=
-                self.root.axes_manager.navigation_shape):
-            raise ValueError("Navigator signal must have the same total number of dimensions as the root signal."
-                             "and the same shape")
+        if (
+            signal.axes_manager.navigation_shape + signal.axes_manager.signal_shape
+        ) != self.root.axes_manager.navigation_shape:
+            raise ValueError(
+                "Navigator signal must have the same total number of dimensions as the root signal."
+                "and the same shape"
+            )
         if signal.axes_manager.signal_dimension == 0:
             signal = signal.T
         return signal
 
-    def _on_axis_field_edit(self,
-                            signal,
-                            axis,
-                            field: str,
-                            line_edit: QtWidgets.QLineEdit,
-                            is_nav: bool,
-                            text: str = ""):
+    def _on_axis_field_edit(
+        self,
+        signal,
+        axis,
+        field: str,
+        line_edit: QtWidgets.QLineEdit,
+        is_nav: bool,
+        text: str = "",
+    ):
         """
         Slot called when an axis field is edited. Updates the corresponding axis property.
         If the is_nav flag is True, updates __all__ the signals in the signal tree.
@@ -176,8 +186,9 @@ class BaseSignalTree:
                 if signal.plot_state.current_signal == signal:
                     signal.update_image_rectangle()
 
-    def build_axes_groups(self, signal: Union[BaseSignal, None],
-                          plot: "Plot") -> list[QtWidgets.QGroupBox]:
+    def build_axes_groups(
+        self, signal: Union[BaseSignal, None], plot: "Plot"
+    ) -> list[QtWidgets.QGroupBox]:
         """
         Build two QGroupBoxes ("Navigation Axes", "Signal Axes") with editable
         name, scale, offset, and units fields for each axis. Edits call update_axes().
@@ -186,7 +197,9 @@ class BaseSignalTree:
 
         def _make_group(title: str, axes_list, is_nav=False) -> QtWidgets.QGroupBox:
             group = QtWidgets.QGroupBox(title)
-            group.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+            group.setSizePolicy(
+                QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed
+            )
 
             scroll = QtWidgets.QScrollArea()
             scroll.setWidgetResizable(True)
@@ -202,7 +215,9 @@ class BaseSignalTree:
             # column headers
             header_style = "font-size: 9px; font-weight: 600;"
             h_axis = QtWidgets.QLabel("Name")
-            h_axis.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            h_axis.setAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
             h_axis.setStyleSheet(header_style)
             h_scale = QtWidgets.QLabel("Scale")
             h_scale.setStyleSheet(header_style)
@@ -223,7 +238,14 @@ class BaseSignalTree:
                 name_edit.setFixedWidth(72)
                 name_edit.setFixedHeight(18)
                 name_edit.editingFinished.connect(
-                    partial(self._on_axis_field_edit, signal, axis, "name", name_edit, is_nav)
+                    partial(
+                        self._on_axis_field_edit,
+                        signal,
+                        axis,
+                        "name",
+                        name_edit,
+                        is_nav,
+                    )
                 )
 
                 scale_edit = EditableLabel(str(axis.scale))
@@ -236,13 +258,34 @@ class BaseSignalTree:
                     w.setFixedHeight(18)
 
                 scale_edit.editingFinished.connect(
-                    partial(self._on_axis_field_edit, signal, axis, "scale", scale_edit, is_nav)
+                    partial(
+                        self._on_axis_field_edit,
+                        signal,
+                        axis,
+                        "scale",
+                        scale_edit,
+                        is_nav,
+                    )
                 )
                 offset_edit.editingFinished.connect(
-                    partial(self._on_axis_field_edit, signal, axis, "offset", offset_edit, is_nav)
+                    partial(
+                        self._on_axis_field_edit,
+                        signal,
+                        axis,
+                        "offset",
+                        offset_edit,
+                        is_nav,
+                    )
                 )
                 units_edit.editingFinished.connect(
-                    partial(self._on_axis_field_edit, signal, axis, "units", units_edit, is_nav)
+                    partial(
+                        self._on_axis_field_edit,
+                        signal,
+                        axis,
+                        "units",
+                        units_edit,
+                        is_nav,
+                    )
                 )
 
                 grid.addWidget(name_edit, row, 0)
@@ -261,16 +304,16 @@ class BaseSignalTree:
             v.addWidget(scroll)
             return group
 
-        groups.append(_make_group("Navigation Axes",
-                                  self.root.axes_manager.navigation_axes,
-                                  is_nav=True))
+        groups.append(
+            _make_group(
+                "Navigation Axes", self.root.axes_manager.navigation_axes, is_nav=True
+            )
+        )
         if signal is not None and not plot.is_navigator:
             groups.append(_make_group("Signal Axes", signal.axes_manager.signal_axes))
         return groups
 
-    def add_navigator_signal(self,
-                             name: str,
-                             signal: BaseSignal):
+    def add_navigator_signal(self, name: str, signal: BaseSignal):
         """
         This adds a navigator plot to the signal tree.  The idea being that a signal tree can have multiple
         navigator signals but only 1 navigator plot (or multi-plot).  Eventually it would be nice to add the
@@ -334,6 +377,7 @@ class BaseSignalTree:
         Create plot states for each signal plot in the tree.
         """
         from spyde.drawing.plot_states import PlotState
+
         plot_states = {}
         for signal in self.signals():
             if signal.axes_manager.navigation_dimension == 0:
@@ -349,12 +393,17 @@ class BaseSignalTree:
         Update all plot states in the signal tree.
         """
         from spyde.drawing.plot_states import PlotState
+
         for plot in self.signal_plots:
             if new_signal not in plot.plot_states:
                 if new_signal.axes_manager.navigation_dimension == 0:
-                    plot.plot_states[new_signal] = PlotState(signal=new_signal, dynamic=False)
+                    plot.plot_states[new_signal] = PlotState(
+                        signal=new_signal, dynamic=False
+                    )
                 else:
-                    plot.plot_states[new_signal] = PlotState(signal=new_signal, dynamic=True)
+                    plot.plot_states[new_signal] = PlotState(
+                        signal=new_signal, dynamic=True
+                    )
 
     @property
     def nav_dim(self) -> int:
@@ -367,8 +416,9 @@ class BaseSignalTree:
         """
         Create navigator plots based on the root signal.
         """
-        self.navigator_plot_manager = NavigationPlotManager(main_window=self.main_window,
-                                                            signal_tree=self)
+        self.navigator_plot_manager = NavigationPlotManager(
+            main_window=self.main_window, signal_tree=self
+        )
 
     def get_nested_attr(self, attr_path: str):
         """
@@ -408,11 +458,14 @@ class BaseSignalTree:
         for subsection in METADATA_WIDGET_CONFIG["metadata_widget"]:
             print(f"Processing subsection: {subsection}")
             subsections[subsection] = {}
-            for prop, value in METADATA_WIDGET_CONFIG["metadata_widget"][subsection].items():
+            for prop, value in METADATA_WIDGET_CONFIG["metadata_widget"][
+                subsection
+            ].items():
                 print(f"Processing property: {prop} with value: {value}")
                 if "key" in value:
-                    current_value = self.root.metadata.get_item(item_path=value["key"],
-                                                                default=value.get("default", "--"))
+                    current_value = self.root.metadata.get_item(
+                        item_path=value["key"], default=value.get("default", "--")
+                    )
                 elif "attr" in value:
                     current_value = self.get_nested_attr(value["attr"])
                 elif "function" in value:
@@ -425,7 +478,9 @@ class BaseSignalTree:
                         current_value = self.get_nested_attr(value["function"])()
                 else:
                     current_value = "--"
-                current_value_string = f"{current_value} {value.get('units', '')}".strip()
+                current_value_string = (
+                    f"{current_value} {value.get('units', '')}".strip()
+                )
                 print(f"Resolved value for {prop}: {current_value_string}")
                 subsections[subsection][prop] = current_value_string
         print("Final Subsections:", subsections)
@@ -458,10 +513,7 @@ class BaseSignalTree:
         _traverse_children(self._tree["root"])
         return result_node
 
-    def add_node(self,
-                 parent_node,
-                 new_signal,
-                 transformation: str):
+    def add_node(self, parent_node, new_signal, transformation: str):
         """
         Add a new node to the signal tree.
         Parameters
@@ -477,18 +529,17 @@ class BaseSignalTree:
         parent_node = self.get_node(parent_node)
         if parent_node is None:
             raise ValueError("Parent node not found in the tree.")
-        parent_node["children"][transformation] = {
-            "signal": new_signal,
-            "children": {}
-        }
+        parent_node["children"][transformation] = {"signal": new_signal, "children": {}}
 
-    def add_transformation(self,
-                           parent_signal: BaseSignal,
-                           method: str = None,
-                           function: callable = None,
-                           node_name: str = None,
-                           *args,
-                           **kwargs):
+    def add_transformation(
+        self,
+        parent_signal: BaseSignal,
+        method: str = None,
+        function: callable = None,
+        node_name: str = None,
+        *args,
+        **kwargs,
+    ):
         """
         Add a transformation to the tree.
 
@@ -514,7 +565,7 @@ class BaseSignalTree:
                 QtWidgets.QMessageBox.critical(
                     self.main_window,
                     "Transformation error",
-                    f"An error occurred while applying transformation '{method or (function.__name__ if function else '')}':\n{e}"
+                    f"An error occurred while applying transformation '{method or (function.__name__ if function else '')}':\n{e}",
                 )
                 return
         else:
@@ -541,7 +592,7 @@ class BaseSignalTree:
             "function": function,
             "args": args,
             "kwargs": kwargs,
-            "children": {}
+            "children": {},
         }
         print(f"Added transformation '{node_name}' to the tree under parent signal.")
         self.update_plot_states(new_signal)

@@ -7,13 +7,15 @@ import dask.array as da
 import numpy as np
 from typing import Tuple
 
-def get_shifts(reference: np.ndarray,
-               current_data: np.ndarray,
-               sobel:bool = True,
-               phase_correlation: bool = True,
-               hanning: bool = True,
-               roi : Tuple[int, int, int, int] = None,
-               ) -> Tuple[float, float]:
+
+def get_shifts(
+    reference: np.ndarray,
+    current_data: np.ndarray,
+    sobel: bool = True,
+    phase_correlation: bool = True,
+    hanning: bool = True,
+    roi: Tuple[int, int, int, int] = None,
+) -> Tuple[float, float]:
     """
     Calculate the shifts between the reference and current data using some form of correlation.
 
@@ -54,13 +56,13 @@ def map_overlap_drift_correction(data):
         raise ValueError(f"Data must be 3D for drift correction not: {data.ndim}.")
 
     if not isinstance(data, da.Array):
-        data = da.asarray(data, chunks= ("auto", -1, -1))
+        data = da.asarray(data, chunks=("auto", -1, -1))
 
-    da.map_overlap(drift_correction,
-                  data,
-                  depth= {0:1, 1:0, 2:0},
-                  dtype=data.dtype,
-                  drop_axis=0,
-                  new_axis=0)
-
-
+    da.map_overlap(
+        drift_correction,
+        data,
+        depth={0: 1, 1: 0, 2: 0},
+        dtype=data.dtype,
+        drop_axis=0,
+        new_axis=0,
+    )

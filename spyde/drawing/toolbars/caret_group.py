@@ -34,10 +34,18 @@ class CaretGroup(QtWidgets.QGroupBox):
     ):
         # Optionally derive side from toolbar position when requested.
         def _opposite(pos: str) -> str:
-            return {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}.get(pos, "bottom")
+            return {
+                "left": "right",
+                "right": "left",
+                "top": "bottom",
+                "bottom": "top",
+            }.get(pos, "bottom")
 
         if toolbar is not None and (side is None or side == "auto"):
-            print("Setting CaretGroup side opposite to toolbar position:", toolbar.position)
+            print(
+                "Setting CaretGroup side opposite to toolbar position:",
+                toolbar.position,
+            )
             side = _opposite(getattr(toolbar, "position", "right"))
 
         super().__init__(title, parent)
@@ -142,7 +150,9 @@ class CaretGroup(QtWidgets.QGroupBox):
     def _bubble_rect(self) -> QtCore.QRectF:
         # Sub‑pixel align for crisp 1px pen
         bw = self._border_width
-        rect = QtCore.QRectF(self.rect()).adjusted(bw / 2.0, bw / 2.0, -bw / 2.0, -bw / 2.0)
+        rect = QtCore.QRectF(self.rect()).adjusted(
+            bw / 2.0, bw / 2.0, -bw / 2.0, -bw / 2.0
+        )
         if self._side == "top":
             rect.adjust(0, self._carrot_depth, 0, 0)
         elif self._side == "bottom":
@@ -163,12 +173,20 @@ class CaretGroup(QtWidgets.QGroupBox):
             if self._side == "top":
                 y = bubble.top()
                 return QtGui.QPolygonF(
-                    [QtCore.QPointF(x1, y), QtCore.QPointF(x2, y), QtCore.QPointF(cx, y - depth)]
+                    [
+                        QtCore.QPointF(x1, y),
+                        QtCore.QPointF(x2, y),
+                        QtCore.QPointF(cx, y - depth),
+                    ]
                 )
             else:
                 y = bubble.bottom()
                 return QtGui.QPolygonF(
-                    [QtCore.QPointF(x1, y), QtCore.QPointF(x2, y), QtCore.QPointF(cx, y + depth)]
+                    [
+                        QtCore.QPointF(x1, y),
+                        QtCore.QPointF(x2, y),
+                        QtCore.QPointF(cx, y + depth),
+                    ]
                 )
         else:
             cy = bubble.center().y()
@@ -177,12 +195,20 @@ class CaretGroup(QtWidgets.QGroupBox):
             if self._side == "left":
                 x = bubble.left()
                 return QtGui.QPolygonF(
-                    [QtCore.QPointF(x, y1), QtCore.QPointF(x, y2), QtCore.QPointF(x - depth, cy)]
+                    [
+                        QtCore.QPointF(x, y1),
+                        QtCore.QPointF(x, y2),
+                        QtCore.QPointF(x - depth, cy),
+                    ]
                 )
             else:
                 x = bubble.right()
                 return QtGui.QPolygonF(
-                    [QtCore.QPointF(x, y1), QtCore.QPointF(x, y2), QtCore.QPointF(x + depth, cy)]
+                    [
+                        QtCore.QPointF(x, y1),
+                        QtCore.QPointF(x, y2),
+                        QtCore.QPointF(x + depth, cy),
+                    ]
                 )
 
     def _path(self) -> QtGui.QPainterPath:
@@ -245,11 +271,23 @@ class CaretParams(CaretGroup):
         action_name: str | None = None,
         auto_attach: bool = False,
     ):
-        super().__init__(title, parent, side, radius, caret_base,
-                         caret_depth, border_width, padding, use_mask,
-                         toolbar=toolbar, action_name=action_name,
-                         auto_attach=auto_attach)
-        self.setStyleSheet("QGroupBox { border: none; } QLabel { background-color: transparent; }")
+        super().__init__(
+            title,
+            parent,
+            side,
+            radius,
+            caret_base,
+            caret_depth,
+            border_width,
+            padding,
+            use_mask,
+            toolbar=toolbar,
+            action_name=action_name,
+            auto_attach=auto_attach,
+        )
+        self.setStyleSheet(
+            "QGroupBox { border: none; } QLabel { background-color: transparent; }"
+        )
 
         self.kwargs = {}
         print("Creating CaretParams with parameters:", parameters)
@@ -297,9 +335,9 @@ class CaretParams(CaretGroup):
                 else:
                     params[key] = line_edit.text()
             new_signal = self.function(toolbar=self.toolbar, **params)
-            if new_signal is not None and self.toolbar is not None and hasattr(self.toolbar, "plot"):
+            if (
+                new_signal is not None
+                and self.toolbar is not None
+                and hasattr(self.toolbar, "plot")
+            ):
                 self.toolbar.plot.set_plot_state(new_signal)
-
-
-
-

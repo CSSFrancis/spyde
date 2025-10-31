@@ -6,6 +6,7 @@ import numpy as np
 import pyqtgraph as pg
 
 from typing import TYPE_CHECKING, Union, List
+
 if TYPE_CHECKING:
     from spyde.drawing.multiplot import Plot, NavigationPlotManager
 
@@ -33,23 +34,27 @@ class BaseSelector:
     hover_color : str
         The color of the selector lines when hovered.
     """
-    def __init__(self,
-                 parent: Union["Plot", "NavigationPlotManager"],
-                 children: Union["Plot", List["Plot"]],
-                 update_function: Union[callable,  List[callable]],
-                 width: int = 5,
-                 color: str = "green",
-                 hover_color: str = "red",
-                 live_delay: int = 20,
-                 resize_on_move: bool = False,
-                 ):
+
+    def __init__(
+        self,
+        parent: Union["Plot", "NavigationPlotManager"],
+        children: Union["Plot", List["Plot"]],
+        update_function: Union[callable, List[callable]],
+        width: int = 5,
+        color: str = "green",
+        hover_color: str = "red",
+        live_delay: int = 20,
+        resize_on_move: bool = False,
+    ):
 
         # the parent plot (data source) and the child plot (where the data is plotted)
         # a selector can have multiple children.
         self.parent = parent  # type: Plot | NavigationPlotManager
         if not isinstance(children, list):
             self.children = {children: update_function}  # type: dict[Plot, callable]
-            self.active_children = [children, ]  # type: list[Plot]
+            self.active_children = [
+                children,
+            ]  # type: list[Plot]
             children.parent_selector = self
 
         else:
@@ -74,7 +79,9 @@ class BaseSelector:
         self.current_indices = None
 
         self.update_timer = QtCore.QTimer()
-        self.update_timer.setInterval(live_delay)  # To make things smoother we delay how fast we update the plots
+        self.update_timer.setInterval(
+            live_delay
+        )  # To make things smoother we delay how fast we update the plots
         self.update_timer.setSingleShot(True)
         self.update_timer.timeout.connect(self.delayed_update_data)
         self.update_function = update_function
@@ -89,12 +96,13 @@ class BaseSelector:
             self.selector.resetTransform()
             self.selector.setTransform(transform)
 
-
     def get_selected_indices(self):
         """
         Get the currently selected indices from the selector.
         """
-        raise NotImplementedError("get_selected_indices must be implemented in subclasses")
+        raise NotImplementedError(
+            "get_selected_indices must be implemented in subclasses"
+        )
 
     def update_data(self, ev=None):
         """
@@ -116,7 +124,9 @@ class BaseSelector:
             for child in self.children:
                 print("Updating Child Plot:", child)
                 new_data = self.children[child](self, child, indices)
-                child.update_data(new_data)  # update the child plot data. If this is a future then
+                child.update_data(
+                    new_data
+                )  # update the child plot data. If this is a future then
             # the plot will update when the future completes
             self.current_indices = indices
 
@@ -153,7 +163,7 @@ class BaseSelector:
     # Called when the user finishes a region change; only auto-range on size changes
     def _on_region_change_finished(self):
         new_sig = self._size_signature()
-        size_changed = (new_sig != self._last_size_sig)
+        size_changed = new_sig != self._last_size_sig
         if size_changed or self._last_size_sig is None:
             for child in self.children.keys():
                 self._autorange_child_plot(child)
@@ -170,30 +180,30 @@ class BaseSelector:
 
 
 class RectangleSelector(BaseSelector):
-    def __init__(self,
-                 parent: Union["Plot", "NavigationPlotManager"],
-                 children: Union["Plot", List["Plot"]],
-                 update_function: Union[callable, List[callable]],
-                 live_delay: int = 20,
-                 *args,
-                 **kwargs):
-        super().__init__(parent,
-                         children,
-                         update_function,
-                         live_delay=live_delay,
-                         *args,
-                         **kwargs)
+    def __init__(
+        self,
+        parent: Union["Plot", "NavigationPlotManager"],
+        children: Union["Plot", List["Plot"]],
+        update_function: Union[callable, List[callable]],
+        live_delay: int = 20,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            parent, children, update_function, live_delay=live_delay, *args, **kwargs
+        )
         print("Creating Rectangle Selector")
         print(args, kwargs)
-        self.selector = RectROI(pos=(0, 0),
-                                size=(10, 10),
-                                pen=self.roi_pen,
-                                handlePen=self.handlePen,
-                                hoverPen=self.hoverPen,
-                                handleHoverPen=self.handleHoverPen,
-                                *args,
-                                **kwargs,
-                                )
+        self.selector = RectROI(
+            pos=(0, 0),
+            size=(10, 10),
+            pen=self.roi_pen,
+            handlePen=self.handlePen,
+            hoverPen=self.hoverPen,
+            handleHoverPen=self.handleHoverPen,
+            *args,
+            **kwargs,
+        )
         self._last_size_sig = (0, 0)
         self.selector.sigRegionChangeFinished.connect(self._on_region_change_finished)
 
@@ -214,8 +224,9 @@ class RectangleSelector(BaseSelector):
 
         lower_left_pixel = inverted_transform.map(lower_left)
 
-        size_pixels = (inverted_transform.map(size) -
-                       inverted_transform.map(QtCore.QPointF(0, 0)))
+        size_pixels = inverted_transform.map(size) - inverted_transform.map(
+            QtCore.QPointF(0, 0)
+        )
 
         # ignore rotation for now...
         rotation = self.selector.angle()
@@ -223,9 +234,7 @@ class RectangleSelector(BaseSelector):
         y_indices = np.arange(0, np.round(size_pixels.y()), dtype=int)
         x_indices = np.arange(0, np.round(size_pixels.x()), dtype=int)
 
-        indices = np.reshape(np.array(np.meshgrid(x_indices,
-                                                  y_indices)).T,
-                             (-1, 2))
+        indices = np.reshape(np.array(np.meshgrid(x_indices, y_indices)).T, (-1, 2))
         indices[:, 0] += np.round(lower_left_pixel.x()).astype(int)
         indices[:, 1] += np.round(lower_left_pixel.y()).astype(int)
         indices = indices.astype(int)
@@ -280,7 +289,7 @@ class IntegratingSelectorMixin:
             self.integrate_button.setText("Compute")
             self.is_integrating = True
             self.integrate_button.setCheckable(False)
-            #self.size_limits = (1, self.limits[1], 1, self.limits[3])
+            # self.size_limits = (1, self.limits[1], 1, self.limits[3])
             # don't need to update the plot here.
 
     def update_data(self, ev=None):
@@ -296,14 +305,18 @@ class IntegratingSelectorMixin:
 
 
 class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
-    def __init__(self,
-                 parent: Union["Plot", "NavigationPlotManager"],
-                 children: Union["Plot", List["Plot"]],
-                 update_function: Union[callable, List[callable]],
-                 live_delay: int = 20,
-                 *args,
-                 **kwargs):
-        super().__init__(parent, children, update_function, live_delay=live_delay,  *args, **kwargs)
+    def __init__(
+        self,
+        parent: Union["Plot", "NavigationPlotManager"],
+        children: Union["Plot", List["Plot"]],
+        update_function: Union[callable, List[callable]],
+        live_delay: int = 20,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            parent, children, update_function, live_delay=live_delay, *args, **kwargs
+        )
 
 
 class LinearRegionSelector(BaseSelector):
@@ -311,21 +324,19 @@ class LinearRegionSelector(BaseSelector):
     A selector which uses a LinearRegionItem to select a region along one axis.
 
     """
-    def __init__(self,
-                 parent: Union["Plot", "NavigationPlotManager"],
-                 children: Union["Plot", List["Plot"]],
-                 update_function: Union[callable, List[callable]],
-                 *args,
-                 **kwargs):
-        super().__init__(parent,
-                         children,
-                         update_function,
-                         *args,
-                         **kwargs)
-        self.selector = LinearRegionItem(pen=self.roi_pen,
-                                         hoverPen=self.hoverPen,
-                                         *args,
-                                         **kwargs)
+
+    def __init__(
+        self,
+        parent: Union["Plot", "NavigationPlotManager"],
+        children: Union["Plot", List["Plot"]],
+        update_function: Union[callable, List[callable]],
+        *args,
+        **kwargs,
+    ):
+        super().__init__(parent, children, update_function, *args, **kwargs)
+        self.selector = LinearRegionItem(
+            pen=self.roi_pen, hoverPen=self.hoverPen, *args, **kwargs
+        )
         self._last_size_sig = self._size_signature()
         self.selector.sigRegionChangeFinished.connect(self._on_region_change_finished)
         parent.plot_item.addItem(self.selector)
@@ -338,18 +349,25 @@ class LinearRegionSelector(BaseSelector):
         region = self.selector.getRegion()
         if region[0] > region[1]:
             region = (region[1], region[0])
-        indices = np.array([np.arange(np.floor(region[0]).astype(int),
-                                      np.ceil(region[1]).astype(int)),]).T
+        indices = np.array(
+            [
+                np.arange(
+                    np.floor(region[0]).astype(int), np.ceil(region[1]).astype(int)
+                ),
+            ]
+        ).T
         return indices
 
 
 class IntegratingLinearRegionSelector(IntegratingSelectorMixin, LinearRegionSelector):
-    def __init__(self,
-                 parent: Union["Plot", "NavigationPlotManager"],
-                 children: Union["Plot", List["Plot"]],
-                 update_function: Union[callable, List[callable]],
-                 *args,
-                 **kwargs):
+    def __init__(
+        self,
+        parent: Union["Plot", "NavigationPlotManager"],
+        children: Union["Plot", List["Plot"]],
+        update_function: Union[callable, List[callable]],
+        *args,
+        **kwargs,
+    ):
         super().__init__(parent, children, update_function, *args, **kwargs)
 
 
@@ -358,23 +376,24 @@ class LineSelector(BaseSelector):
     A selector which uses a LineROI to select a region along one axis.
 
     """
-    def __init__(self,
-                 parent: Union["Plot", "NavigationPlotManager"],
-                 children: Union["Plot", List["Plot"]],
-                 update_function: Union[callable, List[callable]],
-                 *args,
-                 **kwargs):
-        super().__init__(parent,
-                         children,
-                         update_function,
-                         *args,
-                         **kwargs)
-        self.selector = LineROI(pen=self.roi_pen,
-                                handlePen=self.handlePen,
-                                hoverPen=self.hoverPen,
-                                handleHoverPen=self.handleHoverPen,
-                                *args,
-                                **kwargs)
+
+    def __init__(
+        self,
+        parent: Union["Plot", "NavigationPlotManager"],
+        children: Union["Plot", List["Plot"]],
+        update_function: Union[callable, List[callable]],
+        *args,
+        **kwargs,
+    ):
+        super().__init__(parent, children, update_function, *args, **kwargs)
+        self.selector = LineROI(
+            pen=self.roi_pen,
+            handlePen=self.handlePen,
+            hoverPen=self.hoverPen,
+            handleHoverPen=self.handleHoverPen,
+            *args,
+            **kwargs,
+        )
         parent.plot_item.addItem(self.selector)
         self.selector.sigRegionChanged.connect(self.update_data)
 
@@ -382,7 +401,10 @@ class LineSelector(BaseSelector):
         """
         Get the currently selected indices from the selector.
         """
-        pos = self.selector.getArraySlice(np.arange(self.parent.data.shape[0]),
-                                          self.parent.data.shape)[0]
-        indices = np.array([[np.round(pos[0][i]).astype(int)] for i in range(len(pos[0]))])
+        pos = self.selector.getArraySlice(
+            np.arange(self.parent.data.shape[0]), self.parent.data.shape
+        )[0]
+        indices = np.array(
+            [[np.round(pos[0][i]).astype(int)] for i in range(len(pos[0]))]
+        )
         return indices
