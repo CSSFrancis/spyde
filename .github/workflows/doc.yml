@@ -14,12 +14,9 @@ jobs:
       # additional ubuntu packages required for sphinx-gallery and to
       # run Qt in headless mode
       ORGANISATION: 'cssfrancis' # change to DE on transfer
-      install_package_ubuntu: graphviz libegl1 libgl1 libglib2.0-0 libxkbcommon-x11-0 libxrender1 libxi6 \
-            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-            libxcb-randr0t64 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 \
-            xvfb optipng
+      install_package_ubuntu: graphviz optipng qtbase6-dev libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 xvfb
       CACHE_POOCH: 'spyde' # cache pooch downloads for spyde data
-      use_xvfb: true
+
 
   Push_dev:
     needs: Build
