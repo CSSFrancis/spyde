@@ -62,7 +62,7 @@ tests = [
     "pytest-cov",
     "pytest-xprocess",
     "pytest-qt",
-    "hyperspy",
+    "sphinx_gallery",
 ]
 doc = [
     "sphinx",
