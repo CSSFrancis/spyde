@@ -32,7 +32,6 @@ from spyde.external.pyqtgraph.histogram_widget import (
 )
 from spyde.workers.plot_update_worker import PlotUpdateWorker
 
-
 COLORMAPS = {
     "gray": pg.colormap.get("CET-L1"),
     "viridis": pg.colormap.get("viridis"),

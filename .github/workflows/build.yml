@@ -73,7 +73,6 @@ jobs:
             libxrender1 \
             libxi6 \
             libnss3 \
-            libasound2 \
             libxcb-icccm4 \
             libxcb-image0 \
             libxcb-keysyms1 \

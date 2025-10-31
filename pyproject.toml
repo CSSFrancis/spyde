@@ -27,10 +27,8 @@ dependencies = [
     "dask",
     "hyperspy@git+https://github.com/cssfrancis/hyperspy.git@slice-integrate2",
     "pyxem",
-    "fastplotlib",
     "PySide6",
     "imageio-ffmpeg",
-    "pyqtdarktheme",
     "pyqtgraph",
 ]
 description = "DE Visualization tool based on HyperSpy"
