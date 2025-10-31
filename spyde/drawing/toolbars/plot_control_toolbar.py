@@ -28,6 +28,7 @@ def resolve_icon_path(icon_value: str) -> str:
 
     return str((base / icon_value).resolve())
 
+
 def get_toolbar_actions_for_plot(plot: "Plot"):
     functions = []
     icons = []
@@ -50,13 +51,9 @@ def get_toolbar_actions_for_plot(plot: "Plot"):
                       (navigation_only is None or navigation_only == plot.is_navigator))
 
         if add_action:
-            print(f"Adding toolbar action: {action}")
             function = TOOLBAR_ACTIONS["functions"][action]['function']
             module_path, _, attr = function.rpartition('.')
             resolved_func = getattr(importlib.import_module(module_path), attr)
-
-            print(f"Resolved function: {TOOLBAR_ACTIONS["functions"][action]}")
-            print("toggle is ", TOOLBAR_ACTIONS["functions"][action].get('toggle', False))
             resolved_func = partial(resolved_func,
                                     action_name=action,
                                     )
