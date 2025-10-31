@@ -52,13 +52,10 @@ where = ["."]
 [project.optional-dependencies]
 tests = [
     "pytest-instafail",
-    "pytest-mpl",
     "pytest-rerunfailures",
-    "pytest-xdist",
     "pytest>=3.6",
     "setuptools_scm",
     "pytest-cov",
-    "pytest-xprocess",
     "pytest-qt",
     "sphinx_gallery",
 ]

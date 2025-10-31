@@ -59,10 +59,22 @@ class MainWindow(QMainWindow):
         self.axes_group = None  # type: Union[QtWidgets.QGroupBox, None]
         self.axes_layout = None  # type: Union[QtWidgets.QVBoxLayout, None]
 
-        # Test if the theme is set correctly
         cpu_count = os.cpu_count()
-        threads = (cpu_count // 4) - 1
-        cluster = LocalCluster(n_workers=threads, threads_per_worker=4)
+        print("CPU Count:", cpu_count)
+        if cpu_count is None or cpu_count < 4:
+            workers = 1  # Don't overdo it on small systems
+            threads_per_worker = 1
+        else:
+            # take roughly 3/4s of the available cores
+            if cpu_count <= 16:
+                workers = (cpu_count // 2) - 1
+                threads_per_worker = 2
+            else:
+                workers = (cpu_count // 4) - 1 # For very large systems, limit workers
+                threads_per_worker = 4
+        print(f"Starting Dask LocalCluster with {workers} workers, and {threads_per_worker} threads per worker")
+        cluster = LocalCluster(n_workers=workers,
+                               threads_per_worker=threads_per_worker)
         self.client = Client(
             cluster
         )  # Start a local Dask client (this should be settable eventually)

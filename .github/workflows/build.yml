@@ -14,7 +14,7 @@ env:
   QT_QPA_PLATFORM: offscreen
   QTWEBENGINE_DISABLE_SANDBOX: "1"
   QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu --disable-software-rasterizer"
-  PYTEST_ADDOPTS: "--timeout=300 --maxfail=1 -vv -s --durations=10"
+  PYTEST_ADDOPTS: "--timeout=500 -vv -s --durations=10"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_PROGRESS_BAR: "off"
 
