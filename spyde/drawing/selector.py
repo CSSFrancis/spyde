@@ -40,7 +40,7 @@ class BaseSelector:
         parent: Union["Plot", "NavigationPlotManager"],
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
-        width: int = 5,
+        width: int = 3,
         color: str = "green",
         hover_color: str = "red",
         live_delay: int = 20,

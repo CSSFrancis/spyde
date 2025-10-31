@@ -70,8 +70,11 @@ class CaretGroup(QtWidgets.QGroupBox):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFlat(True)
-        self.setStyleSheet("QGroupBox { border: none; }")
-
+        self.setStyleSheet(
+            "QGroupBox { border: none; color: white; } "
+            "QLabel { background-color: transparent; color: white; } "
+            "QLineEdit, QPushButton { color: white; }"
+        )
         # Ensure this group has a vertical layout (like the ad-hoc code)
         if self.layout() is None:
             vlay = QtWidgets.QVBoxLayout()
@@ -319,7 +322,11 @@ class CaretParams(CaretGroup):
         layout = self.layout()
         layout.setContentsMargins(2, 2, 2, 2)
         self.submit_button.clicked.connect(self._on_submit_clicked)
-
+        self.setStyleSheet(
+            "QGroupBox { border: none; color: white; } "
+            "QLabel { background-color: transparent; color: white; } "
+            "QLineEdit, QPushButton { color: white; }"
+        )
         self.toolbar = toolbar
         self.function = function
 

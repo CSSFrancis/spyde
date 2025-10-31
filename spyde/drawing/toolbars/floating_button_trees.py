@@ -32,6 +32,7 @@ class RoundedButton(QtWidgets.QPushButton):
             "QPushButton {"
             "  border: none;"
             "  background-color: rgba(30, 30, 30, 230);"
+            "  color: #ffffff;"
             "  margin: 2px;"
             "  padding: 4px 8px;"
             "  border-radius: 6px;"
@@ -43,7 +44,6 @@ class RoundedButton(QtWidgets.QPushButton):
             "  background-color: rgba(50, 50, 50, 230);"
             "}"
         )
-
 
 class ButtonTree(QtWidgets.QWidget):
     """

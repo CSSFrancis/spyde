@@ -265,7 +265,15 @@ class CreateDataDialog(QDialog):
         Wrap a dask array as a lazy HyperSpy Signal2D and set a small cache pad.
         """
         s = hs.signals.Signal2D(data).as_lazy()
-        s.cache_pad = 2
+
+        if data.ndim == 3:
+            s.cache_pad = 5
+            s.axes_manager.navigation_axes[0].name = "time"
+            s.axes_manager.signal_axes[0].name = "x"
+            s.axes_manager.signal_axes[1].name = "y"
+
+        else:
+            s.cache_pad = 2
         return s
 
     def get_data(self) -> (hs.signals.BaseSignal, hs.signals.BaseSignal):

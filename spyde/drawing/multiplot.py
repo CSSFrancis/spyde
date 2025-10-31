@@ -634,9 +634,7 @@ class Plot(QtWidgets.QMdiSubWindow):
         if self.parent_selector is not None:
             print("Closing parent selector")
             self.parent_selector.close()
-            self.parent_selector.parent.nav_plot_manager.navigation_selectors.remove(
-                self.parent_selector
-            )
+
         # need to delete the current selectors and child plots
         for child_plot in (
             self.plot_state.plot_selectors_children

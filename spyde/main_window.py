@@ -293,6 +293,11 @@ class MainWindow(QMainWindow):
                 kwargs.pop("chunks")
             print("Loading signal from file:", file_path, "with kwargs:", kwargs)
             signal = hs.load(file_path, **kwargs)
+            if kwargs.get("lazy", False):
+                if signal.axes_manager.navigation_dimension == 1:
+                    signal.cache_pad = 5
+                elif signal.axes_manager.navigation_dimension == 2:
+                    signal.cache_pad = 2
             print("Signal loaded:", signal)
             signal_tree = BaseSignalTree(
                 root_signal=signal, main_window=self, distributed_client=self.client
@@ -741,7 +746,7 @@ if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("SpyDe")  # Set the application name
     # Create and show the splash screen
-    logo_path = "SpydeDark.png"  # Replace with the actual path to your logo
+    logo_path = "SpydeDark.png"
     pixmap = QPixmap(logo_path).scaled(
         300,
         300,
