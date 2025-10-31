@@ -8,7 +8,7 @@ of data from (Direct Electron) DE cameras and other electron microscopy detector
 Installation
 ------------
 
-Currently we only support installation via `pip`. Eventually a packaged "Application" will be 
+Currently, we only support installation via `pip`. Eventually a packaged "Application" will be 
 provided for ease of use.
 
 As spyde isn't (yet) hosted on pypi, you will need to install it directly from the github repository:

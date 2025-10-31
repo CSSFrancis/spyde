@@ -36,6 +36,9 @@ html_theme_options = {
     }
 }
 
+html_favicon = "_static/icon.svg"
+
+
 master_doc = "index"
 
 # -- Autodoc / Autosummary ---------------------------------------------------

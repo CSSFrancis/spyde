@@ -4,50 +4,23 @@ on: [push, pull_request]
 
 jobs:
   Build:
-    # Use the "reusable workflow" from the hyperspy organisation
-    uses: hyperspy/.github/.github/workflows/doc.yml@main
-    with:
-      # install with speed extra to avoid warnings
-      pip_extra_doc: 'all,doc'
-      # graphviz is required to build mermaid graph
-      # optipng is required to optimize thumbnail
-      # additional ubuntu packages required for sphinx-gallery and to
-      # run Qt in headless mode
-      ORGANISATION: 'cssfrancis' # change to DE on transfer
-      install_package_ubuntu: graphviz optipng qt6-base-dev libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 xvfb
-      CACHE_POOCH: 'spyde' # cache pooch downloads for spyde data
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
 
-  Push_dev:
-    needs: Build
-    # Push only on update to "main" and update the "dev" documentation
-    # change once updated...
-    if: ${{ github.repository_owner == 'cssfrancis' && github.ref_name == 'main' }}
-    permissions:
-      # needs write permission to push the docs to gh-pages
-      contents: write
-    # Use the "reusable workflow" from the hyperspy organisation
-    uses: hyperspy/.github/.github/workflows/push_doc.yml@main
-    with:
-      #external_repository: 'hyperspy/hyperspy-doc' (update eventually)
-      output_path: 'dev'
-    secrets:
-      personal_token: ${{ secrets.PAT_DOCUMENTATION }}
+      - name: Install dependencies and package
+        shell: bash
+        run: |
+          pip install -U -e .'[doc,all]'
 
-  Push_tag:
-    needs: Build
-    # Push only on tag and update the "current" documentation
-    if: ${{ github.repository_owner == 'cssfrancis' && startsWith(github.ref, 'refs/tags/') }}
-    permissions:
-      # needs write permission to push the docs to gh-pages
-      contents: write
-    # Use the "reusable workflow" from the hyperspy organisation
-    uses: hyperspy/.github/.github/workflows/push_doc.yml@main
-    with:
-      #external_repository: 'hyperspy/hyperspy-doc'
-      output_path: ${{ github.ref_name }}
-      # Update the current version.
-      create_stable_copy: true
-      persistent_name: current
-    secrets:
-      personal_token: ${{ secrets.PAT_DOCUMENTATION }}
+      - name: Build documentation
+        shell: bash
+        run: |
+          cd doc
+          make html
+      
