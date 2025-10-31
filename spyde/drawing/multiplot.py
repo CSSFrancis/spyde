@@ -20,6 +20,8 @@ from spyde.drawing.plot_states import PlotState, NavigationManagerState
 from spyde.drawing.toolbars.plot_control_toolbar import get_toolbar_actions_for_plot
 from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
 from spyde.drawing.update_functions import update_from_navigation_selection
+from spyde.qt.subwindow import FramelessSubWindow
+
 
 COLORMAPS = {
     "gray": pg.colormap.get("CET-L1"),
@@ -30,7 +32,7 @@ COLORMAPS = {
 }
 
 
-class Plot(QtWidgets.QMdiSubWindow):
+class Plot(FramelessSubWindow):
     """
     A QMdi sub-window that displays either a 2D image or a 1D line plot from a BaseSignalTree.
     It can host interactive selectors. These selectors are split into three categories:

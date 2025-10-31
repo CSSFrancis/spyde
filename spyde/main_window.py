@@ -4,7 +4,7 @@ from typing import Union
 from functools import partial
 import webbrowser
 
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon, QBrush, QPalette
 from PySide6.QtCore import Qt, QTimer, QEvent
 from PySide6.QtWidgets import (
     QSplashScreen,
@@ -81,7 +81,6 @@ class MainWindow(QMainWindow):
         print(f"Starting Dashboard at: {self.client.dashboard_link}")
         self.setWindowTitle("DE-Spy")
         # get screen size and set window size to 3/4 of the screen size
-        # get screen size and set subwindow size to 1/4 of the screen size
         self.dock_widget = None
         screen = QApplication.primaryScreen()
         self.screen_size = screen.size()
@@ -98,6 +97,7 @@ class MainWindow(QMainWindow):
         )
         # create an MDI area
         self.mdi_area = QtWidgets.QMdiArea()
+        self.mdi_area.setBackground(QBrush(QColor("#0d0d0d")))
         self.setCentralWidget(self.mdi_area)
 
         self.plot_subwindows = []  # type: list[Plot]
@@ -120,14 +120,70 @@ class MainWindow(QMainWindow):
         self._plot_update_worker.plot_ready.connect(self.on_plot_future_ready)
         self._update_thread.start()
 
-        # self.timer = QTimer()
-        # self.timer.setInterval(10)  # Every 10ms we will check to update the plots??
-        # self.timer.timeout.connect(self.update_plots_loop)
-        # self.timer.start()
+        if self.app is not None:
+            # Use Fusion style on non-macOS
+            if sys.platform != "darwin":
+                QtWidgets.QApplication.setStyle("Fusion")
 
-        self.mdi_area.setStyleSheet(
-            "background-color: #2b2b2b;"
-        )  # Dark gray background
+            # Darker background, dock slightly lighter, header/footer slightly lighter than dock, all text white
+            self.app.setStyleSheet(
+                """
+                QMdiArea { background: #0d0d0d; }             /* background: very dark */
+                QMainWindow { background-color: #0d0d0d; }
+                QDockWidget, QDockWidget > QWidget { background-color: #141414; color: #ffffff; } /* dock: slightly lighter */
+                QDockWidget#plotControlDock > QWidget { background-color: #141414; }
+                QDockWidget::title { background-color: #141414; color: #ffffff; padding: 2px; }
+                QMenuBar { background-color: #1d1d1d; color: #ffffff; } /* header: lighter than dock */
+                QMenuBar::item { background-color: transparent; color: #ffffff; }
+                QStatusBar { background-color: #1d1d1d; color: #ffffff; } /* footer: same as header */
+
+                /* Dialogs */
+                QDialog, QMessageBox, QFileDialog { background-color: #141414; color: #ffffff; }
+                QDialog > QWidget, QMessageBox > QWidget, QFileDialog QWidget { background-color: #141414; color: #ffffff; }
+
+                /* Dialog buttons */
+                QDialog QPushButton, QMessageBox QPushButton, QFileDialog QPushButton {
+                    background-color: #1e1e1e;
+                    color: #ffffff;
+                    border: 1px solid #2a2a2a;
+                    padding: 4px 8px;
+                }
+                QDialog QPushButton:hover, QMessageBox QPushButton:hover, QFileDialog QPushButton:hover {
+                    background-color: #2a2a2a;
+                }
+
+                /* Inputs */
+                QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextEdit,
+                QDateEdit, QTimeEdit, QDateTimeEdit {
+                    color: #ffffff;
+                    background-color: #1a1a1a;
+                    border: 1px solid #2a2a2a;
+                }
+
+                /* Views inside dialogs (file lists, trees, tables) */
+                QListView, QTreeView, QTableView {
+                    background-color: #1a1a1a;
+                    color: #ffffff;
+                    alternate-background-color: #151515;
+                    selection-background-color: #2a2a2a;
+                    selection-color: #ffffff;
+                }
+                QHeaderView::section {
+                    background-color: #1d1d1d;
+                    color: #ffffff;
+                    border: 0px;
+                    padding: 4px;
+                }
+
+                QLabel, QGroupBox, QPushButton, QComboBox, QLineEdit, QSpinBox, QCheckBox {
+                    color: #ffffff;
+                    background-color: transparent;
+                }
+                """
+            )
+        else:
+            # Fallback: just make the MDI area dark if no app reference
+            self.mdi_area.setStyleSheet("background-color: #0d0d0d;")
 
         self.signal_trees = []  # type: list[BaseSignalTree]
 
@@ -359,9 +415,15 @@ class MainWindow(QMainWindow):
         """
         plot.resize(self.screen_size.height() // 2, self.screen_size.height() // 2)
 
-        plot.setWindowTitle("Test")
-        plot.titleColor = QColor("green")
+        # Add to MDI and make the subwindow frameless
         self.mdi_area.addSubWindow(plot)
+        try:
+            # Remove title bar and frame
+            plot.setWindowFlags(plot.windowFlags() | Qt.WindowType.FramelessWindowHint)
+            plot.setStyleSheet("QMdiSubWindow { border: none; }")
+        except Exception:
+            pass
+
         plot.show()
         self.plot_subwindows.append(plot)
         plot.mdi_area = self.mdi_area
@@ -543,6 +605,7 @@ class MainWindow(QMainWindow):
 
         """
         self.dock_widget = QtWidgets.QDockWidget("Plot Control", self)
+        self.dock_widget.setObjectName("plotControlDock")
         self.dock_widget.setFeatures(
             self.dock_widget.features()
             & ~QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable
@@ -550,7 +613,10 @@ class MainWindow(QMainWindow):
         self.dock_widget.setBaseSize(self.width() // 6, self.height() // 6)
 
         # Create a main widget and layout
+
         main_widget = QtWidgets.QWidget()
+        main_widget.setAutoFillBackground(True)
+        main_widget.setStyleSheet("background-color: #141414;")
         layout = QtWidgets.QVBoxLayout(main_widget)
 
         # Creating the display group box
