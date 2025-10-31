@@ -30,7 +30,8 @@ dependencies = [
     "fastplotlib",
     "PySide6",
     "imageio-ffmpeg",
-    "pyqtdarktheme"
+    "pyqtdarktheme",
+    "pyqtgraph",
 ]
 description = "DE Visualization tool based on HyperSpy"
 version = "0.0.1"
