@@ -13,6 +13,7 @@ jobs:
       # optipng is required to optimize thumbnail
       # additional ubuntu packages required for sphinx-gallery and to
       # run Qt in headless mode
+      ORGANISATION: 'cssfrancis' # change to DE on transfer
       install_package_ubuntu: graphviz libegl1 libgl1 libglib2.0-0 libxkbcommon-x11-0 libxrender1 libxi6 \
             libnss3 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 \
