@@ -24,10 +24,10 @@ jobs:
             DEPENDENCIES: diffsims==0.7.0  lmfit==1.0.0 numpy==1.23.0 matplotlib==3.7.5 orix==0.12.1 scikit-image==0.19.0 scikit-learn==1.0.0
             LABEL: -oldest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -46,7 +46,9 @@ jobs:
       - name: Install dependencies and package
         shell: bash
         run: |
-          pip install -U -e .'[tests]'
+          python -m pip install -U pip wheel setuptools
+          pip install -U --prefer-binary -e '.[tests]'
+          pip install -U pytest-cov
 
       - name: Install oldest supported versions
         if: contains(matrix.LABEL, 'oldest')
@@ -63,7 +65,24 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install libegl1 
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 \
+            libgl1 \
+            libglib2.0-0 \
+            libxkbcommon-x11-0 \
+            libxrender1 \
+            libxi6 \
+            libnss3 \
+            libasound2 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xfixes0 \
+            libxcb-xinerama0 \
+            xvfb
 
       - name: Run tests (Linux)
         if: matrix.os == 'ubuntu-latest'
