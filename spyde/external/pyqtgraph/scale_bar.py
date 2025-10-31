@@ -7,7 +7,6 @@ from pyqtgraph.graphicsItems.GraphicsObject import GraphicsObject  # to avoid li
 from pyqtgraph.graphicsItems.GraphicsWidgetAnchor import GraphicsWidgetAnchor  # to avoid linting error
 from pyqtgraph.graphicsItems.TextItem import TextItem  # to avoid linting error
 import re
-from latex2mathml.converter import convert
 
 
 
