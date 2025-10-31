@@ -17,7 +17,6 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.20.0",
-    "protobuf",
     "pillow",
     "matplotlib",
     "scipy",
@@ -29,8 +28,7 @@ dependencies = [
     "hyperspy@git+https://github.com/cssfrancis/hyperspy.git@slice-integrate2",
     "pyxem",
     "fastplotlib",
-    "pyqt6",
-    "PyQt6-WebEngine",
+    "PySide6",
     "imageio-ffmpeg",
     "pyqtdarktheme"
 ]

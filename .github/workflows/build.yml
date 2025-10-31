@@ -64,12 +64,24 @@ jobs:
         run: |
           pytest --doctest-modules --doctest-continue-on-failure --ignore-glob=spyede/tests
 
-      - name: Install Qt dependencies
+      - name: Install Qt dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y libegl1
 
-      - name: Run tests
-        run: |
-          pytest --cov=spyde
+
+      # Run tests headless on Linux, normal elsewhere
+      - name: Run tests (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: xvfb-run -a pytest --cov=spyde
+
+      - name: Run tests (non-Linux)
+        if: matrix.os != 'ubuntu-latest'
+        run: pytest --cov=spyde
+            - name: Run tests
+              run: |
+                pytest --cov=spyde
 
       - name: Generate line coverage
         if: ${{ matrix.os == 'ubuntu-latest' }}
