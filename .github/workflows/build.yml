@@ -62,14 +62,31 @@ jobs:
       - name: Run docstring tests
         continue-on-error: true
         run: |
-          pytest --doctest-modules --doctest-continue-on-failure --ignore-glob=spyede/tests
+          pytest --doctest-modules --doctest-continue-on-failure --ignore-glob=spyde/tests
 
       - name: Install Qt dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y libegl1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 \
+            libgl1 \
+            libglib2.0-0 \
+            libxkbcommon-x11-0 \
+            libxrender1 \
+            libxi6 \
+            libnss3 \
+            libasound2 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xfixes0 \
+            libxcb-xinerama0 \
+            xvfb
 
-
-      # Run tests headless on Linux, normal elsewhere
       - name: Run tests (Linux)
         if: matrix.os == 'ubuntu-latest'
         env:
@@ -79,9 +96,6 @@ jobs:
       - name: Run tests (non-Linux)
         if: matrix.os != 'ubuntu-latest'
         run: pytest --cov=spyde
-            - name: Run tests
-              run: |
-                pytest --cov=spyde
 
       - name: Generate line coverage
         if: ${{ matrix.os == 'ubuntu-latest' }}
