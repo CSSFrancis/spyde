@@ -10,9 +10,11 @@ from pyqtgraph.graphicsItems.GraphicsWidgetAnchor import (
 )  # to avoid linting error
 from pyqtgraph.graphicsItems.TextItem import TextItem  # to avoid linting error
 import re
-
+import logging
 
 import html
+
+logger = logging.getLogger(__name__)
 
 
 def tex_to_html(s: str) -> str:
@@ -101,8 +103,8 @@ class OutlinedScaleBar(GraphicsWidgetAnchor, GraphicsObject):
 
         new_text = f"{size} {suffix}"
 
-        print(new_text)
-        print(tex_to_html(new_text))
+        logger.debug("Scale bar text: %s", new_text)
+        logger.debug("HTML rendered text: %s", tex_to_html(new_text))
 
         self.text.setHtml(tex_to_html(new_text))
         self.text.setParentItem(self)

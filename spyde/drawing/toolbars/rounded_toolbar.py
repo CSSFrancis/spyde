@@ -1,9 +1,12 @@
 # python
+import logging
 from typing import TYPE_CHECKING, Callable, Optional
 
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from spyde.drawing.multiplot import Plot
@@ -113,8 +116,8 @@ class RoundedToolBar(QtWidgets.QToolBar):
         if parameters is None:
             parameters = dict()
         action = self.addAction(QIcon(icon_path), name)
-        print(f"Adding action '{name}' to toolbar.")
-        print("  Toggle:", toggle)
+        logger.debug("Adding action '%s' to toolbar.", name)
+        logger.debug("  Toggle: %s", toggle)
 
         if parameters != {}:
             #  create a popout menu for the action with a submit button
@@ -247,7 +250,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
             w_w, w_h = hint.width(), hint.height()
 
             if btn is None:
-                print("Warning: Could not find tool button for action", action_name)
+                logger.warning("Warning: Could not find tool button for action %s", action_name)
 
             if self.position == "left":
                 x = tb_global_tl.x() - w_w - self._margin
@@ -297,14 +300,14 @@ class RoundedToolBar(QtWidgets.QToolBar):
 
         # Auto-bind to an action with the same name
         action = self._find_action(action_name)
-        print(f"Auto-binding action widget '{action_name}' to toolbar action.")
-        print(
-            f"  Found action: {action}, isCheckable={action.isCheckable() if action else 'N/A'}"
+        logger.debug("Auto-binding action widget '%s' to toolbar action.", action_name)
+        logger.debug(
+            "  Found action: %s, isCheckable=%s", action, action.isCheckable() if action else 'N/A'
         )
         if action is not None:
             if action.isCheckable():
-                print(f"Binding action widget '{action_name}' to toggle action.")
-                print("Positioning widget on toggle.")
+                logger.debug("Binding action widget '%s' to toggle action.", action_name)
+                logger.debug("Positioning widget on toggle.")
                 action.toggled.connect(
                     lambda checked: (widget.setVisible(checked), position_widget())
                 )

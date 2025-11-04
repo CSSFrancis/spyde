@@ -1,4 +1,5 @@
 from functools import partial
+import logging
 
 import numpy as np
 from PySide6.QtWidgets import (
@@ -16,23 +17,25 @@ from PySide6 import QtWidgets
 import dask.array as da
 import pyxem
 
+logger = logging.getLogger(__name__)
+
 
 class DatasetSizeDialog(QDialog):
     def __init__(self, parent=None, filename=None):
-        print("Creating Dialog")
+        logger.debug("Creating Dialog")
         super().__init__(parent)
 
         self.filename = filename
 
         kwargs = {}
         # try to load the dataset
-        print(f"loading: {filename}")
+        logger.info("loading: %s", filename)
         if ".mrc" in filename:
             kwargs["distributed"] = True
         try:
             data = hs.load(filename, lazy=True, **kwargs)
         except Exception as e:
-            print(f"Error loading dataset: {e}")
+            logger.error("Error loading dataset: %s", e)
             self.reject()
             return
         nav_shape = [a.size for a in data.axes_manager.navigation_axes]
@@ -43,7 +46,7 @@ class DatasetSizeDialog(QDialog):
             * (3 - len(nav_shape))
         )
         self.total_frames = np.prod(nav_shape)
-        print(self.total_frames)
+        logger.debug("Total frames: %s", self.total_frames)
 
         sig_shape = [a.size for a in data.axes_manager.signal_axes]
         kx, ky, kz = sig_shape + (
@@ -52,7 +55,7 @@ class DatasetSizeDialog(QDialog):
             ]
             * (3 - len(sig_shape))
         )
-        print("setting_size")
+        logger.debug("setting_size")
 
         self.setWindowTitle("Dataset Size Configuration")
 
@@ -107,7 +110,7 @@ class DatasetSizeDialog(QDialog):
 
     def exec(self, /):
         """Override exec to handle immediate acceptance."""
-        print("Executing Dialog", f"x: {self.x}, y: {self.y}, t: {self.t}")
+        logger.debug("Executing Dialog x: %s, y: %s, t: %s", self.x, self.y, self.t)
         if self.x < 1 and self.y < 1 and self.t < 1:
             self.x_input.setValue(1)
             self.y_input.setValue(1)

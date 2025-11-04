@@ -2,7 +2,10 @@ from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor, QIcon
 from pathlib import Path
+import logging
 from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
+
+logger = logging.getLogger(__name__)
 
 
 class FramelessSubWindow(QtWidgets.QMdiSubWindow):
@@ -42,8 +45,8 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self._icon_maximize = QIcon(resolve_icon_path("qt/assets/icons/maximize.svg"))
         self._icon_close = QIcon(resolve_icon_path("qt/assets/icons/close.svg"))
 
-        print("resolved icons", resolve_icon_path("qt/assets/icons/minimize.svg"))
-        print(self._icon_minimize.isNull())
+        logger.debug("resolved icons: %s", resolve_icon_path("qt/assets/icons/minimize.svg"))
+        logger.debug("Icon is null: %s", self._icon_minimize.isNull())
 
         self.minimize_button.setFixedSize(25, 25)
         self.minimize_button.clicked.connect(self.toggle_minimize)

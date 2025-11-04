@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import logging
 from typing import List
 from PySide6 import QtWidgets, QtTest
 
@@ -11,6 +12,8 @@ from spyde.qt.shared import (
 )
 from sphinx_gallery.scrapers import figure_rst
 
+logger = logging.getLogger(__name__)
+
 
 def qt_sg_scraper(block, block_vars, gallery_conf) -> List[str]:
     """
@@ -21,26 +24,26 @@ def qt_sg_scraper(block, block_vars, gallery_conf) -> List[str]:
     Saves to the 'image_path' prefix provided by Sphinx-Gallery.
     """
 
-    print("Qt scraper activated!!")
+    logger.debug("Qt scraper activated!!")
     ensure_app()
     QtWidgets.QApplication.processEvents()
     QtTest.QTest.qWait(50)
-    print("Qt scraper after wait")
+    logger.debug("Qt scraper after wait")
 
     # Preferred: explicitly registered windows
     targets = list(iter_registered_windows())
-    print(f"Registered windows found: {targets}")
+    logger.debug("Registered windows found: %s", targets)
 
     # Fallback: visible top-level windows (main windows and dialogs)
     if not targets:
-        print("Falling back to top-level visible windows")
+        logger.debug("Falling back to top-level visible windows")
         for w in QtWidgets.QApplication.topLevelWidgets():
             if (
                 isinstance(w, (QtWidgets.QMainWindow, QtWidgets.QDialog))
                 and w.isVisible()
             ):
                 targets.append(w)
-    print(f"Total target windows to capture: {len(targets)}")
+    logger.debug("Total target windows to capture: %d", len(targets))
 
     saved: List[str] = []
     image_path_iterator = block_vars["image_path_iterator"]
@@ -51,6 +54,6 @@ def qt_sg_scraper(block, block_vars, gallery_conf) -> List[str]:
 
     # Reset registry between blocks
     clear_registered_windows()
-    print("Stored images:", saved)
-    print(f"Qt scraper saved {len(saved)} images.")
+    logger.debug("Stored images: %s", saved)
+    logger.info("Qt scraper saved %d images.", len(saved))
     return figure_rst(saved, gallery_conf["src_dir"])

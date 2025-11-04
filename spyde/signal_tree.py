@@ -1,10 +1,13 @@
 from functools import partial
+import logging
 
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 from hyperspy.signal import BaseSignal
 
 from typing import TYPE_CHECKING, Union, List
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from spyde.drawing.plot_states import PlotState
@@ -125,7 +128,7 @@ class BaseSignalTree:
             self.signal_plots.append(plot)
             plot.update()
 
-        print("Created Signal Tree with root signal: ", self.root)
+        logger.info("Created Signal Tree with root signal: %s", self.root)
 
     def _preprocess_navigator(self, signal: BaseSignal) -> BaseSignal:
         """
@@ -177,7 +180,7 @@ class BaseSignalTree:
                 index = sig.axes_manager._axes.index(axis)
                 sig.axes_manager._axes[index].__setattr__(field, line_edit.text())
             for plot in self.navigator_plot_manager.plots:
-                print("Updating navigator plot image rectangle for: ", plot)
+                logger.debug("Updating navigator plot image rectangle for: %s", plot)
                 plot.update_image_rectangle()
         else:
             index = signal.axes_manager._axes.index(axis)
@@ -453,15 +456,15 @@ class BaseSignalTree:
         metadata : dict
             A dictionary containing metadata for each signal in the tree.
         """
-        print("Getting metadata widget")
+        logger.debug("Getting metadata widget")
         subsections = {}
         for subsection in METADATA_WIDGET_CONFIG["metadata_widget"]:
-            print(f"Processing subsection: {subsection}")
+            logger.debug("Processing subsection: %s", subsection)
             subsections[subsection] = {}
             for prop, value in METADATA_WIDGET_CONFIG["metadata_widget"][
                 subsection
             ].items():
-                print(f"Processing property: {prop} with value: {value}")
+                logger.debug("Processing property: %s with value: %s", prop, value)
                 if "key" in value:
                     current_value = self.root.metadata.get_item(
                         item_path=value["key"], default=value.get("default", "--")
@@ -469,10 +472,10 @@ class BaseSignalTree:
                 elif "attr" in value:
                     current_value = self.get_nested_attr(value["attr"])
                 elif "function" in value:
-                    print(f"Calling function for property {prop}: {value['function']}")
+                    logger.debug("Calling function for property %s: %s", prop, value['function'])
                     fun = self.get_nested_attr(value["function"])
                     if fun is None or not callable(fun):
-                        print(f"Function {value['function']} not found.")
+                        logger.debug("Function %s not found.", value['function'])
                         current_value = "--"
                     else:
                         current_value = self.get_nested_attr(value["function"])()
@@ -481,9 +484,9 @@ class BaseSignalTree:
                 current_value_string = (
                     f"{current_value} {value.get('units', '')}".strip()
                 )
-                print(f"Resolved value for {prop}: {current_value_string}")
+                logger.debug("Resolved value for %s: %s", prop, current_value_string)
                 subsections[subsection][prop] = current_value_string
-        print("Final Subsections:", subsections)
+        logger.debug("Final Subsections: %s", subsections)
         return subsections
 
     def get_node(self, signal: BaseSignal):
@@ -594,6 +597,6 @@ class BaseSignalTree:
             "kwargs": kwargs,
             "children": {},
         }
-        print(f"Added transformation '{node_name}' to the tree under parent signal.")
+        logger.info("Added transformation '%s' to the tree under parent signal.", node_name)
         self.update_plot_states(new_signal)
         return new_signal
