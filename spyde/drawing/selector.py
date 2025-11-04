@@ -114,7 +114,7 @@ class BaseSelector:
             print("Restarting Timer")
             self.update_timer.start()
 
-    def delayed_update_data(self, force: bool = False):
+    def delayed_update_data(self, force: bool = False, update_contrast: bool = False):
         """
         Perform the actual update if the indices have not changed.
         """
@@ -127,6 +127,8 @@ class BaseSelector:
                 child.update_data(
                     new_data
                 )  # update the child plot data. If this is a future then
+                if update_contrast:
+                    child.needs_auto_level = True
             # the plot will update when the future completes
             self.current_indices = indices
 
@@ -266,13 +268,13 @@ class IntegratingSelectorMixin:
         print(self.is_live)
         if self.is_live:
             self.is_integrating = checked
-            self.delayed_update_data(force=True)
+            self.delayed_update_data(force=True, update_contrast=True)
 
     def on_integrate_pressed(self):
         if not self.is_live:
             # fire off the integration
             print("Computing!")
-            self.delayed_update_data(force=True)
+            self.delayed_update_data(force=True, update_contrast=True)
 
     def on_live_toggled(self, checked):
         self.is_live = checked
@@ -283,7 +285,7 @@ class IntegratingSelectorMixin:
             # TODO: Need to set selection to some default small region for live mode
             self.size_limits = (1, 15, 1, 15)
             # update the plot
-            self.delayed_update_data(force=True)
+            self.delayed_update_data(force=True, update_contrast=True)
 
         else:
             self.integrate_button.setText("Compute")

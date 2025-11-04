@@ -355,10 +355,7 @@ class MainWindow(QMainWindow):
                 elif signal.axes_manager.navigation_dimension == 2:
                     signal.cache_pad = 2
             print("Signal loaded:", signal)
-            signal_tree = BaseSignalTree(
-                root_signal=signal, main_window=self, distributed_client=self.client
-            )
-            self.signal_trees.append(signal_tree)
+            self.add_signal(signal)
 
     def open_file(self):
         self.file_dialog = QFileDialog()
@@ -395,6 +392,11 @@ class MainWindow(QMainWindow):
                     title = "navigation_" + str(i)
                 print("Adding navigator signal:", title)
                 signal_tree.add_navigator_signal(title, nav)
+
+        if signal.metadata.get_item("General.virtual_images", False):
+            for key, item in signal.metadata.General.virtual_images:
+                print("Adding virtual image navigator signal:", key)
+                signal_tree.add_navigator_signal(key, item)
 
     def load_example_data(self, name):
         """
