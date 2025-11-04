@@ -135,7 +135,6 @@ class RoundedToolBar(QtWidgets.QToolBar):
             action.toggled.connect(
                 lambda checked: popout.show() if checked else popout.hide()
             )
-
         else:
             if toggle:
                 action.setCheckable(True)
@@ -334,6 +333,254 @@ class RoundedToolBar(QtWidgets.QToolBar):
             20, position_widget
         )  # Initial placement delay to ensure correct position
 
+    def register_action_plot_item(self, action_name: str, item: QtWidgets.QGraphicsItem) -> None:
+        """
+        Register a plot graphics item (e.g., pyqtgraph ROI) with an action so that:
+        - It is shown only when the action is toggled on.
+        - It is cleaned up when the toolbar is cleared/closed.
+        """
+        if action_name not in self.action_widgets:
+            self.action_widgets[action_name] = {}
+
+        items = self.action_widgets[action_name].setdefault("plot_items", [])
+        if item not in items:
+            items.append(item)
+
+        act = self._find_action(action_name)
+        # Default to hidden unless the action is already checked.
+        try:
+            item.setVisible(bool(act.isChecked()) if (act and act.isCheckable()) else False)
+        except Exception:
+            pass
+
+        if act is not None:
+            if act.isCheckable():
+                # Keep ROI visibility in sync with toggle state.
+                act.toggled.connect(lambda checked, it=item: it.setVisible(checked))
+            else:
+                # For non-checkable, toggle visibility on click.
+                act.triggered.connect(
+                    lambda _, it=item: it.setVisible(not it.isVisible())
+                )
+
+    def num_actions(self) -> int:
+        return len(self.actions())
+
+    def remove_action(self, name: str):
+        for action in self.actions():
+            if action.text() == name:
+                self.removeAction(action)
+                break
+
+    def set_size(self):
+        # Lock size so it doesn't change when moved
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
+        )
+        self.setFixedSize(self.sizeHint())
+
+        # Initial placement
+        QtCore.QTimer.singleShot(0, self.move_next_to_plot)
+
+    def paintEvent(self, ev: QtGui.QPaintEvent) -> None:
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+
+        # Sub-pixel align for crisp 1px stroke at any DPR
+        rect = QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+
+        path = QtGui.QPainterPath()
+        path.addRoundedRect(rect, self._radius, self._radius)
+
+        # Fill
+        p.setBrush(QtGui.QColor(30, 30, 30, 240))
+        # 1px cosmetic pen to keep edge sharp on HiDPI
+        pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 120))
+        pen.setWidthF(1.0)
+        pen.setCosmetic(True)
+        pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+
+        p.drawPath(path)
+        super().paintEvent(ev)
+
+    @staticmethod
+    def _resolve_container_parent(
+        parent: Optional[QtWidgets.QWidget],
+    ) -> Optional[QtWidgets.QWidget]:
+        # Prefer a content container instead of QMainWindow for overlays
+        if isinstance(parent, QtWidgets.QMainWindow):
+            cw = parent.centralWidget()
+            if isinstance(cw, QtWidgets.QMdiArea):
+                return cw.viewport()
+            return cw or parent
+        return parent
+
+    def add_action_widget(
+        self,
+        action_name: str,
+        widget: QtWidgets.QWidget,
+        layout: Optional[QtWidgets.QLayout],
+    ) -> None:
+        """Add a custom widget which spawns from clicking some action in the toolbar."""
+        if action_name not in self.action_widgets:
+            self.action_widgets[action_name] = {}
+
+        # Re-parent to a safe content container (not QMainWindow)
+        parent = self._resolve_container_parent(self.parentWidget())
+        if parent is None:
+            return
+
+        widget.setParent(parent)
+
+        # If a layout is provided, ensure it is owned by the widget (not QMainWindow)
+        if layout is not None:
+            if layout.parent() is not None and layout.parent() is not widget:
+                layout.setParent(None)
+            if widget.layout() is None:
+                widget.setLayout(layout)
+
+        # Find the tool button for the action
+        def _find_toolbutton_for_action(
+            act: Optional[QtGui.QAction],
+        ) -> Optional[QtWidgets.QToolButton]:
+            if act is None:
+                return None
+            for btn in self.findChildren(QtWidgets.QToolButton):
+                try:
+                    if btn.defaultAction() is act:
+                        return btn
+                except Exception:
+                    pass
+            return None
+
+        def position_widget():
+            tb_global_tl = self.mapToGlobal(QtCore.QPoint(0, 0))
+            act = self._find_action(action_name)
+            btn = _find_toolbutton_for_action(act)
+
+            # Use sizeHint to position even while hidden
+            hint = widget.sizeHint()
+            w_w, w_h = hint.width(), hint.height()
+
+            if btn is None:
+                print("Warning: Could not find tool button for action", action_name)
+
+            if self.position == "left":
+                x = tb_global_tl.x() - w_w - self._margin
+                if btn is not None:
+                    btn_tl = btn.mapToGlobal(QtCore.QPoint(0, 0))
+                    y = btn_tl.y() + (btn.height() - w_h) // 2
+                else:
+                    y = tb_global_tl.y()
+            elif self.position == "right":
+                x = tb_global_tl.x() + self.width() + self._margin
+                if btn is not None:
+                    btn_tl = btn.mapToGlobal(QtCore.QPoint(0, 0))
+                    y = btn_tl.y() + (btn.height() - w_h) // 2
+                else:
+                    y = tb_global_tl.y()
+            elif self.position == "top":
+                y = tb_global_tl.y() - w_h - self._margin
+                if btn is not None:
+                    btn_tl = btn.mapToGlobal(QtCore.QPoint(0, 0))
+                    x = btn_tl.x() + (btn.width() - w_w) // 2
+                else:
+                    x = tb_global_tl.x()
+            else:  # "bottom"
+                y = tb_global_tl.y() + self.height() + self._margin
+                if btn is not None:
+                    btn_tl = btn.mapToGlobal(QtCore.QPoint(0, 0))
+                    x = btn_tl.x() + (btn.width() - w_w) // 2
+                else:
+                    x = tb_global_tl.x()
+
+            desired_global = QtCore.QPoint(x, y)
+            desired_in_parent = parent.mapFromGlobal(desired_global)
+            widget.move(desired_in_parent)
+            widget.raise_()
+
+        # Create and install position tracker
+        tracker = self._make_position_tracker(position_widget)
+        self.installEventFilter(tracker)
+        parent.installEventFilter(tracker)
+        if self.plot is not None:
+            self.plot.installEventFilter(tracker)
+
+        self.action_widgets[action_name]["widget"] = widget
+        self.action_widgets[action_name]["layout"] = layout
+        self.action_widgets[action_name]["tracker"] = tracker
+        self.action_widgets[action_name]["position_fn"] = position_widget
+
+        # Auto-bind to an action with the same name
+        action = self._find_action(action_name)
+        print(f"Auto-binding action widget '{action_name}' to toolbar action.")
+        print(
+            f"  Found action: {action}, isCheckable={action.isCheckable() if action else 'N/A'}"
+        )
+        if action is not None:
+            if action.isCheckable():
+                print(f"Binding action widget '{action_name}' to toggle action.")
+                print("Positioning widget on toggle.")
+                action.toggled.connect(
+                    lambda checked: (widget.setVisible(checked), position_widget())
+                )
+                action.setChecked(False)  # Start hidden
+            else:
+                action.triggered.connect(
+                    lambda: (
+                        widget.setVisible(not widget.isVisible()),
+                        position_widget(),
+                    )
+                )
+
+        # this is a little buggy. This should cleaner but likely requires more robust Toolbar creating logic
+        QtCore.QTimer.singleShot(
+            1, position_widget
+        )  # Initial placement delay to ensure correct position
+        QtCore.QTimer.singleShot(
+            3, position_widget
+        )  # Initial placement delay to ensure correct position
+        QtCore.QTimer.singleShot(
+            5, position_widget
+        )  # Initial placement delay to ensure correct position
+        QtCore.QTimer.singleShot(
+            10, position_widget
+        )  # Initial placement delay to ensure correct position
+        QtCore.QTimer.singleShot(
+            20, position_widget
+        )  # Initial placement delay to ensure correct position
+
+    def register_action_plot_item(self, action_name: str, item: QtWidgets.QGraphicsItem) -> None:
+        """
+        Register a plot graphics item (e.g., pyqtgraph ROI) with an action so that:
+        - It is shown only when the action is toggled on.
+        - It is cleaned up when the toolbar is cleared/closed.
+        """
+        if action_name not in self.action_widgets:
+            self.action_widgets[action_name] = {}
+
+        items = self.action_widgets[action_name].setdefault("plot_items", [])
+        if item not in items:
+            items.append(item)
+
+        act = self._find_action(action_name)
+        # Default to hidden unless the action is already checked.
+        try:
+            item.setVisible(bool(act.isChecked()) if (act and act.isCheckable()) else False)
+        except Exception:
+            pass
+
+        if act is not None:
+            if act.isCheckable():
+                # Keep ROI visibility in sync with toggle state.
+                act.toggled.connect(lambda checked, it=item: it.setVisible(checked))
+            else:
+                # For non-checkable, toggle visibility on click.
+                act.triggered.connect(
+                    lambda _, it=item: it.setVisible(not it.isVisible())
+                )
+
     def _find_action(self, name: str) -> Optional[QtGui.QAction]:
         for a in self.actions():
             if a.text() == name:
@@ -432,6 +679,13 @@ class RoundedToolBar(QtWidgets.QToolBar):
                     pass
                 widget.deleteLater()
 
+            # Remove any registered plot items (e.g., ROIs) from the plot
+            for item in list(data.get("plot_items", []) or []):
+                try:
+                    if self.plot is not None and hasattr(self.plot, "plot_item"):
+                        self.plot.plot_item.removeItem(item)
+                except Exception:
+                    pass
         self.action_widgets.clear()
 
         # Remove all actions
@@ -440,7 +694,6 @@ class RoundedToolBar(QtWidgets.QToolBar):
         super().clear()
 
     def closeEvent(self, ev: QtGui.QCloseEvent) -> None:
-
         # Close action widgets and remove their event filters
         for data in list(self.action_widgets.values()):
             widget = data.get("widget")
@@ -454,6 +707,14 @@ class RoundedToolBar(QtWidgets.QToolBar):
                 except Exception:
                     pass
                 widget.deleteLater()
+
+            # Remove any registered plot items (e.g., ROIs) from the plot
+            for item in list(data.get("plot_items", []) or []):
+                try:
+                    if self.plot is not None and hasattr(self.plot, "plot_item"):
+                        self.plot.plot_item.removeItem(item)
+                except Exception:
+                    pass
 
         self.action_widgets.clear()
 

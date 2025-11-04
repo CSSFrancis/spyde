@@ -113,7 +113,7 @@ class MainWindow(QMainWindow):
         # Start background worker thread to poll plot Futures
         self._update_thread = QtCore.QThread(self)
         self._plot_update_worker = PlotUpdateWorker(
-            lambda: list(self.plot_subwindows), interval_ms=25
+            lambda: list(self.plot_subwindows), interval_ms=5
         )
         self._plot_update_worker.moveToThread(self._update_thread)
         self._update_thread.started.connect(self._plot_update_worker.start)
@@ -355,6 +355,8 @@ class MainWindow(QMainWindow):
                 elif signal.axes_manager.navigation_dimension == 2:
                     signal.cache_pad = 2
             print("Signal loaded:", signal)
+            print("Signal shape:", signal.data.shape)
+            print("Signal Chunks:", signal.data.chunks)
             self.add_signal(signal)
 
     def open_file(self):

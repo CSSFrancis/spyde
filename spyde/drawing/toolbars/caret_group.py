@@ -4,6 +4,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6 import QtCore, QtGui, QtWidgets
 from spyde.drawing.toolbars.floating_button_trees import RoundedButton
 from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
+from pyqtgraph import RectROI  # added
 
 
 class CaretGroup(QtWidgets.QGroupBox):
@@ -25,7 +26,7 @@ class CaretGroup(QtWidgets.QGroupBox):
         caret_base: int = 14,
         caret_depth: int = 8,
         border_width: int = 1,
-        padding: int = 8,
+        padding: int = 15,
         use_mask: bool = False,  # keep False for smooth edges
         *,
         toolbar: RoundedToolBar | None = None,
@@ -51,10 +52,10 @@ class CaretGroup(QtWidgets.QGroupBox):
         super().__init__(title, parent)
 
         # Store context (optional)
-        self._toolbar = toolbar
-        self._action_name = action_name
+        self.toolbar = toolbar # type: RoundedToolBar | None
+        self._action_name = action_name # type: str | None
 
-        self._side = side
+        self._side = side  # type: str
         self._radius = float(radius)
         self._carrot_base = int(caret_base)
         self._carrot_depth = int(caret_depth)
@@ -78,7 +79,7 @@ class CaretGroup(QtWidgets.QGroupBox):
         # Ensure this group has a vertical layout (like the ad-hoc code)
         if self.layout() is None:
             vlay = QtWidgets.QVBoxLayout()
-            vlay.setContentsMargins(0, 0, 0, 0)
+            vlay.setContentsMargins(0, 0, 0, 0)  # layout padding handled in _update_margins
             self.setLayout(vlay)
 
         # Optional auto-attach to the toolbar's parent and register in action_widgets
@@ -139,16 +140,31 @@ class CaretGroup(QtWidgets.QGroupBox):
         self._update_mask()
 
     def _update_margins(self):
+        # Exclude caret region from the content area via widget contents margins.
         l = r = t = b = self._padding
         if self._side == "top":
             t += self._carrot_depth
         elif self._side == "bottom":
-            b += self._carrot_depth
+            b -= self._carrot_depth
         elif self._side == "left":
             l += self._carrot_depth
         else:  # right
             r += self._carrot_depth
         self.setContentsMargins(l, t, r, b)
+
+        # Apply inner padding only inside the bubble, not in the caret band.
+        lay = self.layout()
+        if isinstance(lay, QtWidgets.QLayout):
+            il = ir = it = ib = self._padding
+            if self._side == "top":
+                it = 0
+            elif self._side == "bottom":
+                ib = 0
+            elif self._side == "left":
+                il = 0
+            else:  # right
+                ir = 0
+            lay.setContentsMargins(int(il), int(it), int(ir), int(ib))
 
     def _bubble_rect(self) -> QtCore.QRectF:
         # Sub‑pixel align for crisp 1px pen
@@ -159,7 +175,7 @@ class CaretGroup(QtWidgets.QGroupBox):
         if self._side == "top":
             rect.adjust(0, self._carrot_depth, 0, 0)
         elif self._side == "bottom":
-            rect.adjust(0, 0, 0, -self._carrot_depth)
+            rect.adjust(0, self._carrot_depth, 0, 0)
         elif self._side == "left":
             rect.adjust(self._carrot_depth, 0, 0, 0)
         else:  # right
@@ -254,25 +270,30 @@ class CaretGroup(QtWidgets.QGroupBox):
 class CaretParams(CaretGroup):
     """
     A Caret Group specialized for parameter controls and submitting parameters for some action.
+
+    This is built from a parameters definition dictionary, which specifies the parameters to create,
+    their types, default values, and optional display conditions based on other parameters.
+
+
     """
 
     def __init__(
-        self,
-        title: str = "",
-        parent=None,
-        side: str = None,
-        radius: int = 8,
-        caret_base: int = 14,
-        caret_depth: int = 8,
-        border_width: int = 1,
-        padding: int = 8,
-        use_mask: bool = False,  # keep False for smooth edges
-        parameters: dict = None,
-        function: callable = None,
-        *,
-        toolbar: RoundedToolBar | None = None,
-        action_name: str | None = None,
-        auto_attach: bool = False,
+            self,
+            title: str = "",
+            parent=None,
+            side: str = None,
+            radius: int = 8,
+            caret_base: int = 14,
+            caret_depth: int = 8,
+            border_width: int = 1,
+            padding: int = 8,
+            use_mask: bool = False,  # keep False for smooth edges
+            parameters: dict = None,
+            function: callable = None,
+            *,
+            toolbar: RoundedToolBar | None = None,
+            action_name: str | None = None,
+            auto_attach: bool = False,
     ):
         super().__init__(
             title,
@@ -292,55 +313,269 @@ class CaretParams(CaretGroup):
             "QGroupBox { border: none; } QLabel { background-color: transparent; }"
         )
 
-        self.kwargs = {}
+        # Storage
+        self.kwargs = {}  # key -> editor widget
+        self._rows = {}  # key -> QWidget containing the row
+        self._conditions = {}  # key -> {'parameter': ..., 'value': ...}
+        self._param_types = {}  # key -> dtype string
+        self._dependents = {}  # controller_key -> [dependent_keys]
+        self._parameters_def = parameters or {}
+        self._rect_rois = {}  # key -> RectROI (for RectangleSelector)
+
         print("Creating CaretParams with parameters:", parameters)
-        for key, item in parameters.items():
+
+        # Build rows (always create; visibility controlled by conditions)
+        for key, item in (self._parameters_def or {}).items():
             dtype = item.get("type", "str")
             name = item.get("name", key)
             default = item.get("default", "")
+            self._param_types[key] = dtype
 
-            h_layout = QtWidgets.QHBoxLayout()
+            # Row container so we can hide/show the entire line
+            row_widget = QtWidgets.QWidget(self)
+            h_layout = QtWidgets.QHBoxLayout(row_widget)
             h_layout.setContentsMargins(0, 0, 0, 0)
             h_layout.setSpacing(4)
-            label = QtWidgets.QLabel(name)
-            if dtype == "int":
-                line_edit = QtWidgets.QLineEdit(str(default))
-                line_edit.setValidator(QtGui.QIntValidator())
-            elif dtype == "float":
-                line_edit = QtWidgets.QLineEdit(str(default))
-                line_edit.setValidator(QtGui.QDoubleValidator())
-            else:  # default to string
-                line_edit = QtWidgets.QLineEdit(str(default))
-            h_layout.addWidget(label)
-            h_layout.addWidget(line_edit)
-            self.kwargs[key] = line_edit
-            self.layout().addLayout(h_layout)  # or .addWidget(widget)
 
+            label = QtWidgets.QLabel(name, row_widget)
+            label.setAlignment(
+                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+            )
+            label.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Preferred)
+
+            # Editor
+            if dtype == "int":
+                editor = QtWidgets.QLineEdit(str(default), row_widget)
+                editor.setValidator(QtGui.QIntValidator())
+            elif dtype == "float":
+                editor = QtWidgets.QLineEdit(str(default), row_widget)
+                editor.setValidator(QtGui.QDoubleValidator())
+            elif dtype == "enum":
+                editor = QtWidgets.QComboBox(row_widget)
+                editor.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+                editor.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred)
+                options = item.get("options", [])
+                editor.addItems([str(opt) for opt in options])
+                if default in options:
+                    editor.setCurrentText(str(default))
+            elif dtype == "RectangleSelector":
+                # Add a rectangle ROI to the associated plot; visible only when action toggled.
+                editor = QtWidgets.QLabel("Use selection on plot", row_widget)
+                editor.setEnabled(False)
+
+                if self.toolbar is not None and getattr(self.toolbar, "plot", None) is not None:
+                    plot = getattr(self.toolbar, "plot", None)
+                    try:
+                        # Create a modest default rectangle; users can reposition/resize.
+
+                        size = item.get("size", 0.1)
+                        position = item.get("position", "centered")
+
+                        img_rect = plot.image_item.boundingRect()
+                        img_w, img_h = img_rect.width(), img_rect.height()
+
+                        if isinstance(size, (tuple, list)) and len(size) == 2:
+                            frac_w, frac_h = float(size[0]), float(size[1])
+                        else:
+                            frac_w = frac_h = float(size)
+
+                        roi_w = max(1.0, img_w * frac_w if frac_w <= 1.0 else frac_w)
+                        roi_h = max(1.0, img_h * frac_h if frac_h <= 1.0 else frac_h)
+
+                        if position == "centered":
+                            po = QtCore.QPointF(img_rect.center().x() - roi_w / 2.0,
+                                                img_rect.center().y() - roi_h / 2.0)
+                        elif position == "top-left":
+                            po = QtCore.QPointF(img_rect.left(), img_rect.top())
+                        elif position == "top-right":
+                            po = QtCore.QPointF(img_rect.right() - roi_w, img_rect.top())
+                        elif position == "bottom-left":
+                            po = QtCore.QPointF(img_rect.left(), img_rect.bottom() - roi_h)
+                        elif position == "bottom-right":
+                            po = QtCore.QPointF(img_rect.right() - roi_w, img_rect.bottom() - roi_h)
+                        else:
+                            po = QtCore.QPointF(img_rect.center().x() - roi_w / 2.0,
+                                                img_rect.center().y() - roi_h / 2.0)
+
+                        roi = RectROI(pos=po, size=(roi_w, roi_h))
+
+                        # Ensure it starts hidden; toolbar will toggle visibility with the action.
+                        roi.setVisible(False)
+                        # Add to the plot and register with toolbar for toggle and cleanup.
+                        self.toolbar.plot.plot_item.addItem(roi)
+                        if self._action_name:
+                            self.toolbar.register_action_plot_item(self._action_name, roi)
+                        self._rect_rois[key] = roi
+                    except Exception as e:
+                        print("Failed to create RectangleSelector ROI:", e)
+                else:
+                    print("No toolbar/plot available; RectangleSelector ROI not created.")
+            else:  # default to string
+                editor = QtWidgets.QLineEdit(str(default), row_widget)
+
+            h_layout.addWidget(label)
+            h_layout.addWidget(editor, 1)
+
+            # Store
+            self.kwargs[key] = editor
+            self._rows[key] = row_widget
+
+            # Capture conditional visibility, if any
+            display_condition = item.get("display_condition")
+            if display_condition and isinstance(display_condition, dict):
+                self._conditions[key] = {
+                    "parameter": display_condition.get("parameter"),
+                    "value": display_condition.get("value"),
+                }
+                controller = self._conditions[key]["parameter"]
+                if controller:
+                    self._dependents.setdefault(controller, []).append(key)
+
+            # Add row to main layout
+            self.layout().addWidget(row_widget)
+
+        # Submit button
         self.submit_button = RoundedButton(text="Submit", parent=self)
         self.layout().addWidget(self.submit_button)
 
+        # Layout/style
         layout = self.layout()
         layout.setContentsMargins(2, 2, 2, 2)
         self.submit_button.clicked.connect(self._on_submit_clicked)
         self.setStyleSheet(
             "QGroupBox { border: none; color: white; } "
             "QLabel { background-color: transparent; color: white; } "
-            "QLineEdit, QPushButton { color: white; }"
+            "QLineEdit { color: white; background-color: rgba(255, 255, 255, 40); border: 1px solid black; } "
+            "QComboBox { color: white; background-color: rgba(255, 255, 255, 30); border: 1px solid black; } "
+            "QPushButton { color: white; }"
         )
         self.toolbar = toolbar
         self.function = function
 
+        # Connect signals for controllers that affect dependents
+        self._connect_visibility_triggers()
+        # Apply initial visibility
+        self._update_all_visibility()
+
+    def _connect_visibility_triggers(self):
+        from functools import partial
+
+        for controller_key, dependents in self._dependents.items():
+            controller = self.kwargs.get(controller_key)
+            if controller is None:
+                continue
+            if isinstance(controller, QtWidgets.QComboBox):
+                controller.currentTextChanged.connect(
+                    partial(self._on_controller_changed, controller_key)
+                )
+            else:
+                # QLineEdit (str/int/float)
+                if hasattr(controller, "textChanged"):
+                    controller.textChanged.connect(
+                        partial(self._on_controller_changed, controller_key)
+                    )
+
+    def _on_controller_changed(self, controller_key, *args):
+        # Update only rows depending on this controller
+        for dep_key in self._dependents.get(controller_key, []):
+            cond = self._conditions.get(dep_key)
+            row = self._rows.get(dep_key)
+            if row is None or cond is None:
+                continue
+            row.setVisible(self._evaluate_display_condition(cond))
+
+    def _update_all_visibility(self):
+        for key, cond in self._conditions.items():
+            row = self._rows.get(key)
+            if row is None:
+                continue
+            row.setVisible(self._evaluate_display_condition(cond))
+        self._update_margins()
+
+    def _evaluate_display_condition(self, cond: dict) -> bool:
+        controller_key = cond.get("parameter")
+        target_value = cond.get("value")
+        if controller_key not in self.kwargs:
+            return False
+
+        controller_type = self._param_types.get(controller_key, "str")
+        current_value = self._get_param_value(controller_key, controller_type)
+
+        # Coerce target to controller type
+        try:
+            if controller_type == "int":
+                target_value = int(target_value)
+            elif controller_type == "float":
+                target_value = float(target_value)
+            elif controller_type == "bool":
+                target_value = target_value != "False"
+            else:
+                target_value = str(target_value)
+        except Exception:
+            # If coercion fails, compare as strings
+            target_value = str(target_value)
+            current_value = str(current_value)
+
+        return current_value == target_value
+
+    def _get_param_value(self, key: str, dtype: str):
+        # RectangleSelector returns bounding box in pixel coords (x, y, width, height).
+        if dtype == "RectangleSelector":
+            roi = self._rect_rois.get(key)
+            if roi is None or self.toolbar is None or getattr(self.toolbar, "plot", None) is None:
+                return None
+            try:
+                lower_left = roi.pos()
+                size = roi.size()
+                # Map ROI geometry to pixel coordinates using the image item's transform.
+                inv_transform, _ = self.toolbar.plot.image_item.transform().inverted()
+                ll_px = inv_transform.map(lower_left)
+                sz_px = inv_transform.map(size) - inv_transform.map(QtCore.QPointF(0, 0))
+                x = int(round(ll_px.x()))
+                y = int(round(ll_px.y()))
+                w = int(round(sz_px.x()))
+                h = int(round(sz_px.y()))
+                return (x, y, w, h)
+            except Exception as e:
+                print("Failed to compute RectangleSelector value:", e)
+                return None
+
+        w = self.kwargs.get(key)
+        if w is None:
+            return None
+        if isinstance(w, QtWidgets.QComboBox):
+            return w.currentText()
+        # QLineEdit and QLabel
+        txt = w.text() if hasattr(w, "text") else ""
+        try:
+            if dtype == "int":
+                return int(txt)
+            if dtype == "float":
+                return float(txt)
+        except Exception:
+            pass
+        return txt
+
     def _on_submit_clicked(self):
         if self.function is not None:
             params = {}
-            for key, line_edit in self.kwargs.items():
-
-                if isinstance(line_edit.validator(), QtGui.QDoubleValidator):
-                    params[key] = float(line_edit.text())
-                elif isinstance(line_edit.validator(), QtGui.QIntValidator):
-                    params[key] = int(line_edit.text())
+            for key, widget in self.kwargs.items():
+                row = self._rows.get(key)
+                if row is None or not row.isVisibleTo(self):
+                    continue
+                dtype = self._param_types.get(key, "str")
+                if dtype == "RectangleSelector":
+                    params[key] = self._get_param_value(key, dtype)
+                    continue
+                if hasattr(widget, "validator") and isinstance(widget.validator(), QtGui.QDoubleValidator):
+                    params[key] = float(widget.text())
+                elif hasattr(widget, "validator") and isinstance(widget.validator(), QtGui.QIntValidator):
+                    params[key] = int(widget.text())
+                elif isinstance(widget, QtWidgets.QComboBox):
+                    params[key] = widget.currentText()
                 else:
-                    params[key] = line_edit.text()
+                    params[key] = widget.text()
+
             new_signal = self.function(toolbar=self.toolbar, **params)
             if (
                 new_signal is not None

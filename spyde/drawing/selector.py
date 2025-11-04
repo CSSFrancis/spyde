@@ -1,14 +1,19 @@
+import logging
+
 from pyqtgraph import LinearRegionItem, RectROI, CircleROI, LineROI
 
 from PySide6 import QtCore, QtWidgets, QtGui
 import numpy as np
 
 import pyqtgraph as pg
+import logging
 
 from typing import TYPE_CHECKING, Union, List
 
 if TYPE_CHECKING:
     from spyde.drawing.multiplot import Plot, NavigationPlotManager
+
+Logger = logging.getLogger(__name__)
 
 
 class BaseSelector:
@@ -302,7 +307,7 @@ class IntegratingSelectorMixin:
             if ev is None:
                 self.delayed_update_data()
             else:
-                print("Restarting Timer")
+                Logger.log(level=logging.INFO, msg="Restarting Timer")
                 self.update_timer.start()
 
 

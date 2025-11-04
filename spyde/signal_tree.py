@@ -140,6 +140,8 @@ class BaseSignalTree:
             )
         if signal.axes_manager.signal_dimension == 0:
             signal = signal.T
+        if signal._lazy:
+            signal.compute()
         return signal
 
     def _on_axis_field_edit(

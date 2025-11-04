@@ -60,6 +60,54 @@ functions:
         default: 2
     function: spyde.actions.base.rebin2d
     plot_dim: [ 2 ]
-    toolbar_side: right
+    toolbar_side: bottom
     navigation: False
     toggle: True
+  Center Zero Beam:
+    description: Centers the zero beam in diffraction patterns.
+    icon: drawing/toolbars/icons/center_zero_beam.svg
+    function: spyde.actions.pyxem.center_zero_beam
+    plot_dim: [ 2 ]
+    toolbar_side: bottom
+    navigation: False
+    toggle: True
+    parameters:
+      method:
+        name: Method
+        type: enum
+        default: 'blur'
+        options:
+          - cross_correlate
+          - center_of_mass
+          - blur
+          - interpolate
+      sigma:
+        name: Sigma
+        type: float
+        default: 2.0
+        display_condition:
+          parameter: method
+          value: blur
+      min_cc_disk_radius:
+        name: Min CC Disk Radius
+        type: int
+        default: 5
+        display_condition:
+          parameter: method
+          value: cross_correlate
+      max_cc_disk_radius:
+        name: Max CC Disk Radius
+        type: int
+        default: 15
+        display_condition:
+            parameter: method
+            value: cross_correlate
+      signal_slice:
+        name: Signal Slice
+        type: RectangleSelector
+        position: centered
+        size: .3
+      make_flat_field:
+        name: Make Flat Field
+        type: bool
+        default: False
