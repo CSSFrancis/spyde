@@ -578,7 +578,7 @@ class BaseSignalTree:
             raise ValueError("Parent signal not found in the tree.")
         transformation_name = method if method is not None else function.__name__
 
-        if node_name is not None:
+        if node_name is None:
             node_name = transformation_name
         if node_name in parent_node["children"]:
             # handle name collision

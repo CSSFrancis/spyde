@@ -45,6 +45,7 @@ class RoundedButton(QtWidgets.QPushButton):
             "}"
         )
 
+
 class ButtonTree(QtWidgets.QWidget):
     """
     Layout a tree of buttons using the Reingold-Tilford tidy tree algorithm (Buchheim et al., 2002),
@@ -105,6 +106,11 @@ class ButtonTree(QtWidgets.QWidget):
 
         self.graphics_view = QtWidgets.QGraphicsView(self)
         self.graphics_view.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        self.graphics_view.setMinimumSize(250, 150)
+        self.graphics_view.setMaximumSize(300, 200)
+        self.graphics_view.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
+        )
         self.graphics_view.setHorizontalScrollBarPolicy(
             QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
@@ -112,7 +118,14 @@ class ButtonTree(QtWidgets.QWidget):
             QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
 
+        # Transparent background for the view and viewport (remove frame)
+        self.graphics_view.setStyleSheet("background: transparent; border: none;")
+        self.graphics_view.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self.graphics_view.viewport().setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.graphics_view.viewport().setAutoFillBackground(False)
+
         self.graphics_scene = QtWidgets.QGraphicsScene(self)
+        self.graphics_scene.setBackgroundBrush(QtCore.Qt.GlobalColor.transparent)
         self.graphics_view.setScene(self.graphics_scene)
         self._layout.addWidget(self.graphics_view)
 
@@ -122,10 +135,14 @@ class ButtonTree(QtWidgets.QWidget):
         self.level_gap = 30  # gap between parent and child columns (x direction)
         self.sibling_gap = 20  # gap between siblings (y direction)
 
-        # Build tidy layout and paint
+        # Build tidy layout and paint (defer to next event loop tick so view is ready)
         root = self._build_tree(tree)
-        self._reingold_tilford_layout(root)
-        self._render_tree(root)
+
+        # update the size to accommodate the tree
+        # Defer layout/render to ensure widget has been laid out and view sizes are valid
+        QtCore.QTimer.singleShot(
+            0, lambda r=root: (self._reingold_tilford_layout(r), self._render_tree(r))
+        )
 
     # --- Build an internal tree from nested dict --------------------------------
 

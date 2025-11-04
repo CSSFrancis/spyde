@@ -1,12 +1,4 @@
 functions:
-  Navigate Signal Tree:
-    description: Navigate the signal tree structure.
-    icon: drawing/toolbars/icons/signal_tree.svg
-    function: spyde.actions.base.toggle_signal_tree
-    plot_dim: [ 1, 2 ]
-    toolbar_side: right
-    navigation: False
-    toggle: True
   Reset:
     description: Resets the data to its original view.
     icon: drawing/toolbars/icons/fullsize.svg
@@ -45,6 +37,14 @@ functions:
     plot_dim: [ 1, 2 ]
     toolbar_side: right
     navigation: True
+    toggle: True
+  Navigate Signal Tree:
+    description: Navigate the signal tree structure.
+    icon: drawing/toolbars/icons/signal_tree.svg
+    function: spyde.actions.base.toggle_signal_tree
+    plot_dim: [ 1, 2 ]
+    toolbar_side: right
+    navigation: False
     toggle: True
   Rebin:
     description: Rebin the signal data to reduce its size.

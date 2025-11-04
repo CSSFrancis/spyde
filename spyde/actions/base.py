@@ -100,6 +100,8 @@ def toggle_navigation_plots(
         )
         layout = group.layout()
         toolbar.add_action_widget(action_name, group, layout)
+        group._update_margins()
+        group._update_mask()
     else:
         group = toolbar.action_widgets[action_name]["widget"]
         layout = toolbar.action_widgets[action_name]["layout"]
@@ -166,7 +168,7 @@ def rebin2d(toolbar: "RoundedToolBar", scale_x: int, scale_y: int, *args, **kwar
     return toolbar.plot.signal_tree.add_transformation(
         parent_signal=current_selected_signal,
         method="rebin",
-        node_name=f"Rebin (x{scale_x}, y{scale_y})",
+        node_name=f"Binned",
         scale=scale,
     )
 
@@ -219,7 +221,6 @@ def toggle_signal_tree(
             title="", toolbar=toolbar, action_name=action_name, auto_attach=True
         )
         layout = group.layout()
-        toolbar.add_action_widget(action_name, group, layout)
 
         button_tree = ButtonTree(
             "Signal Tree",
@@ -227,6 +228,9 @@ def toggle_signal_tree(
         )
 
         layout.addWidget(button_tree)
+        toolbar.add_action_widget(action_name, group, layout)
+        group._update_margins()
+        group._update_mask()
 
     else:
         group = toolbar.action_widgets[action_name]["widget"]
