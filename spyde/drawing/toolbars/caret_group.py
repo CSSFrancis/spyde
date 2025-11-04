@@ -1,10 +1,10 @@
-from PySide6 import QtCore, QtGui, QtWidgets
-
-# python
+from typing import TYPE_CHECKING, Optional
 from PySide6 import QtCore, QtGui, QtWidgets
 from spyde.drawing.toolbars.floating_button_trees import RoundedButton
-from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
-from pyqtgraph import RectROI  # added
+from pyqtgraph import RectROI
+
+if TYPE_CHECKING:
+    from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
 
 
 class CaretGroup(QtWidgets.QGroupBox):
@@ -27,10 +27,10 @@ class CaretGroup(QtWidgets.QGroupBox):
         caret_depth: int = 8,
         border_width: int = 1,
         padding: int = 15,
-        use_mask: bool = False,  # keep False for smooth edges
+        use_mask: bool = False,
         *,
-        toolbar: RoundedToolBar | None = None,
-        action_name: str | None = None,
+        toolbar: Optional["RoundedToolBar"] = None,
+        action_name: Optional[str] = None,
         auto_attach: bool = False,
     ):
         # Optionally derive side from toolbar position when requested.
@@ -52,8 +52,8 @@ class CaretGroup(QtWidgets.QGroupBox):
         super().__init__(title, parent)
 
         # Store context (optional)
-        self.toolbar = toolbar # type: RoundedToolBar | None
-        self._action_name = action_name # type: str | None
+        self.toolbar = toolbar  # type: Optional["RoundedToolBar"]
+        self._action_name = action_name  # type: Optional[str]
 
         self._side = side  # type: str
         self._radius = float(radius)
@@ -82,34 +82,15 @@ class CaretGroup(QtWidgets.QGroupBox):
             vlay.setContentsMargins(0, 0, 0, 0)  # layout padding handled in _update_margins
             self.setLayout(vlay)
 
-        # Optional auto-attach to the toolbar's parent and register in action_widgets
-        if auto_attach and toolbar is not None:
-            parent_widget = toolbar.parent() or toolbar.parentWidget()
-            if parent_widget is not None:
-                parent_layout = parent_widget.layout()
-                if parent_layout is None:
-                    parent_layout = QtWidgets.QVBoxLayout(parent_widget)
-                    parent_widget.setLayout(parent_layout)
-                parent_layout.addWidget(self)
+        # Do NOT auto-insert into any parent layout; keep free-floating.
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed,
+            QtWidgets.QSizePolicy.Policy.Fixed,
+        )
 
-            # Match the original fixed policy
-            self.setSizePolicy(
-                QtWidgets.QSizePolicy.Policy.Fixed,
-                QtWidgets.QSizePolicy.Policy.Fixed,
-            )
-
-            # Register into toolbar.action_widgets[action_name]
-            if action_name:
-                try:
-                    aw = getattr(toolbar, "action_widgets", None)
-                    if isinstance(aw, dict):
-                        entry = aw.get(action_name, {})
-                        entry["widget"] = self
-                        entry["layout"] = self.layout()
-                        aw[action_name] = entry
-                except Exception:
-                    pass  # Keep init robust
-
+        # Only store references; do not register widgets in the toolbar here.
+        # RoundedToolBar.add_action_widget will handle parenting, tracking and binding.
+        # ...existing code...
         self._update_margins()
         self._update_mask()
 
@@ -145,7 +126,7 @@ class CaretGroup(QtWidgets.QGroupBox):
         if self._side == "top":
             t += self._carrot_depth
         elif self._side == "bottom":
-            b -= self._carrot_depth
+            b += self._carrot_depth
         elif self._side == "left":
             l += self._carrot_depth
         else:  # right
@@ -175,7 +156,7 @@ class CaretGroup(QtWidgets.QGroupBox):
         if self._side == "top":
             rect.adjust(0, self._carrot_depth, 0, 0)
         elif self._side == "bottom":
-            rect.adjust(0, self._carrot_depth, 0, 0)
+            rect.adjust(0, 0, 0, -self._carrot_depth)
         elif self._side == "left":
             rect.adjust(self._carrot_depth, 0, 0, 0)
         else:  # right
@@ -278,22 +259,22 @@ class CaretParams(CaretGroup):
     """
 
     def __init__(
-            self,
-            title: str = "",
-            parent=None,
-            side: str = None,
-            radius: int = 8,
-            caret_base: int = 14,
-            caret_depth: int = 8,
-            border_width: int = 1,
-            padding: int = 8,
-            use_mask: bool = False,  # keep False for smooth edges
-            parameters: dict = None,
-            function: callable = None,
-            *,
-            toolbar: RoundedToolBar | None = None,
-            action_name: str | None = None,
-            auto_attach: bool = False,
+        self,
+        title: str = "",
+        parent=None,
+        side: str = None,
+        radius: int = 8,
+        caret_base: int = 14,
+        caret_depth: int = 8,
+        border_width: int = 1,
+        padding: int = 8,
+        use_mask: bool = False,
+        parameters: dict = None,
+        function: callable = None,
+        *,
+        toolbar: Optional["RoundedToolBar"] = None,
+        action_name: Optional[str] = None,
+        auto_attach: bool = False,
     ):
         super().__init__(
             title,
