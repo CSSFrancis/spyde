@@ -822,6 +822,7 @@ class NavigationPlotManager:
             child.update_data(child.current_data, force=True)
             logger.debug("Auto-ranging child plot")
             child.plot_item.getViewBox().autoRange()
+            
             self.signal_tree.signal_plots.append(child)
             child.needs_auto_level = True
             logger.debug("Added navigation selector and signal plot: %s, %s", selector, child)

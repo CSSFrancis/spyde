@@ -1,5 +1,3 @@
-from PySide6 import QtCore, QtGui, QtWidgets
-
 # python
 import logging
 from PySide6 import QtCore, QtGui, QtWidgets
