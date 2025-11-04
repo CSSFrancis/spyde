@@ -4,6 +4,8 @@ Export some Signal as a movie.
 This dialog allows the user to select parameters for exporting a movie from a selected signal.
 """
 
+import logging
+
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
@@ -30,6 +32,8 @@ from spyde.external.pyqtgraph.scale_bar import OutlinedScaleBar
 from spyde.misc.utils import get_nice_length
 
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from spyde.drawing.multiplot import Plot
@@ -259,7 +263,7 @@ class MovieExportDialog(QDialog):
             self._export_movie()
         except Exception as e:
             # Minimal user feedback; in a real app, show a message box
-            print(f"Movie export failed: {e}")
+            logger.exception("Movie export failed: %s", e)
             raise
         self.accept()
 

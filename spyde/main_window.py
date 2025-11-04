@@ -1,5 +1,6 @@
 import sys
 import os
+import logging
 from typing import Union
 from functools import partial
 import webbrowser
@@ -31,6 +32,9 @@ from spyde.external.pyqtgraph.histogram_widget import (
     HistogramLUTItem,
 )
 from spyde.workers.plot_update_worker import PlotUpdateWorker
+from spyde.logging_config import setup_logging
+
+logger = logging.getLogger(__name__)
 
 COLORMAPS = {
     "gray": pg.colormap.get("CET-L1"),
@@ -60,7 +64,7 @@ class MainWindow(QMainWindow):
         self.axes_layout = None  # type: Union[QtWidgets.QVBoxLayout, None]
 
         cpu_count = os.cpu_count()
-        print("CPU Count:", cpu_count)
+        logger.info("CPU Count: %s", cpu_count)
         if cpu_count is None or cpu_count < 4:
             workers = 1  # Don't overdo it on small systems
             threads_per_worker = 1
@@ -72,13 +76,13 @@ class MainWindow(QMainWindow):
             else:
                 workers = (cpu_count // 4) - 1 # For very large systems, limit workers
                 threads_per_worker = 4
-        print(f"Starting Dask LocalCluster with {workers} workers, and {threads_per_worker} threads per worker")
+        logger.info("Starting Dask LocalCluster with %d workers, and %d threads per worker", workers, threads_per_worker)
         cluster = LocalCluster(n_workers=workers,
                                threads_per_worker=threads_per_worker)
         self.client = Client(
             cluster
         )  # Start a local Dask client (this should be settable eventually)
-        print(f"Starting Dashboard at: {self.client.dashboard_link}")
+        logger.info("Starting Dashboard at: %s", self.client.dashboard_link)
         self.setWindowTitle("DE-Spy")
         # get screen size and set window size to 3/4 of the screen size
         self.dock_widget = None
@@ -212,7 +216,7 @@ class MainWindow(QMainWindow):
         """
         for p in self.plot_subwindows:
             if isinstance(p.current_data, Future) and p.current_data.done():
-                print("Updating Plot in loop...")
+                logger.debug("Updating Plot in loop...")
                 p.current_data = p.current_data.result()
                 p.update()
 
@@ -226,14 +230,14 @@ class MainWindow(QMainWindow):
             result: Either the computed data or an Exception.
         """
         if isinstance(result, Exception):
-            print(f"Plot update failed: {result}")
+            logger.error("Plot update failed: %s", result)
             return
         try:
-            print("Updating Plot from worker signal...")
+            logger.debug("Updating Plot from worker signal...")
             plot.current_data = result
             plot.update()
         except Exception as e:
-            print(f"Failed to update plot: {e}")
+            logger.error("Failed to update plot: %s", e)
 
     def create_menu(self):
         """
@@ -307,11 +311,11 @@ class MainWindow(QMainWindow):
 
     def create_data(self):
         dialog = CreateDataDialog(self)
-        print("Creating Data")
+        logger.debug("Creating Data")
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            print("Dialog accepted")
+            logger.debug("Dialog accepted")
             data, navigators = dialog.get_data()
-            print("Data created")
+            logger.debug("Data created")
             if data is not None:
                 self.add_signal(data, navigators=navigators)
 
@@ -320,7 +324,7 @@ class MainWindow(QMainWindow):
             kwargs = {"lazy": True}
             if file_path.endswith(".mrc"):
                 dialog = DatasetSizeDialog(self, filename=file_path)
-                print("Opening Dataset Size Dialog for .mrc file")
+                logger.debug("Opening Dataset Size Dialog for .mrc file")
                 if dialog.exec() == QDialog.DialogCode.Accepted:
                     x_size = dialog.x_input.value()
                     y_size = dialog.y_input.value()
@@ -328,9 +332,9 @@ class MainWindow(QMainWindow):
                     kwargs["navigation_shape"] = tuple(
                         [val for val in (x_size, y_size, time_size) if val > 1]
                     )
-                    print(f"{kwargs['navigation_shape']}")
+                    logger.debug("Navigation shape: %s", kwargs['navigation_shape'])
                 else:
-                    print("Dialog cancelled")
+                    logger.debug("Dialog cancelled")
                     return
                 # .mrc always have 2 signal axes.  Maybe needs changed for eels.
                 if len(kwargs["navigation_shape"]) == 3:
@@ -343,18 +347,18 @@ class MainWindow(QMainWindow):
                         -1,
                     )
 
-                print(f"chunks: {kwargs['chunks']}")
+                logger.debug("chunks: %s", kwargs['chunks'])
             if hasattr(kwargs, "navigation_shape") and kwargs["navigation_shape"] == ():
                 kwargs.pop("navigation_shape")
                 kwargs.pop("chunks")
-            print("Loading signal from file:", file_path, "with kwargs:", kwargs)
+            logger.info("Loading signal from file: %s with kwargs: %s", file_path, kwargs)
             signal = hs.load(file_path, **kwargs)
             if kwargs.get("lazy", False):
                 if signal.axes_manager.navigation_dimension == 1:
                     signal.cache_pad = 5
                 elif signal.axes_manager.navigation_dimension == 2:
                     signal.cache_pad = 2
-            print("Signal loaded:", signal)
+            logger.info("Signal loaded: %s", signal)
             self.add_signal(signal)
 
     def open_file(self):
@@ -382,7 +386,7 @@ class MainWindow(QMainWindow):
             root_signal=signal, main_window=self, distributed_client=self.client
         )
         self.signal_trees.append(signal_tree)
-        print("Signal Tree Created")
+        logger.info("Signal Tree Created")
         if navigators is not None:
             for i, nav in enumerate(navigators):
                 title = nav.metadata.get_item(
@@ -390,12 +394,12 @@ class MainWindow(QMainWindow):
                 )
                 if title == "":
                     title = "navigation_" + str(i)
-                print("Adding navigator signal:", title)
+                logger.info("Adding navigator signal: %s", title)
                 signal_tree.add_navigator_signal(title, nav)
 
         if signal.metadata.get_item("General.virtual_images", False):
             for key, item in signal.metadata.General.virtual_images:
-                print("Adding virtual image navigator signal:", key)
+                logger.info("Adding virtual image navigator signal: %s", key)
                 signal_tree.add_navigator_signal(key, item)
 
     def load_example_data(self, name):
@@ -404,7 +408,7 @@ class MainWindow(QMainWindow):
         """
         signal = getattr(pyxem.data, name)(allow_download=True, lazy=True)
         self.add_signal(signal)
-        print("Example data loaded:", name)
+        logger.info("Example data loaded: %s", name)
 
     def add_plot(self, plot: Plot):
         """Add a plot to the MDI area.
@@ -516,7 +520,7 @@ class MainWindow(QMainWindow):
         # Add new axes information
         if hasattr(window, "signal_tree"):
             plot_state = window.plot_state
-            print("Updating axes widget, plot state:", plot_state)
+            logger.debug("Updating axes widget, plot state: %s", plot_state)
             if plot_state is None:
                 current_signal = None
             else:
@@ -544,15 +548,15 @@ class MainWindow(QMainWindow):
 
         # Show controls for the active window
         if hasattr(window, "show_selector_control_widget"):
-            print("Showing selector control widget for window:", window)
+            logger.debug("Showing selector control widget for window: %s", window)
             window.show_selector_control_widget()
         if hasattr(window, "show_toolbars"):
-            print("Showing toolbars for window:", window)
+            logger.debug("Showing toolbars for window: %s", window)
             window.show_toolbars()
 
         ps = getattr(window, "plot_state", None)
         if ps is not None:
-            print("Updating axes widget for window:", window)
+            logger.debug("Updating axes widget for window: %s", window)
             self.update_axes_widget(window)
             if hasattr(ps, "toolbar") and ps.toolbar is not None:
                 ps.toolbar.setVisible(True)
@@ -574,14 +578,14 @@ class MainWindow(QMainWindow):
             and img_item is not self._histogram_image_item
         ):
             try:
-                print("Binding histogram to new image item:", img_item)
+                logger.debug("Binding histogram to new image item: %s", img_item)
                 self.histogram.setImageItem(img_item)
                 self._histogram_image_item = img_item
                 if ps is not None:
                     self.histogram.setLevels(ps.min_level, ps.max_level)
             except Exception:
                 pass
-        print("updating histogram levels from plot state:", ps)
+        logger.debug("updating histogram levels from plot state: %s", ps)
 
         # Update metadata if signal tree changed
         st = getattr(window, "signal_tree", None)
@@ -596,7 +600,7 @@ class MainWindow(QMainWindow):
             and self.cmap_selector is not None
         ):
             self.cmap_selector.setCurrentText(ps.colormap)
-        print("Sub-window activated:", window)
+        logger.debug("Sub-window activated: %s", window)
 
     def add_plot_control_widget(self):
         """
@@ -721,7 +725,7 @@ class MainWindow(QMainWindow):
         if sub is None:
             return
         if hasattr(sub, "set_colormap"):
-            print("Setting colormap on plot:", cmap_name)
+            logger.debug("Setting colormap on plot: %s", cmap_name)
             sub.set_colormap(cmap_name)
 
     def on_histogram_levels_finished(self, signal: HistogramLUTItem):
@@ -746,7 +750,7 @@ class MainWindow(QMainWindow):
             w.plot_state.min_level = levels[0]
             w.plot_state.max_percentile = percentiles[1]
             w.plot_state.min_percentile = percentiles[0]
-        print("Setting levels:", levels, "percentiles:", percentiles, "on plot:", w)
+        logger.debug("Setting levels: %s, percentiles: %s, on plot: %s", levels, percentiles, w)
 
     def _is_supported_file(self, path: str) -> bool:
         try:
@@ -810,7 +814,12 @@ class MainWindow(QMainWindow):
         super().close()
 
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for the SpyDE application."""
+    # Initialize logging first
+    setup_logging()
+    logger.info("Starting SpyDE application")
+    
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("SpyDe")  # Set the application name
     # Create and show the splash screen
@@ -839,3 +848,7 @@ if __name__ == "__main__":
     splash.finish(main_window)  # Close the splash screen when the main window is shown
 
     app.exec()
+
+
+if __name__ == "__main__":
+    main()
