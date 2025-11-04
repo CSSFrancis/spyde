@@ -1,5 +1,6 @@
 from PySide6 import QtCore, QtWidgets, QtGui
 
+import logging
 import pyqtgraph as pg
 from spyde.external.pyqtgraph.scale_bar import OutlinedScaleBar as ScaleBar
 from math import floor, log10
@@ -9,6 +10,8 @@ import dask.array as da
 from dask.distributed import Future
 
 from typing import TYPE_CHECKING, Union
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from spyde.signal_tree import BaseSignalTree
@@ -118,7 +121,7 @@ class Plot(FramelessSubWindow):
         self.parent_selector = None  # type: BaseSelector | None
 
         # Register with the main window
-        print("Registering plot with main window")
+        logger.debug("Registering plot with main window")
         self.main_window.add_plot(self)
 
         # Creating all the floating toolbars...
@@ -318,7 +321,7 @@ class Plot(FramelessSubWindow):
         functions, icons, names, toolbar_sides, toggles, params = (
             get_toolbar_actions_for_plot(self)
         )
-        print(params)
+        logger.debug("Toolbar params: %s", params)
         # Clear existing toolbars
         for tb in [
             self.toolbar_right,
@@ -332,8 +335,8 @@ class Plot(FramelessSubWindow):
         for func, icon, name, side, toggle, param in zip(
             functions, icons, names, toolbar_sides, toggles, params
         ):
-            print(f"Adding toolbar action: {name} to {side} toolbar")
-            print(f"Function: {func}, Icon: {icon}, Toggle: {toggle}, Params: {param}")
+            logger.debug("Adding toolbar action: %s to %s toolbar", name, side)
+            logger.debug("Function: %s, Icon: %s, Toggle: %s, Params: %s", func, icon, toggle, param)
             if side == "right":
                 self.toolbar_right.add_action(name, icon, func, toggle, param)
             elif side == "left":
@@ -388,7 +391,7 @@ class Plot(FramelessSubWindow):
                     getattr(self.nav_plot_manager, "navigation_selectors", [])
                 )
 
-            print("Updating selectors for new image transform:", selectors)
+            logger.debug("Updating selectors for new image transform: %s", selectors)
             for sel in selectors:
                 sel.apply_transform_to_selector(transform)
             self.enable_scale_bar(True)
@@ -436,7 +439,7 @@ class Plot(FramelessSubWindow):
         If the new_data is a Future, the update will be deferred until the Future is complete, the update
         will be handled by the event loop instead.
         """
-        print("Updating plot data", new_data)
+        logger.debug("Updating plot data: %s", new_data)
         self.current_data = new_data
         if isinstance(new_data, Future) and not force:
             pass
@@ -445,7 +448,7 @@ class Plot(FramelessSubWindow):
             self.update()
         else:
             self.update()
-        print("Plot data updated.")
+        logger.debug("Plot data updated.")
 
     def add_fft_selector(self):
         """Add an FFT selector to the plot."""
@@ -484,8 +487,8 @@ class Plot(FramelessSubWindow):
         )
         if self.nav_plot_manager is not None:
             visible_selectors += self.nav_plot_manager.navigation_selectors
-        print(self.nav_plot_manager)
-        print("Showing selector control widgets for plot:", visible_selectors)
+        logger.debug("Nav plot manager: %s", self.nav_plot_manager)
+        logger.debug("Showing selector control widgets for plot: %s", visible_selectors)
         # Hide selectors from other plots. Faster than deleting and recreating them (also renders nicer).
         for selector in self.main_window.navigation_selectors:
             if selector not in visible_selectors:
@@ -578,10 +581,9 @@ class Plot(FramelessSubWindow):
 
     def update(self):
         """Push the current data to the plot items."""
-        print(
-            "Plot update called with data:",
+        logger.debug(
+            "Plot update called with data: %s with type: %s",
             self.current_data,
-            " with type:",
             type(self.current_data),
         )
         if self.plot_state.dimensions == 1:
@@ -591,8 +593,8 @@ class Plot(FramelessSubWindow):
                 else self.current_data
             )
             axis = self.plot_state.current_signal.axes_manager.signal_axes[0].axis
-            print("Updating 1D plot with axis:", axis)
-            print("Data shape:", current_data)
+            logger.debug("Updating 1D plot with axis: %s", axis)
+            logger.debug("Data shape: %s", current_data)
             self.line_item.setData(axis, current_data)
         elif self.plot_state.dimensions == 2:
             img = (
@@ -631,10 +633,10 @@ class Plot(FramelessSubWindow):
                     pass
                 tb.close()
                 setattr(self, attr, None)
-        print("Closing plot:", self)
-        print("Closing parent selector if exists")
+        logger.debug("Closing plot: %s", self)
+        logger.debug("Closing parent selector if exists")
         if self.parent_selector is not None:
-            print("Closing parent selector")
+            logger.debug("Closing parent selector")
             self.parent_selector.close()
 
         # need to delete the current selectors and child plots
@@ -649,7 +651,7 @@ class Plot(FramelessSubWindow):
 
         # if part of a nav plot manager close everything and clean up the signal
         if self.nav_plot_manager is not None:
-            print("Closing nav plot manager plots")
+            logger.debug("Closing nav plot manager plots")
             for plot in self.nav_plot_manager.plots:
                 try:
                     plot.close()
@@ -699,7 +701,7 @@ class NavigationPlotManager:
         )  # type: dict[BaseSignal:NavigationManagerState]
         self.navigation_manager_state = None  # type: NavigationManagerState | None
 
-        print(f"NavigationPlotManager: dim:{self.nav_dim}")
+        logger.debug("NavigationPlotManager: dim: %d", self.nav_dim)
         if self.nav_dim < 1:
             raise ValueError(
                 "NavigationPlotManager requires at least 1 navigation dimension."
@@ -715,8 +717,8 @@ class NavigationPlotManager:
         for signal in self.signal_tree.navigator_signals.values():
             self.add_state(signal)
 
-        print("Setting initial navigation manager state")
-        print(list(self.signal_tree.navigator_signals.values())[0])
+        logger.debug("Setting initial navigation manager state")
+        logger.debug("Navigator signal: %s", list(self.signal_tree.navigator_signals.values())[0])
         self.set_navigation_manager_state(
             list(self.signal_tree.navigator_signals.values())[0]
         )
@@ -736,7 +738,7 @@ class NavigationPlotManager:
         )
 
         dim = self.navigation_manager_states[BaseSignal].dimensions
-        print("Adding navigation state for signal:", signal, " with dimensions:", dim)
+        logger.debug("Adding navigation state for signal: %s with dimensions: %s", signal, dim)
         dim = [d for d in dim if d > 0]
         for plot, d in zip(self.plots, dim):
             plot.plot_states[signal] = PlotState(
@@ -758,8 +760,8 @@ class NavigationPlotManager:
         signal : BaseSignal | str
             The signal for which to set the navigation state.
         """
-        print(self.navigation_manager_states)
-        print("Setting navigation manager state for signal:", signal)
+        logger.debug("Navigation manager states: %s", self.navigation_manager_states)
+        logger.debug("Setting navigation manager state for signal: %s", signal)
         if isinstance(signal, str):
             signal = self.navigation_signals[signal]
         self.navigation_manager_state = self.navigation_manager_states.get(
@@ -807,7 +809,7 @@ class NavigationPlotManager:
             # create plot states for the child plot
             child.plot_states = self.signal_tree.create_plot_states()
 
-            print("Added Child plot states: ", child.plot_states)
+            logger.debug("Added Child plot states: %s", child.plot_states)
             selector = selector_type(
                 parent=self.plots[0],
                 children=child,
@@ -818,9 +820,8 @@ class NavigationPlotManager:
             # Auto range...
             selector.update_data()
             child.update_data(child.current_data, force=True)
-            print("Auto-ranging child plot")
+            logger.debug("Auto-ranging child plot")
             child.plot_item.getViewBox().autoRange()
-            print()
             self.signal_tree.signal_plots.append(child)
             child.needs_auto_level = True
-            print("Added navigation selector and signal plot:", selector, child)
+            logger.debug("Added navigation selector and signal plot: %s, %s", selector, child)

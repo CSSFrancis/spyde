@@ -1,9 +1,12 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
 # python
+import logging
 from PySide6 import QtCore, QtGui, QtWidgets
 from spyde.drawing.toolbars.floating_button_trees import RoundedButton
 from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
+
+logger = logging.getLogger(__name__)
 
 
 class CaretGroup(QtWidgets.QGroupBox):
@@ -42,8 +45,8 @@ class CaretGroup(QtWidgets.QGroupBox):
             }.get(pos, "bottom")
 
         if toolbar is not None and (side is None or side == "auto"):
-            print(
-                "Setting CaretGroup side opposite to toolbar position:",
+            logger.debug(
+                "Setting CaretGroup side opposite to toolbar position: %s",
                 toolbar.position,
             )
             side = _opposite(getattr(toolbar, "position", "right"))
@@ -293,7 +296,7 @@ class CaretParams(CaretGroup):
         )
 
         self.kwargs = {}
-        print("Creating CaretParams with parameters:", parameters)
+        logger.debug("Creating CaretParams with parameters: %s", parameters)
         for key, item in parameters.items():
             dtype = item.get("type", "str")
             name = item.get("name", key)

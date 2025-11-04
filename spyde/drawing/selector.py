@@ -1,11 +1,14 @@
 from pyqtgraph import LinearRegionItem, RectROI, CircleROI, LineROI
 
+import logging
 from PySide6 import QtCore, QtWidgets, QtGui
 import numpy as np
 
 import pyqtgraph as pg
 
 from typing import TYPE_CHECKING, Union, List
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from spyde.drawing.multiplot import Plot, NavigationPlotManager
@@ -111,18 +114,18 @@ class BaseSelector:
         if ev is None:
             self.delayed_update_data()
         else:
-            print("Restarting Timer")
+            logger.debug("Restarting Timer")
             self.update_timer.start()
 
     def delayed_update_data(self, force: bool = False, update_contrast: bool = False):
         """
         Perform the actual update if the indices have not changed.
         """
-        print("updating the data:", self.children)
+        logger.debug("updating the data: %s", self.children)
         indices = self.get_selected_indices()
         if not np.array_equal(indices, self.current_indices) or force:
             for child in self.children:
-                print("Updating Child Plot:", child)
+                logger.debug("Updating Child Plot: %s", child)
                 new_data = self.children[child](self, child, indices)
                 child.update_data(
                     new_data
@@ -194,8 +197,8 @@ class RectangleSelector(BaseSelector):
         super().__init__(
             parent, children, update_function, live_delay=live_delay, *args, **kwargs
         )
-        print("Creating Rectangle Selector")
-        print(args, kwargs)
+        logger.debug("Creating Rectangle Selector")
+        logger.debug("Args: %s, Kwargs: %s", args, kwargs)
         self.selector = RectROI(
             pos=(0, 0),
             size=(10, 10),
@@ -264,8 +267,8 @@ class IntegratingSelectorMixin:
         self.size_limits = (1, 15, 1, 15)
 
     def on_integrate_toggled(self, checked):
-        print("Integrate Toggled")
-        print(self.is_live)
+        logger.debug("Integrate Toggled")
+        logger.debug("Is live: %s", self.is_live)
         if self.is_live:
             self.is_integrating = checked
             self.delayed_update_data(force=True, update_contrast=True)
@@ -273,7 +276,7 @@ class IntegratingSelectorMixin:
     def on_integrate_pressed(self):
         if not self.is_live:
             # fire off the integration
-            print("Computing!")
+            logger.debug("Computing!")
             self.delayed_update_data(force=True, update_contrast=True)
 
     def on_live_toggled(self, checked):
@@ -302,7 +305,7 @@ class IntegratingSelectorMixin:
             if ev is None:
                 self.delayed_update_data()
             else:
-                print("Restarting Timer")
+                logger.debug("Restarting Timer")
                 self.update_timer.start()
 
 

@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING
+import logging
 
 if TYPE_CHECKING:
     from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
@@ -6,6 +7,8 @@ from spyde.drawing.toolbars.floating_button_trees import RoundedButton, ButtonTr
 from spyde.drawing.toolbars.caret_group import CaretGroup
 
 from PySide6 import QtWidgets
+
+logger = logging.getLogger(__name__)
 
 ZOOM_STEP = 0.8
 
@@ -138,7 +141,7 @@ def toggle_navigation_plots(
     #    current_buttons[add_button_name] = add_button
 
     if toolbar.action_widgets.get(action_name, None) is None:
-        print(f"Adding toolbar action widget: {action_name}")
+        logger.debug("Adding toolbar action widget: %s", action_name)
         toolbar.add_action_widget(action_name, group, layout)
 
     if toggle is not None:
@@ -233,7 +236,7 @@ def toggle_signal_tree(
         layout = toolbar.action_widgets[action_name]["layout"]
 
     if toolbar.action_widgets.get(action_name, None) is None:
-        print(f"Adding toolbar action widget: {action_name}")
+        logger.debug("Adding toolbar action widget: %s", action_name)
         toolbar.add_action_widget(action_name, group, layout)
 
     if toggle is not None:
