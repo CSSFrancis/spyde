@@ -5,7 +5,7 @@ from typing import Union
 from functools import partial
 import webbrowser
 
-from PySide6.QtGui import QAction, QIcon, QBrush, QPalette
+from PySide6.QtGui import QAction, QIcon, QBrush, QPalette, QActionGroup
 from PySide6.QtCore import Qt, QTimer, QEvent
 from PySide6.QtWidgets import (
     QSplashScreen,
@@ -32,7 +32,7 @@ from spyde.external.pyqtgraph.histogram_widget import (
     HistogramLUTItem,
 )
 from spyde.workers.plot_update_worker import PlotUpdateWorker
-from spyde.logging_config import setup_logging
+from spyde.logging_config import setup_logging, set_log_level
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +282,37 @@ class MainWindow(QMainWindow):
         view_plot_control_action = QAction("Toggle Plot Control Dock", self)
         view_plot_control_action.triggered.connect(self.toggle_plot_control_dock)
         view_menu.addAction(view_plot_control_action)
+
+        # Add log level submenu
+        log_level_menu = view_menu.addMenu("Set Log Level")
+        log_level_group = QActionGroup(self)
+        log_level_group.setExclusive(True)
+        
+        # Get current log level
+        current_level = logging.getLogger().level
+        
+        # Create actions for each log level
+        log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        for level_name in log_levels:
+            level_value = getattr(logging, level_name)
+            action = QAction(level_name, self)
+            action.setCheckable(True)
+            action.setChecked(level_value == current_level)
+            action.triggered.connect(partial(self.set_logging_level, level_name))
+            log_level_group.addAction(action)
+            log_level_menu.addAction(action)
+
+    def set_logging_level(self, level_name):
+        """
+        Set the logging level for the application.
+        
+        Parameters
+        ----------
+        level_name : str
+            The logging level name (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        """
+        set_log_level(level_name)
+        logger.info("Logging level changed to %s", level_name)
 
     def toggle_plot_control_dock(self):
         """

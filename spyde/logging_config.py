@@ -48,3 +48,25 @@ def setup_logging():
     logging.getLogger("bokeh").setLevel(logging.WARNING)
     
     return root_logger
+
+
+def set_log_level(level_name):
+    """
+    Dynamically change the logging level.
+    
+    Parameters
+    ----------
+    level_name : str
+        One of: 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
+    """
+    log_level = getattr(logging, level_name.upper(), logging.INFO)
+    
+    # Update root logger level
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    
+    # Update all handlers
+    for handler in root_logger.handlers:
+        handler.setLevel(log_level)
+    
+    root_logger.info("Log level changed to %s", level_name.upper())

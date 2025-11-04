@@ -8,9 +8,24 @@ SpyDE uses Python's built-in `logging` module for all application output. All `p
 
 Logging is configured centrally in `spyde/logging_config.py` and initialized when the application starts in `main_window.py:main()`.
 
-### Environment Variables
+### Setting Log Level
 
-- **LOG_LEVEL**: Set the logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+There are two ways to set the logging level:
+
+#### 1. Via the GUI (Recommended)
+
+Use the menu: **View → Set Log Level** and select from:
+- **DEBUG**: Show all diagnostic information
+- **INFO**: Show general informational messages (default)
+- **WARNING**: Show only warnings and errors
+- **ERROR**: Show only errors
+- **CRITICAL**: Show only critical errors
+
+The log level can be changed at any time while the application is running, and changes take effect immediately.
+
+#### 2. Via Environment Variable
+
+- **LOG_LEVEL**: Set the logging level at startup (DEBUG, INFO, WARNING, ERROR, CRITICAL)
   - Default: `INFO` in production
   - For debugging, set `LOG_LEVEL=DEBUG`
 
