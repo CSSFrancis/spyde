@@ -24,4 +24,5 @@ two sections:
    :maxdepth: 2
 
    gui_elements
+   installing
    ../examples/index

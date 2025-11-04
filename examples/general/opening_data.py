@@ -122,6 +122,7 @@ for _ in range(20):
 
 register_window_for_gallery(win)
 # sphinx_gallery_end_ignore
+
 # %%
 # We can now explore and visualize the data using SpyDE's powerful tools and features!
 

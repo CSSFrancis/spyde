@@ -6,6 +6,49 @@ platform for data analysis and visualization. Rather than create a completely ne
 of SpyDE is to continue to support HyperSpy while providing additional features and capabilities that enhance the
 user experience using a GUI-based approach.
 
+
+.. grid:: 2 2 2 2
+  :gutter: 2
+
+  .. grid-item-card::
+    :link: user_guide/installing
+    :link-type: doc
+
+    :octicon:`rocket;2em;sd-text-info` Getting Started
+    ^^^
+
+    New to SpyDE? The getting started guide provides an
+    introduction on basic usage and how to install it.
+
+  .. grid-item-card::
+    :link: user_guide/index
+    :link-type: doc
+
+    :octicon:`book;2em;sd-text-info` User Guide
+    ^^^
+
+    The user guide provides information on key concepts of SpyDE
+
+
+  .. grid-item-card::
+    :link: examples/index
+    :link-type: doc
+
+    :octicon:`zap;2em;sd-text-info` Examples
+    ^^^
+
+    Gallery of short examples illustrating simple tasks that can be performed with SpyDE.
+
+  .. grid-item-card::
+    :link: dev_guide/index
+    :link-type: doc
+
+    :octicon:`people;2em;sd-text-info` Developer Guide
+    ^^^
+
+    The developer guide provides information on how to contribute to SpyDE. We are always
+    looking for new contributors and welcome any contributions!
+
 Currently, HyperSpy is much more "feature complete" than SpyDE, but we are actively working to implement much of the
 functionality from HyperSpy into SpyDE, that being said there is still a very real reason to learn how to use
 the HyperSpy API directly as it provides a lot more flexibility and options for advanced users and understanding
