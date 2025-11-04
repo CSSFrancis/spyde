@@ -1,0 +1,49 @@
+Metadata-Version: 2.4
+Name: spyde
+Version: 0.0.1
+Summary: DE Visualization tool based on HyperSpy
+Author: Direct Electron
+Project-URL: Bug Reports, https://github.com/directelectron/spyde/issues
+Project-URL: Documentation, https://directelectron.github.io/spyde/
+Project-URL: Homepage, https://directelectron.com/
+Project-URL: Support, https://github.com/directelectron/spyde/discussions
+Project-URL: Source, https://github.com/directelectron/spyde
+Keywords: EELS,STEM,TEM,hyperspy,microscopy,Cryo EM,4D STEM
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering
+Requires-Python: >=3.8
+Requires-Dist: numpy>=1.20.0
+Requires-Dist: pillow
+Requires-Dist: matplotlib
+Requires-Dist: scipy
+Requires-Dist: bokeh
+Requires-Dist: scikit-image
+Requires-Dist: sympy
+Requires-Dist: distributed
+Requires-Dist: dask
+Requires-Dist: hyperspy@ git+https://github.com/cssfrancis/hyperspy.git@slice-integrate2
+Requires-Dist: pyxem
+Requires-Dist: PySide6
+Requires-Dist: imageio-ffmpeg
+Requires-Dist: pyqtgraph
+Provides-Extra: tests
+Requires-Dist: pytest-instafail; extra == "tests"
+Requires-Dist: pytest-rerunfailures; extra == "tests"
+Requires-Dist: pytest>=3.6; extra == "tests"
+Requires-Dist: setuptools_scm; extra == "tests"
+Requires-Dist: pytest-cov; extra == "tests"
+Requires-Dist: pytest-qt; extra == "tests"
+Requires-Dist: sphinx_gallery; extra == "tests"
+Provides-Extra: doc
+Requires-Dist: sphinx; extra == "doc"
+Requires-Dist: pydata_sphinx_theme; extra == "doc"
+Requires-Dist: sphinx-gallery; extra == "doc"
+Requires-Dist: pytest-qt; extra == "doc"
+Requires-Dist: sphinx_design; extra == "doc"

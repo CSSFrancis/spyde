@@ -1,0 +1,2 @@
+[console_scripts]
+spyde = spyde.main_window:main
