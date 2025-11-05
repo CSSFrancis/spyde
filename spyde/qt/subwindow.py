@@ -3,6 +3,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor, QIcon
 from pathlib import Path
 from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
+# New imports for painting/tinting
+from PySide6 import QtGui
 
 
 class FramelessSubWindow(QtWidgets.QMdiSubWindow):
@@ -11,6 +13,10 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
 
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # small rounded gradient border params
+        self._border_radius = 8
+        self._border_width = 2
+
         self._moving = False
         self._move_start = None
         self._resize_start = None
@@ -20,12 +26,13 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self.title_bar.setMinimumHeight(30)
         self.title_bar.setMinimumWidth(200)
         self.title_bar.setStyleSheet(
-            "background-color: #2b2b2b; "
+            "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            "stop:0 #3a3a3a, stop:1 #2b2b2b); "
             "border-top-left-radius: 6px; "
             "border-top-right-radius: 6px; "
-            "QPushButton { background: transparent; border: none; border-radius: 4px; } "
-            "QPushButton:hover { background-color: #3a3a3a; } "
-            "QPushButton:pressed { background-color: #454545; }"
+            "QPushButton { background-color: transparent; border: none; border-radius: 4px; } "
+            "QPushButton:hover { background-color: rgba(255,255,255,18); } "
+            "QPushButton:pressed { background-color: rgba(255,255,255,28); }"
         )
         self.title_bar_layout = QtWidgets.QHBoxLayout(self.title_bar)
         self.title_bar_layout.setContentsMargins(0, 0, 0, 0)
@@ -284,3 +291,16 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
             self._resizing_bottom = False
             self._resizing_left = False
             self._resizing_right = False
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        # Draw subtle rounded background and a small gradient border around entire subwindow
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+
+        # Background fill (semi-transparent dark)
+        bg_path = QtGui.QPainterPath()
+        bg_path.addRoundedRect(QtCore.QRectF(rect), self._border_radius, self._border_radius)
+        p.fillPath(bg_path, QtGui.QColor(35, 35, 35, 245))
+
+        # Gradient border that goes around the full widget (vertical gradient)

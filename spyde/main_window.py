@@ -4,8 +4,8 @@ from typing import Union
 from functools import partial
 import webbrowser
 
-from PySide6.QtGui import QAction, QIcon, QBrush, QPalette
-from PySide6.QtCore import Qt, QTimer, QEvent
+from PySide6.QtGui import QAction, QIcon, QBrush
+from PySide6.QtCore import Qt, QEvent
 from PySide6.QtWidgets import (
     QSplashScreen,
     QMainWindow,
@@ -18,7 +18,6 @@ from PySide6 import QtWidgets, QtCore
 from PySide6.QtGui import QPixmap, QColor
 
 from dask.distributed import Client, Future, LocalCluster
-import numpy as np
 import pyqtgraph as pg
 import hyperspy.api as hs
 import pyxem.data
@@ -484,7 +483,7 @@ class MainWindow(QMainWindow):
                     value_label = QtWidgets.QLabel(f"{value}")
                     key_label.setStyleSheet("font-size: 10px;")
                     value_label.setStyleSheet("font-size: 10px;")
-                    key_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    key_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                     grid.addWidget(key_label, row, 0)
                     grid.addWidget(value_label, row, 1)
 
@@ -688,7 +687,7 @@ class MainWindow(QMainWindow):
         )
 
     def _active_plot_window(self) -> Union[Plot, None]:
-        # The active subwindow is the Plot (subclass of QMdiSubWindow)
+        # The active sub window is the Plot (subclass of QMdiSubWindow)
         sub = self.mdi_area.activeSubWindow()
         return sub if sub is not None else None
 
@@ -778,7 +777,9 @@ class MainWindow(QMainWindow):
             self._create_signals(files)
 
     # Only handle drag/drop on the MDI area
-    def eventFilter(self, obj, event):
+    def eventFilter(self,
+                    obj,
+                    event: Union[QEvent.Type.DragMove, QEvent.Type.DragEnter, QEvent.Type.Drop]) -> bool:
         if obj is self.mdi_area and event is not None:
             et = event.type()
             if et in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
