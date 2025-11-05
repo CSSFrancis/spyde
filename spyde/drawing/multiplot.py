@@ -484,11 +484,9 @@ class Plot(FramelessSubWindow):
         )
         if self.nav_plot_manager is not None:
             visible_selectors += self.nav_plot_manager.navigation_selectors
-        print(self.nav_plot_manager)
-        print("Showing selector control widgets for plot:", visible_selectors)
         # Hide selectors from other plots. Faster than deleting and recreating them (also renders nicer).
         for selector in self.main_window.navigation_selectors:
-            if selector not in visible_selectors:
+            if selector not in visible_selectors :
                 selector.widget.hide()
             else:
                 if selector.widget.parent() is None:
@@ -635,6 +633,10 @@ class Plot(FramelessSubWindow):
         print("Closing parent selector if exists")
         if self.parent_selector is not None:
             print("Closing parent selector")
+            self.parent_selector.parent.nav_plot_manager.navigation_selectors.remove(
+                self.parent_selector
+            )
+            self.parent_selector.widget.hide()
             self.parent_selector.close()
 
         # need to delete the current selectors and child plots
@@ -670,6 +672,7 @@ class Plot(FramelessSubWindow):
 
         # Remove the selectors for this plot
         self.remove_selector_control_widgets()
+
 
         super().closeEvent(event)
 

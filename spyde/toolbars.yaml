@@ -106,7 +106,7 @@ functions:
         name: Signal Slice
         type: RectangleSelector
         position: centered
-        size: .3
+        size: .2
       make_flat_field:
         name: Make Flat Field
         type: bool

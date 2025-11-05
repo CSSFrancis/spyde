@@ -2,6 +2,8 @@ from typing import TYPE_CHECKING, Optional
 from PySide6 import QtCore, QtGui, QtWidgets
 from spyde.drawing.toolbars.floating_button_trees import RoundedButton
 from pyqtgraph import RectROI
+import numpy as np
+
 
 if TYPE_CHECKING:
     from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
@@ -349,35 +351,43 @@ class CaretParams(CaretGroup):
                     try:
                         # Create a modest default rectangle; users can reposition/resize.
 
+                        current_signal = self.toolbar.plot.plot_state.current_signal
+                        extent = current_signal.axes_manager.signal_extent
+                        print("Current signal extent:", extent)
+
+                        center = (extent[1]+extent[0])/2, (extent[3]+extent[2])/2
+                        left, right, bottom, top = extent
+                        print("Computed signal center:", center)
+                        width = np.abs(extent[1]-extent[0])
+                        print("Computed signal width:", width)
+
                         size = item.get("size", 0.1)
                         position = item.get("position", "centered")
-
-                        img_rect = plot.image_item.boundingRect()
-                        img_w, img_h = img_rect.width(), img_rect.height()
 
                         if isinstance(size, (tuple, list)) and len(size) == 2:
                             frac_w, frac_h = float(size[0]), float(size[1])
                         else:
                             frac_w = frac_h = float(size)
 
-                        roi_w = max(1.0, img_w * frac_w if frac_w <= 1.0 else frac_w)
-                        roi_h = max(1.0, img_h * frac_h if frac_h <= 1.0 else frac_h)
+                        roi_w = max(1.0, width * frac_w if frac_w <= 1.0 else frac_w)
+                        roi_h = max(1.0, width * frac_h if frac_h <= 1.0 else frac_h)
+                        print("Computed ROI size:", roi_w, roi_h)
 
                         if position == "centered":
-                            po = QtCore.QPointF(img_rect.center().x() - roi_w / 2.0,
-                                                img_rect.center().y() - roi_h / 2.0)
+                            po = QtCore.QPointF(center[0] - roi_w / 2.0, center[1] - roi_h / 2.0)
                         elif position == "top-left":
-                            po = QtCore.QPointF(img_rect.left(), img_rect.top())
+                            po = QtCore.QPointF(left, top)
                         elif position == "top-right":
-                            po = QtCore.QPointF(img_rect.right() - roi_w, img_rect.top())
+                            po = QtCore.QPointF(right - roi_w, top)
                         elif position == "bottom-left":
-                            po = QtCore.QPointF(img_rect.left(), img_rect.bottom() - roi_h)
+                            po = QtCore.QPointF(left, bottom - roi_h)
                         elif position == "bottom-right":
-                            po = QtCore.QPointF(img_rect.right() - roi_w, img_rect.bottom() - roi_h)
+                            po = QtCore.QPointF(right - roi_w, bottom - roi_h)
                         else:
-                            po = QtCore.QPointF(img_rect.center().x() - roi_w / 2.0,
-                                                img_rect.center().y() - roi_h / 2.0)
+                            po = QtCore.QPointF(center[0] - roi_w / 2.0, center[1] - roi_h / 2.0)
 
+                        print("Computed ROI position:", po)
+                        print("Adding RectangleSelector ROI to plot.")
                         roi = RectROI(pos=po, size=(roi_w, roi_h))
 
                         # Ensure it starts hidden; toolbar will toggle visibility with the action.

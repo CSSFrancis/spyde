@@ -44,12 +44,11 @@ def center_zero_beam(toolbar: RoundedToolBar,
         shifts.get_linear_plane()
 
     new_signal = toolbar.plot.signal_tree.add_transformation(parent_signal=signal,
-                                                node_name="Centered",
-                                                method="center_direct_beam",
-                                                shifts=shifts,
-                                                inplace=False)
-    print("Done centering zero-beam.")
-
+                                                             node_name="Centered",
+                                                             method="center_direct_beam",
+                                                             shifts=shifts,
+                                                             inplace=False)
+    new_signal.calibration.center = None
     toolbar.plot.set_plot_state(new_signal)
 
 
