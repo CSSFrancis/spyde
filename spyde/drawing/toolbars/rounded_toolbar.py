@@ -678,6 +678,9 @@ class PopoutToolBar(RoundedToolBar):
         caret_depth: int = 8,
         padding: int = 8,
     ):
+
+
+
         # Popout does not need plot tracking; pass plot=None to avoid auto-placement
         self._side = side if side in ("top", "bottom", "left", "right", "auto") else "auto"
         self._caret_base = int(caret_base)
@@ -691,16 +694,46 @@ class PopoutToolBar(RoundedToolBar):
         self._pen_color = QtGui.QColor(255, 255, 255, 120)
         self._bg_color = QtGui.QColor(30, 30, 30, 240)
         # Transparent background; we fully paint our bubble
+
+        top_margin = 2 + self._caret_depth
+        self.setStyleSheet(
+            f"QToolBar {{"
+            "  background: transparent;"
+            "  border: none;"
+            "  padding: 4px;"
+            "  margin: 0px;"
+            "}"
+            f"QToolButton {{"
+            "  border: none;"
+            f"  margin: {top_margin}px 2px 2px 2px;"
+            "  background: transparent;"
+            "  padding: 4px;"
+            "  border-radius: 6px;"
+            "}"
+            "QToolButton:hover {"
+            "  background-color: rgba(255, 255, 255, 40);"
+            "}"
+            "QToolButton:pressed {"
+            "  background-color: rgba(255, 255, 255, 64);"
+            "}"
+            "QToolButton:checked {"
+            "  background-color: rgba(255, 255, 255, 40);"
+            "}"
+            "QAction:checked {"
+            "  background-color: rgba(255, 255, 255, 40);"
+            "}"
+        )
+
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         # Allow dynamic growth; RoundedToolBar.__init__ fixed the size – undo that here.
         self._unlock_fixed_size()
         self._margin = 1
-        self.layout_padding = (self._padding, self._padding, self._padding, caret_depth)  # left, top, right, bottom
+        self.layout_padding = (self._padding, self._padding, self._padding, self._padding)  # left, top, right, bottom
 
     def _unlock_fixed_size(self):
         # Remove fixed-size constraints introduced by RoundedToolBar.set_size()
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Preferred)
-        self.setMinimumSize(0, 18+8)  # minimum height to fit buttons
+        self.setMinimumSize(0, 18)  # minimum height to fit buttons
         self.setMaximumSize(16777215, 16777215)
 
     # Ensure subtoolbars grow to fit their actions (don't lock to fixed size)
