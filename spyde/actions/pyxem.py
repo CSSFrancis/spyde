@@ -1,6 +1,13 @@
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
+from PySide6.QtCore import Qt
+
 from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
 from spyde.drawing.selector import RectangleSelector
 from typing import Tuple
+
+from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
+
+
 
 def center_zero_beam(toolbar: RoundedToolBar,
                      make_flat_field: bool = False,
@@ -52,5 +59,87 @@ def center_zero_beam(toolbar: RoundedToolBar,
     toolbar.plot.set_plot_state(new_signal)
 
 
+def virtual_imaging(toolbar: RoundedToolBar,
+                     selector: RectangleSelector,
+                     action_name: str = "Create Virtual Image",
+                     *args, **kwargs
+                     ):
+    """
+    Create a virtual image from a 4D STEM dataset by integrating over a selected region.
+
+    Parameters
+    ----------
+    toolbar : spyde.plugins.toolbar.Toolbar
+        The toolbar instance from which to get the current signal.
+    selector : spyde.plugins.selector.Selector
+        The selector instance from which to get the current signal.
+
+    """
+    pass
 
 
+def add_virtual_image(toolbar: RoundedToolBar,
+                     action_name: str = "Add Virtual Image",
+                     *args, **kwargs
+                     ):
+    """
+    Add a virtual image from a 4D STEM dataset by integrating over a specified region.
+
+    Parameters
+    ----------
+    toolbar : spyde.plugins.toolbar.Toolbar
+        The toolbar instance from which to get the current signal.
+
+    """
+    colors = ["red", "green", "blue", "yellow", "cyan", "magenta"]
+    print("Adding virtual image...")
+
+    icon_path = resolve_icon_path("drawing/toolbars/icons/virtual_imaging.svg")
+    num = toolbar.num_actions()
+    color = colors[num % len(colors)]
+
+    # Create base icon pixmap
+    base_icon = QIcon(icon_path)
+
+    # Match the toolbar's icon size and HiDPI scaling
+    icon_size = toolbar.iconSize()
+    dpr = getattr(toolbar, "devicePixelRatioF", lambda: 1.0)()
+    req_w = max(1, int(icon_size.width() * dpr))
+    req_h = max(1, int(icon_size.height() * dpr))
+
+    base_pixmap = base_icon.pixmap(req_w, req_h)
+
+    # Recolor icon via SourceIn composition without changing size
+    colored_pixmap = QPixmap(base_pixmap.size())
+    colored_pixmap.setDevicePixelRatio(dpr)
+    colored_pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(colored_pixmap)
+    painter.drawPixmap(0, 0, base_pixmap)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+    painter.fillRect(colored_pixmap.rect(), QColor(color))
+    painter.end()
+
+    icon = QIcon()
+    icon.addPixmap(colored_pixmap)
+
+    toolbar.add_action(name=f"Virtual Image ({color})",
+                       icon_path=icon,
+                       function=compute_virtual_image,
+                       toggle=True,
+                       )
+
+def compute_virtual_image(toolbar: RoundedToolBar,
+                          action_name: str = "Compute Virtual Image",
+                          *args, **kwargs
+                          ):
+    """
+    Compute the virtual image from a 4D STEM dataset.
+
+    Parameters
+    ----------
+    toolbar : spyde.plugins.toolbar.Toolbar
+        The toolbar instance from which to get the current signal.
+
+    """
+    print("Computing virtual image...")
+    pass

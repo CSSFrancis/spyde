@@ -37,13 +37,13 @@ def get_toolbar_actions_for_plot(plot: "Plot"):
     toolbar_sides = []
     toggles = []
     parameters = []
+    sub_toolbars = []  # Parallel list: each entry is a list of subfunction tuples
 
-    for action in TOOLBAR_ACTIONS["functions"]:
-
-        signal_types = TOOLBAR_ACTIONS["functions"][action].get("signal_types", None)
-        plot_dim = TOOLBAR_ACTIONS["functions"][action].get("plot_dim", [1, 2])
-        navigation_only = TOOLBAR_ACTIONS["functions"][action].get("navigation", None)
-        params = TOOLBAR_ACTIONS["functions"][action].get("parameters", {})
+    for action, meta in TOOLBAR_ACTIONS["functions"].items():
+        signal_types = meta.get("signal_types")
+        plot_dim = meta.get("plot_dim", [1, 2])
+        navigation_only = meta.get("navigation")
+        params = meta.get("parameters", {})
 
         plot_signal_type = plot.plot_state.current_signal._signal_type
 
@@ -53,23 +53,41 @@ def get_toolbar_actions_for_plot(plot: "Plot"):
             and (navigation_only is None or navigation_only == plot.is_navigator)
         )
 
-        if add_action:
-            function = TOOLBAR_ACTIONS["functions"][action]["function"]
-            module_path, _, attr = function.rpartition(".")
-            resolved_func = getattr(importlib.import_module(module_path), attr)
-            resolved_func = partial(
-                resolved_func,
-                action_name=action,
-            )
-            functions.append(resolved_func)
-            icons.append(
-                resolve_icon_path(TOOLBAR_ACTIONS["functions"][action]["icon"])
-            )
-            names.append(action)
-            toolbar_sides.append(
-                TOOLBAR_ACTIONS["functions"][action].get("toolbar_side", "left")
-            )
-            toggles.append(TOOLBAR_ACTIONS["functions"][action].get("toggle", False))
-            parameters.append(params)
+        if not add_action:
+            continue
 
-    return functions, icons, names, toolbar_sides, toggles, parameters
+        function_path = meta["function"]
+        module_path, _, attr = function_path.rpartition(".")
+        base_func = getattr(importlib.import_module(module_path), attr)
+        wrapped_func = partial(base_func, action_name=action)
+        functions.append(wrapped_func)
+        icons.append(resolve_icon_path(meta["icon"]))
+        names.append(action)
+        toolbar_sides.append(meta.get("toolbar_side", "left"))
+        toggles.append(meta.get("toggle", False))
+        parameters.append(params)
+
+        # Collect optional subfunctions
+        sub_defs = meta.get("subfunctions", {})
+        sub_entries = []
+        for sub_meta in sub_defs:
+            print(sub_meta)
+            print(sub_defs)
+            sub_function_path = sub_defs[sub_meta]["function"]
+            sub_module_path, _, sub_attr = sub_function_path.rpartition(".")
+            sub_func = getattr(importlib.import_module(sub_module_path), sub_attr)
+            sub_func = partial(sub_func, action_name=sub_meta)
+            sub_entries.append(
+                (
+                    sub_func,
+                    resolve_icon_path(sub_defs[sub_meta].get("icon", meta.get("icon", ""))),
+                    sub_defs[sub_meta].get("name", sub_meta),
+                    sub_defs[sub_meta].get("toggle", False),
+                    sub_defs[sub_meta].get("parameters", {}),
+                )
+            )
+            print("Sub Entries", sub_entries)
+        sub_toolbars.append(sub_entries)
+        print("SubTB:", sub_toolbars)
+
+    return functions, icons, names, toolbar_sides, toggles, parameters, sub_toolbars

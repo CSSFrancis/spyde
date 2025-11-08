@@ -111,3 +111,18 @@ functions:
         name: Make Flat Field
         type: bool
         default: False
+  Virtual Imaging:
+    description: Creates a virtual image from the 4D-STEM data.
+    icon: drawing/toolbars/icons/virtual_image_color.svg
+    function: spyde.actions.pyxem.virtual_imaging
+    plot_dim: [ 2]
+    toolbar_side: bottom
+    navigation: False
+    toggle: True
+    submenu: True
+    subfunctions:
+      add_virtual_image:
+        name: Add Virtual Image
+        description: Adds a virtual image from the 4D-STEM data.
+        icon: drawing/toolbars/icons/zoom.svg
+        function: spyde.actions.pyxem.add_virtual_image

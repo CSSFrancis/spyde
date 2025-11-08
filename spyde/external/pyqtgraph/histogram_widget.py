@@ -498,8 +498,11 @@ class HistogramLUTItem(GraphicsWidget):
             return None
 
         cumsum = np.cumsum(self.counts)
+        print(cumsum)
         total = cumsum[-1]
+        print(total)
         low_idx = np.searchsorted(cumsum, (min_percentile / 100.0) * total)
+        print(low_idx)
         high_idx = np.searchsorted(cumsum, (max_percentile / 100.0) * total)
 
         min_level = self.bins[low_idx] if low_idx < len(self.bins) else self.bins[-1]

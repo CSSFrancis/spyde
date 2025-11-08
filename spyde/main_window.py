@@ -701,7 +701,7 @@ class MainWindow(QMainWindow):
             return
 
         if getattr(w.plot_state, "dimensions", 0) == 2:
-            mn, mx = self.histogram.percentile2levels(0.01, 99.0)
+            mn, mx = self.histogram.percentile2levels(0.00, 99.0)
             self.histogram.setLevels(mn, mx)
 
     def on_contrast_reset_click(self):

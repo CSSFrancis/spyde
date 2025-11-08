@@ -1,5 +1,5 @@
 # python
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional, Union
 
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
@@ -28,7 +28,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
     ):
         # Ensure we never parent directly to QMainWindow; prefer content area
         parent = self._resolve_container_parent(parent)
-
+        self.layout_padding = (0, 0, 0, 0)  # left, top, right, bottom
         # Normalize position like "top-left" -> primary side
         def _normalize_position(pos: str) -> str:
             if not isinstance(pos, str):
@@ -115,17 +115,29 @@ class RoundedToolBar(QtWidgets.QToolBar):
     def add_action(
         self,
         name: str,
-        icon_path: str,
+        icon_path: Union[str, QIcon],
         function: Callable,
         toggle: bool = False,
         parameters: dict = None,
+        sub_functions: list = None,
     ) -> QtGui.QAction:
         """
         Add an action to the toolbar.
         """
         if parameters is None:
             parameters = dict()
-        action = self.addAction(QIcon(icon_path), name)
+        if sub_functions is None:
+            sub_functions = []
+
+        if isinstance(icon_path, str):
+            icon_path = QIcon(icon_path)
+        else:
+            icon_path = icon_path
+        action = self.addAction(icon_path, name)
+
+        if (lay := self.layout()) is not None:
+            lay.setContentsMargins(*self.layout_padding) # left, top, right, bottom
+            lay.setSpacing(0)
 
         if parameters != {}:
             #  create a popout menu for the action with a submit button
@@ -146,16 +158,48 @@ class RoundedToolBar(QtWidgets.QToolBar):
             action.toggled.connect(
                 lambda checked, w=popout: (w.show() if checked else w.hide())
             )
+        elif sub_functions != []:
+            popout_menu = PopoutToolBar(
+                title=name,
+                plot=None,
+                parent=self._resolve_container_parent(self.parentWidget()),
+                radius=int(self._radius),
+                moveable=False,
+                position=self.position,
+            )
+            popout_menu.setOrientation(
+                QtCore.Qt.Orientation.Vertical
+                if self.position in ("left", "right")
+                else QtCore.Qt.Orientation.Horizontal
+            )
+            print(sub_functions)
+            for sub in sub_functions:
+                sub_function, sub_icon, sub_name, sub_toggle, sub_parameters = sub
+                popout_menu.add_action(
+                    sub_name,
+                    sub_icon,
+                    sub_function,
+                    toggle=sub_toggle,
+                    parameters=sub_parameters,
+                )
+            # Ensure the popout grows to fit its content (it starts empty)
+            popout_menu.hide()
+            self.add_action_widget(name, popout_menu, None)
+            popout_menu.adjustSize()
+            action.setCheckable(True)
+            action.toggled.connect(
+                lambda checked, w=popout_menu: (w.show() if checked else w.hide())
+            )
         else:
-            if toggle:
-                action.setCheckable(True)
-                action.toggled.connect(
-                    lambda checked, f=function, n=name: f(self, action_name=n, toggle=checked)
-                )
-            else:
-                action.triggered.connect(
-                    lambda _, f=function, n=name: f(self, action_name=n)
-                )
+            action.triggered.connect(
+            lambda _, f=function, n=name: f(self, action_name=n)
+        )
+        if isinstance(self, PopoutToolBar):
+            self.adjustSize()
+        else:
+            self.setFixedSize(self.sizeHint())
+        if hasattr(self, "_reposition_function") and callable(self._reposition_function):
+            self._reposition_function()
         return action
 
     def num_actions(self) -> int:
@@ -166,13 +210,19 @@ class RoundedToolBar(QtWidgets.QToolBar):
             if action.text() == name:
                 self.removeAction(action)
                 break
+        # After removing, refresh size so content stays centered and inside edges
+        if isinstance(self, PopoutToolBar):
+            self.adjustSize()
+        else:
+            self.setFixedSize(self.sizeHint())
 
     def set_size(self):
         # Lock size so it doesn't change when moved
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
         )
-        self.setFixedSize(self.sizeHint())
+        size = self.sizeHint()
+        self.setFixedSize(size)
 
         # Initial placement
         QtCore.QTimer.singleShot(0, self.move_next_to_plot)
@@ -320,6 +370,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
             widget.raise_()
 
         # Create and install position tracker
+        widget._reposition_function = position_widget
         tracker = self._make_position_tracker(position_widget)
         self.installEventFilter(tracker)
         parent.installEventFilter(tracker)
@@ -561,3 +612,194 @@ class RoundedToolBar(QtWidgets.QToolBar):
             self._remove_event_filter_safe(tracker)
 
         super().closeEvent(ev)
+
+    # New: convenience to create a caret-style subtoolbar as a popout for an action
+    def create_subtoolbar(
+        self,
+        action_name: str,
+        title: str = "",
+        *,
+        side: str = "auto",
+        orientation: Optional[Qt.Orientation] = None,
+        caret_base: int = 14,
+        caret_depth: int = 8,
+        padding: int = 8,
+    ) -> "PopoutToolBar":
+        """
+        Create a caret-style subtoolbar shown as a popout for the given action.
+
+        Returns the PopoutToolBar so callers can add actions to it.
+        """
+        parent = self._resolve_container_parent(self.parentWidget())
+        # Orientation defaults to horizontal for top/bottom, vertical for left/right
+        if orientation is None:
+            orientation = (
+                Qt.Orientation.Vertical
+                if self.position in ("left", "right")
+                else Qt.Orientation.Horizontal
+            )
+        sub = PopoutToolBar(
+            title=title or action_name,
+            plot=None,              # free-floating; add_action_widget handles positioning
+            parent=parent,
+            radius=int(self._radius),
+            moveable=False,
+            position=self.position,  # used for default orientation only; not auto-positioned
+            side=side,
+            caret_base=caret_base,
+            caret_depth=caret_depth,
+            padding=padding,
+        )
+        sub.setOrientation(orientation)
+        sub.hide()
+        # Register with the same mechanism as any widget
+        self.add_action_widget(action_name, sub, None)
+        return sub
+
+
+class PopoutToolBar(RoundedToolBar):
+    """
+    A floating RoundedToolBar with a caret tip, intended to be used as a popout anchored to a parent toolbar action.
+    It shares the same style as RoundedToolBar but draws a caret and reserves space for it, like CaretGroup.
+    """
+
+    def __init__(
+        self,
+        title: str,
+        plot: "Plot" = None,
+        parent: Optional[QtWidgets.QWidget] = None,
+        radius: int = 8,
+        moveable: bool = False,
+        position: str = "bottom",
+        reposition_function: Optional[Callable[[], None]] = None,
+        *,
+        side: str = "auto",
+        caret_base: int = 14,
+        caret_depth: int = 8,
+        padding: int = 8,
+    ):
+        # Popout does not need plot tracking; pass plot=None to avoid auto-placement
+        self._side = side if side in ("top", "bottom", "left", "right", "auto") else "auto"
+        self._caret_base = int(caret_base)
+        self._caret_depth = int(caret_depth)
+        self._padding = int(0)
+        self._reposition_function = reposition_function
+
+
+        super().__init__(title, plot=None, parent=parent, radius=radius, moveable=moveable, position=position)
+        # Visual params for caret bubble
+        self._pen_color = QtGui.QColor(255, 255, 255, 120)
+        self._bg_color = QtGui.QColor(30, 30, 30, 240)
+        # Transparent background; we fully paint our bubble
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # Allow dynamic growth; RoundedToolBar.__init__ fixed the size – undo that here.
+        self._unlock_fixed_size()
+        self._margin = 1
+        self.layout_padding = (self._padding, self._padding, self._padding, caret_depth)  # left, top, right, bottom
+
+    def _unlock_fixed_size(self):
+        # Remove fixed-size constraints introduced by RoundedToolBar.set_size()
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Preferred)
+        self.setMinimumSize(0, 18+8)  # minimum height to fit buttons
+        self.setMaximumSize(16777215, 16777215)
+
+    # Ensure subtoolbars grow to fit their actions (don't lock to fixed size)
+    def _refresh_fixed_size(self):
+        self.adjustSize()
+
+    # Optional helper if caller updates content later
+    def content_updated(self):
+        self.adjustSize()
+        self.update()
+
+    def set_side(self, side: str):
+        if side not in ("top", "bottom", "left", "right"):
+            return
+        if self._side != side:
+            self._side = side
+            #self._update_margins()
+            self.update()
+
+    def sizeHint(self) -> QtCore.QSize:
+        """
+        Size hint shouldn't account for caret space.
+        """
+        s = super().sizeHint()
+        if self._side in ("top", "bottom"):
+            return QtCore.QSize(s.width(), s.height())
+        return QtCore.QSize(s.width(), s.height())
+
+    def _update_margins(self):
+        l = r = t = b = self._padding
+        if self._side == "top":
+            t += self._caret_depth
+        elif self._side == "bottom":
+            b += self._caret_depth
+        elif self._side == "left":
+            l += self._caret_depth
+        elif self._side == "right":
+            r += self._caret_depth
+        self.setContentsMargins(l, t, r, b)
+
+    def _bubble_rect(self) -> QtCore.QRectF:
+        rect = QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        if self._side == "top":
+            rect.adjust(0, self._caret_depth, 0, 0)
+        elif self._side == "bottom":
+            rect.adjust(0, 0, 0, -self._caret_depth)
+        elif self._side == "left":
+            rect.adjust(self._caret_depth, 0, 0, 0)
+        elif self._side == "right":
+            rect.adjust(0, 0, -self._caret_depth, 0)
+        return rect
+
+    def _caret_polygon(self, bubble: QtCore.QRectF) -> QtGui.QPolygonF:
+        base = float(self._caret_base)
+        depth = float(self._caret_depth)
+        if self._side in ("top", "bottom"):
+            cx = bubble.center().x()
+            x1 = cx - base / 2.0
+            x2 = cx + base / 2.0
+            if self._side == "top":
+                y = bubble.top()
+                return QtGui.QPolygonF([QtCore.QPointF(x1, y), QtCore.QPointF(x2, y), QtCore.QPointF(cx, y - depth)])
+            else:
+                y = bubble.bottom()
+                return QtGui.QPolygonF([QtCore.QPointF(x1, y), QtCore.QPointF(x2, y), QtCore.QPointF(cx, y + depth)])
+        else:
+            cy = bubble.center().y()
+            y1 = cy - base / 2.0
+            y2 = cy + base / 2.0
+            if self._side == "left":
+                x = bubble.left()
+                return QtGui.QPolygonF([QtCore.QPointF(x, y1), QtCore.QPointF(x, y2), QtCore.QPointF(x - depth, cy)])
+            else:
+                x = bubble.right()
+                return QtGui.QPolygonF([QtCore.QPointF(x, y1), QtCore.QPointF(x, y2), QtCore.QPointF(x + depth, cy)])
+
+    def paintEvent(self, ev: QtGui.QPaintEvent) -> None:
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+
+        bubble = self._bubble_rect()
+
+        bubble_path = QtGui.QPainterPath()
+        bubble_path.addRoundedRect(bubble, self._radius, self._radius)
+
+        caret_poly = self._caret_polygon(bubble)
+        caret_path = QtGui.QPainterPath()
+        caret_path.addPolygon(caret_poly)
+
+        # simplify paths to eliminate seam between bubble and caret
+        bubble_path.addPath(caret_path)
+        path = bubble_path.simplified()
+
+        p.setBrush(self._bg_color)
+        pen = QtGui.QPen(self._pen_color)
+        pen.setWidthF(1.0)
+        pen.setCosmetic(True)
+        pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        p.drawPath(path)
+        # Paint actions/toolbuttons
+        QtWidgets.QToolBar.paintEvent(self, ev)

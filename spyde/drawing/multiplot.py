@@ -315,7 +315,7 @@ class Plot(FramelessSubWindow):
                 tb.show()
 
     def update_toolbars(self):
-        functions, icons, names, toolbar_sides, toggles, params = (
+        functions, icons, names, toolbar_sides, toggles, params,  sub_functions = (
             get_toolbar_actions_for_plot(self)
         )
         print(params)
@@ -329,19 +329,19 @@ class Plot(FramelessSubWindow):
             tb.clear()
 
         # Add actions to the appropriate toolbars
-        for func, icon, name, side, toggle, param in zip(
-            functions, icons, names, toolbar_sides, toggles, params
+        for func, icon, name, side, toggle, param, sub_function in zip(
+            functions, icons, names, toolbar_sides, toggles, params, sub_functions
         ):
             print(f"Adding toolbar action: {name} to {side} toolbar")
             print(f"Function: {func}, Icon: {icon}, Toggle: {toggle}, Params: {param}")
             if side == "right":
-                self.toolbar_right.add_action(name, icon, func, toggle, param)
+                self.toolbar_right.add_action(name, icon, func, toggle, param, sub_function)
             elif side == "left":
-                self.toolbar_left.add_action(name, icon, func, toggle, param)
+                self.toolbar_left.add_action(name, icon, func, toggle, param, sub_function)
             elif side == "top":
-                self.toolbar_top.add_action(name, icon, func, toggle, param)
+                self.toolbar_top.add_action(name, icon, func, toggle, param, sub_function)
             elif side == "bottom":
-                self.toolbar_bottom.add_action(name, icon, func, toggle, param)
+                self.toolbar_bottom.add_action(name, icon, func, toggle, param, sub_function)
 
         for tb in [
             self.toolbar_right,
