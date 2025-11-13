@@ -662,6 +662,7 @@ class Plot(FramelessSubWindow):
                     plot.close()
                 except Exception:
                     pass
+            del self.nav_plot_manager.signal_tree
 
         # Remove from main window tracking
         if hasattr(self.main_window, "plot_subwindows"):
