@@ -119,7 +119,7 @@ class BaseSignalTree:
             )
             self.signal_plots.append(plot)
 
-            plot_states = self.create_plot_states()
+            plot_states = self.create_plot_states(plot=plot)
             plot.plot_states = plot_states
             plot.set_plot_state(self.root)
             self.signal_plots.append(plot)
@@ -374,7 +374,7 @@ class BaseSignalTree:
         _traverse_children(self._tree["root"])
         return signals
 
-    def create_plot_states(self):
+    def create_plot_states(self, plot: "Plot" = None) -> dict:
         """
         Create plot states for each signal plot in the tree.
         """
@@ -383,9 +383,9 @@ class BaseSignalTree:
         plot_states = {}
         for signal in self.signals():
             if signal.axes_manager.navigation_dimension == 0:
-                plot_state = PlotState(signal=signal, dynamic=False)
+                plot_state = PlotState(signal=signal, plot=plot, dynamic=False)
             else:
-                plot_state = PlotState(signal=signal, dynamic=True)
+                plot_state = PlotState(signal=signal,plot=plot,  dynamic=True)
 
             plot_states[signal] = plot_state
         return plot_states
@@ -400,11 +400,11 @@ class BaseSignalTree:
             if new_signal not in plot.plot_states:
                 if new_signal.axes_manager.navigation_dimension == 0:
                     plot.plot_states[new_signal] = PlotState(
-                        signal=new_signal, dynamic=False
+                        signal=new_signal,plot=plot, dynamic=False
                     )
                 else:
                     plot.plot_states[new_signal] = PlotState(
-                        signal=new_signal, dynamic=True
+                        signal=new_signal, plot=plot, dynamic=True
                     )
 
     @property

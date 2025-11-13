@@ -8,7 +8,6 @@ from typing import Tuple
 from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
 
 
-
 def center_zero_beam(toolbar: RoundedToolBar,
                      make_flat_field: bool = False,
                      method: str = "com",
@@ -40,7 +39,7 @@ def center_zero_beam(toolbar: RoundedToolBar,
 
     signal.set_signal_type("electron_diffraction")
 
-    sl = (signal_slice[0], signal_slice[0]+signal_slice[2], signal_slice[1], signal_slice[1]+signal_slice[3])
+    sl = (signal_slice[0], signal_slice[0] + signal_slice[2], signal_slice[1], signal_slice[1] + signal_slice[3])
 
     shifts = signal.get_direct_beam_position(method=method, signal_slice=sl, **kwargs)
 
@@ -60,10 +59,10 @@ def center_zero_beam(toolbar: RoundedToolBar,
 
 
 def virtual_imaging(toolbar: RoundedToolBar,
-                     selector: RectangleSelector,
-                     action_name: str = "Create Virtual Image",
-                     *args, **kwargs
-                     ):
+                    selector: RectangleSelector,
+                    action_name: str = "Create Virtual Image",
+                    *args, **kwargs
+                    ):
     """
     Create a virtual image from a 4D STEM dataset by integrating over a selected region.
 
@@ -79,9 +78,9 @@ def virtual_imaging(toolbar: RoundedToolBar,
 
 
 def add_virtual_image(toolbar: RoundedToolBar,
-                     action_name: str = "Add Virtual Image",
-                     *args, **kwargs
-                     ):
+                      action_name: str = "Add Virtual Image",
+                      *args, **kwargs
+                      ):
     """
     Add a virtual image from a 4D STEM dataset by integrating over a specified region.
 
@@ -122,11 +121,44 @@ def add_virtual_image(toolbar: RoundedToolBar,
     icon = QIcon()
     icon.addPixmap(colored_pixmap)
 
-    toolbar.add_action(name=f"Virtual Image ({color})",
-                       icon_path=icon,
-                       function=compute_virtual_image,
-                       toggle=True,
-                       )
+    params = {"type":
+                  {"name": "Detector Type",
+                   "type": "enum",
+                   "default": "annular",
+                   "options": ["annular", "disk", "rectangle", "multiple_disks"]
+                   },
+              "calculation":
+                  {"name": "Calculation",
+                   "type": "enum",
+                   "default": "mean",
+                   "options": ["mean", "FEM Omega", "COM"]
+                   },
+              }
+
+    # The action Widget. (In this case a CaretGroupBox with parameters)
+    # Will hold all the parameters for the virtual image computation as well as
+    # pointers to the selectors on the plot.
+
+    action, params_caret_box = toolbar.add_action(name=f"Virtual Image ({color})",
+                                                  icon_path=icon,
+                                                  function=compute_virtual_image,
+                                                  toggle=True,
+                                                  parameters=params
+                                                  )
+
+    # on change of the type update the selectors shown on the plot
+
+    type_widget = params_caret_box.kwargs["type"]
+
+    # when the virtual image action is toggled then we
+    def on_type_change(new_type):
+        print("Type changed to:", new_type)
+
+
+
+
+
+
 
 def compute_virtual_image(toolbar: RoundedToolBar,
                           action_name: str = "Compute Virtual Image",

@@ -173,9 +173,7 @@ def rebin2d(toolbar: "RoundedToolBar", scale_x: int, scale_y: int, *args, **kwar
     )
 
 
-def toggle_signal_tree(
-    toolbar: "RoundedToolBar", action_name="", toggle=None, *args, **kwargs
-):
+def toggle_signal_tree(toolbar: "RoundedToolBar", action_name="", toggle=None, *args, **kwargs):
     """Makes a series of buttons to the side of the action bar for switching between different signal plots.
 
     This is similar to toggle_navigation_plots, but for signal plots and instead of creating a list
@@ -186,7 +184,6 @@ def toggle_signal_tree(
     toolbar : RoundedToolBar
         The plot to toggle navigation plots.
     """
-
     signal_tree = toolbar.plot.signal_tree._tree
 
     # we can can simplify this tree into just buttons
@@ -213,32 +210,24 @@ def toggle_signal_tree(
 
     button_tree_dict = tree2buttons(signal_tree)
 
-    if (
-        action_name not in toolbar.action_widgets
-        or toolbar.action_widgets[action_name].get("widget", None) is None
-    ):
-        group = CaretGroup(
-            title="", toolbar=toolbar, action_name=action_name, auto_attach=True
-        )
+    if action_name not in toolbar.action_widgets:
+        group = CaretGroup(title="", toolbar=toolbar, action_name=action_name, auto_attach=True)
         layout = group.layout()
-
-        button_tree = ButtonTree(
-            "Signal Tree",
-            button_tree_dict,
-        )
-
+        button_tree = ButtonTree("Signal Tree", button_tree_dict)
         layout.addWidget(button_tree)
         toolbar.add_action_widget(action_name, group, layout)
         group._update_margins()
         group._update_mask()
-
     else:
         group = toolbar.action_widgets[action_name]["widget"]
         layout = toolbar.action_widgets[action_name]["layout"]
+        for i in range(layout.count()):
+            w = layout.itemAt(i).widget()
+            if isinstance(w, ButtonTree):
+                layout.removeWidget(w)
+                w.hide()
 
-    if toolbar.action_widgets.get(action_name, None) is None:
-        print(f"Adding toolbar action widget: {action_name}")
-        toolbar.add_action_widget(action_name, group, layout)
-
+        button_tree = ButtonTree("Signal Tree", button_tree_dict)
+        layout.addWidget(button_tree)
     if toggle is not None:
         group.setVisible(toggle)

@@ -121,41 +121,7 @@ class Plot(FramelessSubWindow):
         print("Registering plot with main window")
         self.main_window.add_plot(self)
 
-        # Creating all the floating toolbars...
-
-        self.toolbar_right = RoundedToolBar(
-            title="Plot Controls",
-            plot=self,
-            parent=self.main_window,
-            position="right",
-        )
-        self.toolbar_left = RoundedToolBar(
-            title="Plot Controls",
-            plot=self,
-            parent=self.main_window,
-            position="left",
-        )
-        self.toolbar_top = RoundedToolBar(
-            title="Plot Controls",
-            plot=self,
-            parent=self.main_window,
-            position="top",
-        )
-        self.toolbar_bottom = RoundedToolBar(
-            title="Plot Controls",
-            plot=self,
-            parent=self.main_window,
-            position="bottom",
-        )
-        # Ensure they are visible
-        for tb in (
-            self.toolbar_right,
-            self.toolbar_left,
-            self.toolbar_top,
-            self.toolbar_bottom,
-        ):
-            tb.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
-            tb.show()
+        # toolbars are shown/crated when the plot state is set
 
     def set_colormap(self, colormap: str):
         """Set the colormap for the image item."""
@@ -224,7 +190,10 @@ class Plot(FramelessSubWindow):
         old_plot_state = self.plot_state
         self.needs_auto_level = True
         if old_plot_state is not None:
+            # save the old plot state
             self.plot_states[self.plot_state.current_signal] = old_plot_state
+            # hide old toolbars
+            old_plot_state.hide_toolbars()
 
             if old_plot_state is not None:
                 # remove all the current selectors and hide child plots
@@ -237,8 +206,9 @@ class Plot(FramelessSubWindow):
                     + old_plot_state.signal_tree_selectors_children
                 ):
                     child_plot.hide()
+
         # set the new plot state
-        self.plot_state = self.plot_states.get(signal, PlotState(signal=signal))
+        self.plot_state = self.plot_states.get(signal)
 
         # switch plot items if needed for dimensionality change
         old_dim = 0 if old_plot_state is None else old_plot_state.dimensions
@@ -277,7 +247,7 @@ class Plot(FramelessSubWindow):
         self.plot_item.getViewBox().autoRange()
 
         # update the toolbars
-        self.update_toolbars()
+        self.plot_state.show_toolbars()
         self.update_image_rectangle()
 
         if self.plot_state.dimensions == 2:
@@ -292,70 +262,6 @@ class Plot(FramelessSubWindow):
             # update the plot range
             self.update_range()
 
-    def hide_toolbars(self):
-        """Hide all floating toolbars."""
-        for tb in (
-            getattr(self, "toolbar_right", None),
-            getattr(self, "toolbar_left", None),
-            getattr(self, "toolbar_top", None),
-            getattr(self, "toolbar_bottom", None),
-        ):
-            if tb is not None:
-                tb.hide()
-
-    def show_toolbars(self):
-        """Show all floating toolbars."""
-        for tb in (
-            getattr(self, "toolbar_right", None),
-            getattr(self, "toolbar_left", None),
-            getattr(self, "toolbar_top", None),
-            getattr(self, "toolbar_bottom", None),
-        ):
-            if tb is not None and tb.num_actions() > 0:
-                tb.show()
-
-    def update_toolbars(self):
-        functions, icons, names, toolbar_sides, toggles, params,  sub_functions = (
-            get_toolbar_actions_for_plot(self)
-        )
-        print(params)
-        # Clear existing toolbars
-        for tb in [
-            self.toolbar_right,
-            self.toolbar_left,
-            self.toolbar_top,
-            self.toolbar_bottom,
-        ]:
-            tb.clear()
-
-        # Add actions to the appropriate toolbars
-        for func, icon, name, side, toggle, param, sub_function in zip(
-            functions, icons, names, toolbar_sides, toggles, params, sub_functions
-        ):
-            print(f"Adding toolbar action: {name} to {side} toolbar")
-            print(f"Function: {func}, Icon: {icon}, Toggle: {toggle}, Params: {param}")
-            if side == "right":
-                self.toolbar_right.add_action(name, icon, func, toggle, param, sub_function)
-            elif side == "left":
-                self.toolbar_left.add_action(name, icon, func, toggle, param, sub_function)
-            elif side == "top":
-                self.toolbar_top.add_action(name, icon, func, toggle, param, sub_function)
-            elif side == "bottom":
-                self.toolbar_bottom.add_action(name, icon, func, toggle, param, sub_function)
-
-        for tb in [
-            self.toolbar_right,
-            self.toolbar_left,
-            self.toolbar_top,
-            self.toolbar_bottom,
-        ]:
-            tb.set_size()
-            # if there are no actions hide the toolbar
-            if tb.num_actions() == 0:
-                tb.hide()
-            else:
-                tb.show()
-            tb.raise_()
 
     def update_image_rectangle(self):
         """Set the x and y range of the plot.
@@ -404,10 +310,10 @@ class Plot(FramelessSubWindow):
     def reposition_toolbars(self):
         """Reposition the floating toolbars around the subwindow."""
         for tb in (
-            getattr(self, "toolbar_right", None),
-            getattr(self, "toolbar_left", None),
-            getattr(self, "toolbar_top", None),
-            getattr(self, "toolbar_bottom", None),
+            getattr(self.plot_state, "toolbar_right", None),
+            getattr(self.plot_state, "toolbar_left", None),
+            getattr(self.plot_state, "toolbar_top", None),
+            getattr(self.plot_state, "toolbar_bottom", None),
         ):
             if tb is not None and tb.isVisible():
                 tb.move_next_to_plot()
@@ -457,7 +363,7 @@ class Plot(FramelessSubWindow):
             is_navigator=False,
         )
         ps = PlotState(
-            signal=self.plot_state.current_signal, dimensions=2, dynamic=True
+            signal=self.plot_state.current_signal, dimensions=2, dynamic=True, plot=fft_plot
         )
         fft_plot.plot_states[self.plot_state.current_signal] = ps
         fft_plot.set_plot_state(self.plot_state.current_signal)
@@ -621,7 +527,7 @@ class Plot(FramelessSubWindow):
         self._mouse_proxy = None
 
         for attr in ("toolbar_right", "toolbar_left", "toolbar_top", "toolbar_bottom"):
-            tb = getattr(self, attr, None)
+            tb = getattr(self.plot_state, attr, None)
             if tb is not None:
                 try:
                     tb.plot = None
@@ -745,6 +651,7 @@ class NavigationPlotManager:
         for plot, d in zip(self.plots, dim):
             plot.plot_states[signal] = PlotState(
                 signal=signal,
+                plot=plot,
                 dimensions=d,
                 dynamic=False,  # False for anything under 2?
             )
@@ -809,7 +716,7 @@ class NavigationPlotManager:
                 is_navigator=False,
             )
             # create plot states for the child plot
-            child.plot_states = self.signal_tree.create_plot_states()
+            child.plot_states = self.signal_tree.create_plot_states(plot=child)
 
             print("Added Child plot states: ", child.plot_states)
             selector = selector_type(

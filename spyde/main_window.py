@@ -547,23 +547,19 @@ class MainWindow(QMainWindow):
         if hasattr(window, "show_selector_control_widget"):
             print("Showing selector control widget for window:", window)
             window.show_selector_control_widget()
-        if hasattr(window, "show_toolbars"):
-            print("Showing toolbars for window:", window)
-            window.show_toolbars()
 
-        ps = getattr(window, "plot_state", None)
+        ps = getattr(window, "plot_state", None) # type: Union["PlotState", None]
         if ps is not None:
             print("Updating axes widget for window:", window)
             self.update_axes_widget(window)
-            if hasattr(ps, "toolbar") and ps.toolbar is not None:
-                ps.toolbar.setVisible(True)
+            ps.show_toolbars()
 
         # Hide controls for other windows
         for plot in self.plot_subwindows:
             if plot is window:
                 continue
-            if hasattr(plot, "hide_toolbars"):
-                plot.hide_toolbars()
+            if hasattr(plot.plot_state, "hide_toolbars"):
+                plot.plot_state.hide_toolbars()
             if hasattr(plot, "hide_selector_control_widget"):
                 plot.hide_selector_control_widget()
 
@@ -813,7 +809,7 @@ class MainWindow(QMainWindow):
         super().close()
 
 
-if __name__ == "__main__":
+def main() -> int:
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("SpyDe")  # Set the application name
     # Create and show the splash screen
@@ -842,3 +838,7 @@ if __name__ == "__main__":
     splash.finish(main_window)  # Close the splash screen when the main window is shown
 
     app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

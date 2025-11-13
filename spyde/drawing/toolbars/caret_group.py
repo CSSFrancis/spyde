@@ -346,59 +346,58 @@ class CaretParams(CaretGroup):
                 editor = QtWidgets.QLabel("Use selection on plot", row_widget)
                 editor.setEnabled(False)
 
-                if self.toolbar is not None and getattr(self.toolbar, "plot", None) is not None:
-                    plot = getattr(self.toolbar, "plot", None)
-                    try:
-                        # Create a modest default rectangle; users can reposition/resize.
+                print("Adding RectangleSelector ROI for parameter:", key)
+                print("Toolbar available:", self.toolbar is not None)
+                print("toolbar.plot available:", getattr(self.toolbar, "plot", None) is not None if self.toolbar else "N/A")
 
-                        current_signal = self.toolbar.plot.plot_state.current_signal
-                        extent = current_signal.axes_manager.signal_extent
-                        print("Current signal extent:", extent)
+                if self.toolbar is not None and getattr(self.toolbar, "plot_state", None) is not None:
+                    # Create a modest default rectangle; users can reposition/resize.
+                    current_signal = self.toolbar.plot_state.current_signal
+                    extent = current_signal.axes_manager.signal_extent
+                    print("Current signal extent:", extent)
 
-                        center = (extent[1]+extent[0])/2, (extent[3]+extent[2])/2
-                        left, right, bottom, top = extent
-                        print("Computed signal center:", center)
-                        width = np.abs(extent[1]-extent[0])
-                        print("Computed signal width:", width)
+                    center = (extent[1]+extent[0])/2, (extent[3]+extent[2])/2
+                    left, right, bottom, top = extent
+                    print("Computed signal center:", center)
+                    width = np.abs(extent[1]-extent[0])
+                    print("Computed signal width:", width)
 
-                        size = item.get("size", 0.1)
-                        position = item.get("position", "centered")
+                    size = item.get("size", 0.1)
+                    position = item.get("position", "centered")
 
-                        if isinstance(size, (tuple, list)) and len(size) == 2:
-                            frac_w, frac_h = float(size[0]), float(size[1])
-                        else:
-                            frac_w = frac_h = float(size)
+                    if isinstance(size, (tuple, list)) and len(size) == 2:
+                        frac_w, frac_h = float(size[0]), float(size[1])
+                    else:
+                        frac_w = frac_h = float(size)
 
-                        roi_w = max(1.0, width * frac_w if frac_w <= 1.0 else frac_w)
-                        roi_h = max(1.0, width * frac_h if frac_h <= 1.0 else frac_h)
-                        print("Computed ROI size:", roi_w, roi_h)
+                    roi_w = max(1.0, width * frac_w if frac_w <= 1.0 else frac_w)
+                    roi_h = max(1.0, width * frac_h if frac_h <= 1.0 else frac_h)
+                    print("Computed ROI size:", roi_w, roi_h)
 
-                        if position == "centered":
-                            po = QtCore.QPointF(center[0] - roi_w / 2.0, center[1] - roi_h / 2.0)
-                        elif position == "top-left":
-                            po = QtCore.QPointF(left, top)
-                        elif position == "top-right":
-                            po = QtCore.QPointF(right - roi_w, top)
-                        elif position == "bottom-left":
-                            po = QtCore.QPointF(left, bottom - roi_h)
-                        elif position == "bottom-right":
-                            po = QtCore.QPointF(right - roi_w, bottom - roi_h)
-                        else:
-                            po = QtCore.QPointF(center[0] - roi_w / 2.0, center[1] - roi_h / 2.0)
+                    if position == "centered":
+                        po = QtCore.QPointF(center[0] - roi_w / 2.0, center[1] - roi_h / 2.0)
+                    elif position == "top-left":
+                        po = QtCore.QPointF(left, top)
+                    elif position == "top-right":
+                        po = QtCore.QPointF(right - roi_w, top)
+                    elif position == "bottom-left":
+                        po = QtCore.QPointF(left, bottom - roi_h)
+                    elif position == "bottom-right":
+                        po = QtCore.QPointF(right - roi_w, bottom - roi_h)
+                    else:
+                        po = QtCore.QPointF(center[0] - roi_w / 2.0, center[1] - roi_h / 2.0)
 
-                        print("Computed ROI position:", po)
-                        print("Adding RectangleSelector ROI to plot.")
-                        roi = RectROI(pos=po, size=(roi_w, roi_h))
+                    print("Computed ROI position:", po)
+                    print("Adding RectangleSelector ROI to plot.")
+                    roi = RectROI(pos=po, size=(roi_w, roi_h))
 
-                        # Ensure it starts hidden; toolbar will toggle visibility with the action.
-                        roi.setVisible(False)
-                        # Add to the plot and register with toolbar for toggle and cleanup.
-                        self.toolbar.plot.plot_item.addItem(roi)
-                        if self._action_name:
-                            self.toolbar.register_action_plot_item(self._action_name, roi)
-                        self._rect_rois[key] = roi
-                    except Exception as e:
-                        print("Failed to create RectangleSelector ROI:", e)
+                    # Ensure it starts hidden; toolbar will toggle visibility with the action.
+                    #roi.setVisible(False)
+                    # Add to the plot and register with toolbar for toggle and cleanup.
+                    self.toolbar.plot.plot_item.addItem(roi)
+                    if self._action_name:
+                        self.toolbar.register_action_plot_item(self._action_name, roi)
+                    self._rect_rois[key] = roi
                 else:
                     print("No toolbar/plot available; RectangleSelector ROI not created.")
             else:  # default to string
@@ -466,6 +465,9 @@ class CaretParams(CaretGroup):
                         partial(self._on_controller_changed, controller_key)
                     )
 
+    def get_parameter_widget(self, key: str):
+        return self.kwargs.get(key)
+
     def _on_controller_changed(self, controller_key, *args):
         # Update only rows depending on this controller
         for dep_key in self._dependents.get(controller_key, []):
@@ -513,6 +515,9 @@ class CaretParams(CaretGroup):
         # RectangleSelector returns bounding box in pixel coords (x, y, width, height).
         if dtype == "RectangleSelector":
             roi = self._rect_rois.get(key)
+
+            print(self.toolbar)
+            print(self.toolbar.plot)
             if roi is None or self.toolbar is None or getattr(self.toolbar, "plot", None) is None:
                 return None
             try:

@@ -4,6 +4,7 @@ from pathlib import Path
 
 if TYPE_CHECKING:
     from spyde.drawing.multiplot import Plot
+    from spyde.drawing.plot_states import PlotState
 
 from spyde import TOOLBAR_ACTIONS
 
@@ -30,7 +31,7 @@ def resolve_icon_path(icon_value: str) -> str:
     return str((base / icon_value).resolve())
 
 
-def get_toolbar_actions_for_plot(plot: "Plot"):
+def get_toolbar_actions_for_plot(plot_state: "PlotState", ):
     functions = []
     icons = []
     names = []
@@ -45,12 +46,12 @@ def get_toolbar_actions_for_plot(plot: "Plot"):
         navigation_only = meta.get("navigation")
         params = meta.get("parameters", {})
 
-        plot_signal_type = plot.plot_state.current_signal._signal_type
+        plot_signal_type = plot_state.current_signal._signal_type
 
         add_action = (
             (signal_types is None or plot_signal_type in signal_types)
-            and (plot.plot_state.dimensions in plot_dim)
-            and (navigation_only is None or navigation_only == plot.is_navigator)
+            and (plot_state.dimensions in plot_dim)
+            and (navigation_only is None or navigation_only == plot_state.plot.is_navigator)
         )
 
         if not add_action:
