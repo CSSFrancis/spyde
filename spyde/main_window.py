@@ -1,3 +1,4 @@
+from __future__ import annotations
 import sys
 import os
 from typing import Union
@@ -204,11 +205,8 @@ class MainWindow(QMainWindow):
                 selectors.extend(s.navigator_plot_manager.navigation_selectors)
         return selectors
 
-    def update_plots_loop(self):
-        """This is a simple loop to check if the plots need to be updated. Currently, this
-        is running on the main event loop, but it could be moved to a separate thread if it
-        starts to slow down the GUI.
-        """
+    def update_plots_loop(self) -> None:
+        """Poll plot futures on the GUI thread and apply finished results."""
         for p in self.plot_subwindows:
             if isinstance(p.current_data, Future) and p.current_data.done():
                 print("Updating Plot in loop...")
@@ -278,7 +276,7 @@ class MainWindow(QMainWindow):
         view_plot_control_action.triggered.connect(self.toggle_plot_control_dock)
         view_menu.addAction(view_plot_control_action)
 
-    def toggle_plot_control_dock(self):
+    def toggle_plot_control_dock(self) -> None:
         """
         Toggle the visibility of the plot control dock widget.
         """
@@ -294,7 +292,7 @@ class MainWindow(QMainWindow):
             plot=self._active_plot_window(), parent=self
         ).exec()
 
-    def open_dask_dashboard(self):
+    def open_dask_dashboard(self) -> None:
         """
         Open the Dask dashboard in a new window.
         """
@@ -314,7 +312,8 @@ class MainWindow(QMainWindow):
             if data is not None:
                 self.add_signal(data, navigators=navigators)
 
-    def _create_signals(self, file_paths):
+    def _create_signals(self, file_paths: list[str]) -> None:
+        """Internal helper to load multiple file paths into signals and add them."""
         for file_path in file_paths:
             kwargs = {"lazy": True}
             if file_path.endswith(".mrc"):
@@ -368,7 +367,7 @@ class MainWindow(QMainWindow):
             if file_paths:
                 self._create_signals(file_paths)
 
-    def add_signal(self, signal, navigators=None):
+    def add_signal(self, signal, navigators=None) -> None:
         """Add a signal to the main window.
 
         This will "plant" a new seed for a signal tree and set up the associated plots.
@@ -407,7 +406,7 @@ class MainWindow(QMainWindow):
         self.add_signal(signal)
         print("Example data loaded:", name)
 
-    def add_plot(self, plot: Plot):
+    def add_plot(self, plot: Plot) -> None:
         """Add a plot to the MDI area.
 
         Parameters
@@ -432,7 +431,8 @@ class MainWindow(QMainWindow):
         plot.mdi_area = self.mdi_area
         return
 
-    def update_metadata_widget(self, window):
+    def update_metadata_widget(self, window) -> None:
+        """Rebuild metadata panel for the active Plot's signal tree."""
         # Clear existing layout (including spacers)
         if self.metadata_layout is None:
             return
@@ -495,7 +495,7 @@ class MainWindow(QMainWindow):
 
                 self.metadata_layout.addWidget(group)
 
-    def update_axes_widget(self, window: "Plot"):
+    def update_axes_widget(self, window: "Plot") -> None:
         """
         Update the axes widget based on the active window.
 
@@ -526,7 +526,8 @@ class MainWindow(QMainWindow):
             for group in groups:
                 self.axes_layout.addWidget(group)
 
-    def set_cursor_readout(self, x=None, y=None, xpix=None, ypix=None, value=None):
+    def set_cursor_readout(self, x=None, y=None, xpix=None, ypix=None, value=None) -> None:
+        """Update status bar readout with cursor coordinates and data value."""
         def _fmt(v):
             if v is None:
                 return "-"
@@ -539,7 +540,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, "cursor_readout") and self.cursor_readout is not None:
             self.cursor_readout.setText(txt)
 
-    def on_subwindow_activated(self, window: "Plot"):
+    def on_subwindow_activated(self, window: "Plot") -> None:
+        """MDI activation handler: update toolbars, metadata, histogram binding, and colormap selector."""
         if window is None:
             return
 
@@ -683,11 +685,11 @@ class MainWindow(QMainWindow):
         )
 
     def _active_plot_window(self) -> Union[Plot, None]:
-        # The active sub window is the Plot (subclass of QMdiSubWindow)
+        """Return the currently active QMdiSubWindow (Plot) or None."""
         sub = self.mdi_area.activeSubWindow()
         return sub if sub is not None else None
 
-    def on_contrast_auto_click(self):
+    def on_contrast_auto_click(self) -> None:
         """
         Set image contrast to [1st, 99th] percentile for 2D; y-range percentiles for 1D.
         Persist on PlotState, so it remains constant when data changes.
@@ -700,7 +702,7 @@ class MainWindow(QMainWindow):
             mn, mx = self.histogram.percentile2levels(0.00, 99.0)
             self.histogram.setLevels(mn, mx)
 
-    def on_contrast_reset_click(self):
+    def on_contrast_reset_click(self) -> None:
         """
         Reset contrast to full range for 2D; re-enable y auto-range for 1D.
         Persist on PlotState.
@@ -712,7 +714,7 @@ class MainWindow(QMainWindow):
             mn, mx = w.image_item.quickMinMax()
             self.histogram.setLevels(mn, mx)
 
-    def on_cmap_changed(self, cmap_name: str):
+    def on_cmap_changed(self, cmap_name: str) -> None:
         # Apply colormap to the active plot and sync the histogram widget
         sub = self.mdi_area.activeSubWindow()
         if sub is None:
@@ -721,7 +723,7 @@ class MainWindow(QMainWindow):
             print("Setting colormap on plot:", cmap_name)
             sub.set_colormap(cmap_name)
 
-    def on_histogram_levels_finished(self, signal: HistogramLUTItem):
+    def on_histogram_levels_finished(self, signal: HistogramLUTItem) -> None:
         """
         On histogram level change, update the active plot's contrast via PlotState
         and apply immediately. Guard against missing histogram data.
@@ -773,9 +775,12 @@ class MainWindow(QMainWindow):
             self._create_signals(files)
 
     # Only handle drag/drop on the MDI area
-    def eventFilter(self,
-                    obj,
-                    event: Union[QEvent.Type.DragMove, QEvent.Type.DragEnter, QEvent.Type.Drop]) -> bool:
+    def eventFilter(
+        self,
+        obj,
+        event: QEvent,
+    ) -> bool:
+        """Handle drag/drop events on the MDI area to load supported data files."""
         if obj is self.mdi_area and event is not None:
             et = event.type()
             if et in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
@@ -790,7 +795,8 @@ class MainWindow(QMainWindow):
                 return True
         return super().eventFilter(obj, event)
 
-    def close(self):
+    def close(self) -> None:
+        """Gracefully stop workers / threads and close the window."""
         try:
             if (
                 hasattr(self, "_plot_update_worker")

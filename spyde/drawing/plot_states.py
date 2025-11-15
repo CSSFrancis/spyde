@@ -1,7 +1,8 @@
+from __future__ import annotations
 from PySide6 import QtCore
 from hyperspy.signal import BaseSignal
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List
 
 from spyde.drawing.toolbars.plot_control_toolbar import get_toolbar_actions_for_plot
 from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
@@ -11,26 +12,25 @@ if TYPE_CHECKING:
 
 class PlotState:
     """
-    A class to manage the state of a plot in the signal tree.  This includes things like
-    brightness/contrast, current signal, colormap, number of dimensions.
+    Represents the complete visualization state for a (Plot, Signal) pair.
 
-    This is a little bit of an abstraction to separate the `Plot` class from the signals and save things like
-    brightness/contrast settings for each signal independently.
+    Stores:
+      - Current signal and dimensionality
+      - Contrast / brightness (levels and percentiles)
+      - Colormap choice
+      - Dynamic / selector-driven plotting flag
+      - Active selectors and any child plots they spawned
+      - Four side toolbars (top/bottom/left/right) whose actions depend on signal type & dimensionality
 
-    For Example if I select a different signal in the signal tree for some `Plot`, then plot.set_plot_state(new_state)
-    will be called.  This will hide any children plots, remove any selectors, set the current_signal to the new signal,
-    adjust the contrast/brightness, and then re-draw the plot.
-
-    When set_plot_state is called a 1D plot can also be converted to a 2D plot or vice versa depending on the
-    dimensionality of the new signal.
-
+    A Plot holds (and switches between) multiple PlotState instances when the user changes
+    the active signal. Restoring a PlotState re-applies its selectors, toolbars, and visual parameters.
     """
 
     def __init__(
         self,
         signal: BaseSignal,
         plot: "Plot",
-        dimensions: int = None,
+        dimensions: Optional[int] = None,
         dynamic: bool = True,
     ):
         # Each PlotState is tied to a particular signal and a particular Plot instance
@@ -41,8 +41,8 @@ class PlotState:
         # This is ultimately what needs to be saved/restored when switching signals in a plot
         # and what needs to be serialized when (eventually) saving/loading a project.
 
-        self.current_signal = signal
-        self.plot = plot # type: "Plot"
+        self.current_signal: BaseSignal = signal
+        self.plot: "Plot" = plot
 
 
         # Visualization parameters. The min/max percentile are used to determine the contrast/brightness
@@ -52,7 +52,7 @@ class PlotState:
         self.max_level = 1
         self.colormap = "gray"  # default colormap
 
-        self.dynamic = dynamic  # if the image/plot will update based on some selector.
+        self.dynamic: bool = dynamic  # if the image/plot will update based on some selector.
 
         # Selectors which are tied to this particular "State" of the signal...
         # When the state is changed these selectors should be removed from the plot
@@ -60,18 +60,16 @@ class PlotState:
         # selectors and children plots should be restored/shown.
         # plot_selectors include things like Virtual Images.
 
-        self.plot_selectors = []
-        self.signal_tree_selectors = []
+        self.plot_selectors: List[object] = []
+        self.signal_tree_selectors: List[object] = []
 
-        self.toolbar_top = None  # type: Optional["RoundedToolBar"]
-        self.toolbar_bottom = None  # type: Optional["RoundedToolBar"]
-        self.toolbar_left = None  # type: Optional["RoundedToolBar"]
-        self.toolbar_right = None  # type: Optional["RoundedToolBar"]
+        self.toolbar_top: Optional[RoundedToolBar] = None
+        self.toolbar_bottom: Optional[RoundedToolBar] = None
+        self.toolbar_left: Optional[RoundedToolBar] = None
+        self.toolbar_right: Optional[RoundedToolBar] = None
 
-        self.plot_selectors_children = []  # child plots spawned from the plot selectors
-        self.signal_tree_selectors_children = (
-            []
-        )  # child plots spawned from the signal tree selectors
+        self.plot_selectors_children: List["Plot"] = []
+        self.signal_tree_selectors_children: List["Plot"] = []
 
         # for navigation plots make sure we transpose to get the plot dimensions correct...
         if dimensions is not None:
@@ -90,10 +88,8 @@ class PlotState:
             f" dynamic={self.dynamic}>"
         )
 
-    def _initialize_toolbars(self):
-        """
-        Create a toolbar for this plot state if it doesn't already exist.
-        """
+    def _initialize_toolbars(self) -> None:
+        """Create (or recreate) the four side toolbars for this state and populate them with actions."""
         self.toolbar_right = RoundedToolBar(
             title="Plot Controls",
             plot_state=self,
@@ -164,7 +160,8 @@ class PlotState:
         # start with toolbars hidden
         self.hide_toolbars()
 
-    def show_toolbars(self):
+    def show_toolbars(self) -> None:
+        """Show all toolbars that have at least one action."""
         for tb in [
             self.toolbar_right,
             self.toolbar_left,
@@ -177,12 +174,8 @@ class PlotState:
                 tb.show()
             tb.raise_()
 
-    def update_toolbars(self):
-        """
-        Update the toolbars for this plot state.
-
-        This is mostly useful for "refreshing" the toolbars after some change in state.
-        """
+    def update_toolbars(self) -> None:
+        """Recompute size/visibility for each toolbar after external changes to actions."""
         for tb in [
             self.toolbar_right,
             self.toolbar_left,
@@ -197,7 +190,8 @@ class PlotState:
                 tb.show()
             tb.raise_()
 
-    def hide_toolbars(self):
+    def hide_toolbars(self) -> None:
+        """Hide all toolbars for this state (used when the PlotState becomes inactive)."""
         for tb in [
             self.toolbar_right,
             self.toolbar_left,
@@ -209,13 +203,11 @@ class PlotState:
                 tb.hide()
 
 class NavigationManagerState:
-    """
-    A class to manage the state of a navigation manager in the signal tree.
+    """State container for a NavigationPlotManager.
 
-    This is a little bit of an abstraction to separate the `NavigationManager` class from the plots associated with
-    it.  Each state is tied to a particular signal and Navigation Manager.
+    Wraps a navigation-capable signal and builds the required PlotState list
+    corresponding to (signal_dimension, navigation_dimension). Only up to 4D total supported.
     """
-
     def __init__(
         self,
         signal: BaseSignal,
@@ -238,11 +230,11 @@ class NavigationManagerState:
             #  Force it to be 2D signals for now...
             signal = signal.transpose(2)
 
-        self.current_signal = signal  # the navigation signal for the current "state"
-        self.plot_manager = plot_manager
+        self.current_signal: BaseSignal = signal
+        self.plot_manager: "NavigationPlotManager" = plot_manager
 
 
-        self.dimensions = [
+        self.dimensions: List[int] = [
             signal.axes_manager.signal_dimension,
             signal.axes_manager.navigation_dimension,
         ]
@@ -252,8 +244,8 @@ class NavigationManagerState:
         print("this is the signal!", signal)
 
         # need to update for multiple dimensional navigators (5D STEM etc)
-        self.plot_states = [
-            PlotState(signal=signal, plot= self.plot_manager.plots[0], dimensions=dim)
+        self.plot_states: List[PlotState] = [
+            PlotState(signal=signal, plot=self.plot_manager.plots[0], dimensions=dim)
             for dim in self.dimensions
             if dim > 0
         ]

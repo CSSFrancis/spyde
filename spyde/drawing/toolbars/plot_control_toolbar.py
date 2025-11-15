@@ -1,3 +1,4 @@
+from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 from pathlib import Path
@@ -12,6 +13,7 @@ from functools import partial
 
 
 def resolve_icon_path(icon_value: str) -> str:
+    """Resolve an icon specification into an absolute path or Qt resource path."""
     # Keep Qt resource paths (e.g., ":/icons/foo.png") as-is
     if isinstance(icon_value, str) and icon_value.startswith(":"):
         return icon_value
@@ -31,7 +33,23 @@ def resolve_icon_path(icon_value: str) -> str:
     return str((base / icon_value).resolve())
 
 
-def get_toolbar_actions_for_plot(plot_state: "PlotState", ):
+def get_toolbar_actions_for_plot(plot_state: "PlotState") -> tuple[
+    list, list[str], list[str], list[str], list[bool], list[dict], list[list[tuple]]
+]:
+    """
+    Build the action metadata lists for a given PlotState by filtering TOOLBAR_ACTIONS.
+
+    Returns
+    -------
+    (functions, icons, names, toolbar_sides, toggles, parameters, sub_toolbars)
+      functions: list[Callable] (each partially applied with action_name)
+      icons: list[str] (resolved icon paths)
+      names: list[str] (action identifiers)
+      toolbar_sides: list[str] ("left"/"right"/"top"/"bottom")
+      toggles: list[bool] (whether action is checkable)
+      parameters: list[dict] (parameter definitions for CaretParams popouts)
+      sub_toolbars: list[list[tuple]] (each inner list holds sub-action tuples)
+    """
     functions = []
     icons = []
     names = []

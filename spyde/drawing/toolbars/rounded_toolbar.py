@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Optional, Union, Tuple
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -139,17 +140,15 @@ class RoundedToolBar(QtWidgets.QToolBar):
             self.plot.installEventFilter(self._position_tracker)
 
     def add_action(
-            self,
-            name: str,
-            icon_path: Union[str, QIcon],
-            function: Callable,
-            toggle: bool = False,
-            parameters: dict = None,
-            sub_functions: list = None,
+        self,
+        name: str,
+        icon_path: Union[str, QIcon],
+        function: Callable,
+        toggle: bool = False,
+        parameters: Optional[dict] = None,
+        sub_functions: Optional[list] = None,
     ) -> Tuple[QtGui.QAction, Optional[Union["CaretParams", "PopoutToolBar"]]]:
-        """
-        Add an action to the toolbar.
-        """
+        """Create a QAction, attach optional popout (CaretParams or PopoutToolBar), wire visibility, and size-adjust."""
         if parameters is None:
             parameters = dict()
         if sub_functions is None:
@@ -231,9 +230,11 @@ class RoundedToolBar(QtWidgets.QToolBar):
         return action, action_widget
 
     def num_actions(self) -> int:
+        """Return the number of actions currently in the toolbar."""
         return len(self.actions())
 
-    def remove_action(self, name: str):
+    def remove_action(self, name: str) -> None:
+        """Remove a QAction by its text label and refresh toolbar size."""
         for action in self.actions():
             if action.text() == name:
                 self.removeAction(action)
@@ -244,7 +245,8 @@ class RoundedToolBar(QtWidgets.QToolBar):
         else:
             self.setFixedSize(self.sizeHint())
 
-    def set_size(self):
+    def set_size(self) -> None:
+        """Fix the toolbar size to its sizeHint and schedule initial placement next to the plot."""
         # Lock size so it doesn't change when moved
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
@@ -290,12 +292,12 @@ class RoundedToolBar(QtWidgets.QToolBar):
         return parent
 
     def add_action_widget(
-            self,
-            action_name: str,
-            widget: QtWidgets.QWidget,
-            layout: Optional[QtWidgets.QLayout],
+        self,
+        action_name: str,
+        widget: QtWidgets.QWidget,
+        layout: Optional[QtWidgets.QLayout],
     ) -> None:
-        """Add a custom widget which spawns from clicking some action in the toolbar."""
+        """Register a floating widget (callout) for an action and install dynamic edge-aware positioning."""
         if action_name not in self.action_widgets:
             self.action_widgets[action_name] = {}
 
@@ -430,11 +432,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
         QtCore.QTimer.singleShot(0, position_widget)
 
     def register_action_plot_item(self, action_name: str, item: QtWidgets.QGraphicsItem) -> None:
-        """
-        Register a plot graphics item (e.g., pyqtgraph ROI) with an action so that:
-        - It is shown only when the action is toggled on.
-        - It is cleaned up when the toolbar is cleared/closed.
-        """
+        """Associate a QGraphicsItem with an action; auto-hide/show based on toggle state."""
         if action_name not in self.action_widgets:
             self.action_widgets[action_name] = {}
 
@@ -460,16 +458,14 @@ class RoundedToolBar(QtWidgets.QToolBar):
                 )
 
     def _find_action(self, name: str) -> Optional[QtGui.QAction]:
+        """Locate an existing QAction by its text label."""
         for a in self.actions():
             if a.text() == name:
                 return a
         return None
 
-    def moveEvent(self, event) -> None:
-        super().moveEvent(event)
-
-    def move_next_to_plot(self):
-        """Place the toolbar next to the plot using global mapping."""
+    def move_next_to_plot(self) -> None:
+        """Anchor the toolbar adjacent to its Plot according to self.position and re-place visible popouts."""
         if self.plot is None:
             return
 
@@ -518,6 +514,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
 
     @staticmethod
     def _make_position_tracker(callback: Callable[[], None]) -> QtCore.QObject:
+        """Create an event filter object that triggers callback on move/resize/show of watched widgets."""
         class _Tracker(QtCore.QObject):
             def eventFilter(self, obj, event):
                 if event.type() in (
@@ -590,8 +587,8 @@ class RoundedToolBar(QtWidgets.QToolBar):
                     pass
         super().hideEvent(ev)
 
-    def clear(self, /):
-        """Clear all actions and associated widgets from the toolbar."""
+    def clear(self, /) -> None:
+        """Remove all actions, popouts, and associated plot items; detach event filters safely."""
         # Close action widgets and remove their event filters
         for data in list(self.action_widgets.values()):
             widget = data.get("widget")
@@ -665,18 +662,18 @@ class RoundedToolBar(QtWidgets.QToolBar):
 
     # New: convenience to create a caret-style subtoolbar as a popout for an action
     def create_subtoolbar(
-            self,
-            action_name: str,
-            title: str = "",
-            *,
-            side: str = "auto",
-            orientation: Optional[Qt.Orientation] = None,
-            caret_base: int = 14,
-            caret_depth: int = 8,
-            padding: int = 8,
+        self,
+        action_name: str,
+        title: str = "",
+        *,
+        side: str = "auto",
+        orientation: Optional[Qt.Orientation] = None,
+        caret_base: int = 14,
+        caret_depth: int = 8,
+        padding: int = 8,
     ) -> "PopoutToolBar":
         """
-        Create a caret-style subtoolbar shown as a popout for the given action.
+        Instantiate and register a caret-style PopoutToolBar as the popout for the given action.
 
         Returns the PopoutToolBar so callers can add actions to it.
 
@@ -817,7 +814,8 @@ class PopoutToolBar(RoundedToolBar):
         self.adjustSize()
         self.update()
 
-    def set_side(self, side: str):
+    def set_side(self, side: str) -> None:
+        """Set caret side ('top'/'bottom'/'left'/'right') and trigger repaint."""
         if side not in ("top", "bottom", "left", "right"):
             return
         if self._side != side:
@@ -834,7 +832,8 @@ class PopoutToolBar(RoundedToolBar):
             return QtCore.QSize(s.width(), s.height())
         return QtCore.QSize(s.width(), s.height())
 
-    def _update_margins(self):
+    def _update_margins(self) -> None:
+        """Re-apply internal content margins based on caret side & depth."""
         l = r = t = b = self._padding
         if self._side == "top":
             t += self._caret_depth
@@ -847,6 +846,7 @@ class PopoutToolBar(RoundedToolBar):
         self.setContentsMargins(l, t, r, b)
 
     def _bubble_rect(self) -> QtCore.QRectF:
+        """Return the QRectF of the rounded bubble excluding the caret triangle area."""
         rect = QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         if self._side == "top":
             rect.adjust(0, self._caret_depth, 0, 0)
@@ -859,6 +859,7 @@ class PopoutToolBar(RoundedToolBar):
         return rect
 
     def _caret_polygon(self, bubble: QtCore.QRectF) -> QtGui.QPolygonF:
+        """Generate the caret polygon pointing toward the anchor side."""
         base = float(self._caret_base)
         depth = float(self._caret_depth)
         if self._side in ("top", "bottom"):
