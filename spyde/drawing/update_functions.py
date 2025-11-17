@@ -8,6 +8,8 @@ called on the move or change events of a selector.
 
 import numpy as np
 
+from scipy import fft
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -83,5 +85,5 @@ def get_fft(selector: "BaseSelector", child: "Plot", indices, get_result: bool =
 
     slice_x, slice_y = slice(min_x, max_x + 1), slice(min_y, max_y + 1)
     sliced_img = selector.parent.current_data[slice_x, slice_y]
-    fft_img = np.fft.fftshift(np.fft.fft2(sliced_img))
+    fft_img = fft.fftshift(fft.fft2(sliced_img))
     return fft_img.real

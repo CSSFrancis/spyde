@@ -202,6 +202,18 @@ class PlotState:
             if tb: # check if toolbar exists
                 tb.hide()
 
+    def close(self) -> None:
+        self.hide_toolbars()
+        for attr in ("toolbar_right", "toolbar_left", "toolbar_top", "toolbar_bottom"):
+            tb = getattr(self, attr, None)
+            if tb is not None:
+                try:
+                    tb.plot = None
+                except Exception:
+                    pass
+                tb.close()
+                setattr(self, attr, None)
+
 class NavigationManagerState:
     """State container for a NavigationPlotManager.
 

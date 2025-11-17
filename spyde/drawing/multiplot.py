@@ -371,7 +371,7 @@ class Plot(FramelessSubWindow):
             parent=self,
             children=fft_plot,
             update_function=get_fft,
-            live_delay=5,  # faster updates
+            live_delay=20,  # faster updates
         )
         fft_selector.delayed_update_data(force=True)
         fft_selector._on_region_change_finished()  # update the size
@@ -526,15 +526,11 @@ class Plot(FramelessSubWindow):
         self._update_main_cursor(None, None, None, None, None)
         self._mouse_proxy = None
 
-        for attr in ("toolbar_right", "toolbar_left", "toolbar_top", "toolbar_bottom"):
-            tb = getattr(self.plot_state, attr, None)
-            if tb is not None:
-                try:
-                    tb.plot = None
-                except Exception:
-                    pass
-                tb.close()
-                setattr(self, attr, None)
+        # delete all the plot states associated with the plot
+        for plot_state in self.plot_states:
+            self.plot_states[plot_state].close()
+
+
         print("Closing plot:", self)
         print("Closing parent selector if exists")
         if self.parent_selector is not None:
