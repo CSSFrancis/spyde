@@ -1,7 +1,7 @@
 import pytest
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtTest import QTest
-
+import numpy as np
 from spyde.main_window import MainWindow
 
 
@@ -93,3 +93,42 @@ class TestOpenExampleData:
         subwindows = win.mdi_area.subWindowList()
         assert len(subwindows) == 2
         win.close()
+
+    def test_navigator_moving(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        subwindows = win.mdi_area.subWindowList()
+        assert len(subwindows) == 2
+
+        nav, sig = stem_4d_dataset["subwindows"]  # type: Plot
+        nav_manager = nav.nav_plot_manager
+        assert len(nav_manager.navigation_selectors) == 1
+        selector = nav_manager.navigation_selectors[0]
+        current = sig.current_data
+
+        print("Old data captured:", current)
+
+        # make sure that the selector is in the navigation plot
+        assert selector.selector in nav.plot_item.items
+
+        # Simulate moving the selector in the navigation plot
+        original_pos = selector.selector.pos()  # Mock original position
+        new_pos = (original_pos[0] + 10, original_pos[1] + 10)
+        selector.selector.setPos(new_pos[0], new_pos[1])
+
+        # Verify that the position has been updated
+        new_pos = selector.selector.pos()
+        assert new_pos.x() == original_pos[0] + 10
+        assert new_pos.y() == original_pos[1] + 10
+
+        # wait and make sure that the signal plot updated accordingly
+        qtbot.wait(500)
+
+        # wait and make sure that the signal plot updated accordingly
+        qtbot.wait(500)
+
+        # capture new data from the signal plot and assert it changed
+        new_data = sig.current_data
+        assert (current is not None and new_data is not None)  # sanity check
+        assert not np.array_equal(current, new_data)
+
+

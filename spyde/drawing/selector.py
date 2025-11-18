@@ -69,21 +69,21 @@ class BaseSelector:
                 child.parent_selector = self
 
         # Create a pen for the selector
-        self.roi_pen = pg.mkPen(color=color, width=width)
-        self.handlePen = pg.mkPen(color=color, width=width)
-        self.hoverPen = pg.mkPen(color=hover_color, width=width)
-        self.handleHoverPen = pg.mkPen(color=hover_color, width=width)
+        self.roi_pen = pg.mkPen(color=color, width=width) # type: pg.mkPen
+        self.handlePen = pg.mkPen(color=color, width=width) # type: pg.mkPen
+        self.hoverPen = pg.mkPen(color=hover_color, width=width) # type: pg.mkPen
+        self.handleHoverPen = pg.mkPen(color=hover_color, width=width) # type: pg.mkPen
 
         # The widget which is added to the sidebar to control things like updating, if the selector is
         # live or if the selector should integrate.
-        self.widget = QtWidgets.QWidget()
-        self.layout = QtWidgets.QHBoxLayout(self.widget)
+        self.widget = QtWidgets.QWidget() # type: QtWidgets.QWidget
+        self.layout = QtWidgets.QHBoxLayout(self.widget) # type: QtWidgets.QHBoxLayout
         self.is_integrating = False
 
         # The current selection
         self.current_indices = None
 
-        self.update_timer = QtCore.QTimer()
+        self.update_timer = QtCore.QTimer() # type: QtCore.QTimer
         self.update_timer.setInterval(
             live_delay
         )  # To make things smoother we delay how fast we update the plots
@@ -91,7 +91,7 @@ class BaseSelector:
         self.update_timer.timeout.connect(self.delayed_update_data)
         self.update_function = update_function
         self._last_size_sig = None
-        self.selector = None  # to be defined in subclasses
+        self.selector = None  # to be defined in subclasses # type: pg.ROI | None
 
     def apply_transform_to_selector(self, transform: QtGui.QTransform):
         """

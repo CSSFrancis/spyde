@@ -604,4 +604,4 @@ class BaseSignalTree:
         """Clean up resources associated with the signal tree."""
         signals = self.signals()
         for s in signals:
-            print(s)
+            del s

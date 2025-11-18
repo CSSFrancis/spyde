@@ -8,7 +8,7 @@ import numpy as np
 import dask.array as da
 from dask.distributed import Future
 
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Union, List
 
 if TYPE_CHECKING:
     from spyde.signal_tree import BaseSignalTree
@@ -287,7 +287,7 @@ class Plot(FramelessSubWindow):
             self.image_item.setTransform(transform)
 
             # Update positions/sizes of any selectors to match the new transform.
-            selectors = []  # type: list[BaseSelector]
+            selectors = []  # type: List[BaseSelector]
 
             if self.plot_state is not None:
                 selectors += getattr(self.plot_state, "plot_selectors", [])
@@ -605,9 +605,9 @@ class NavigationPlotManager:
 
     def __init__(self, main_window: "MainWindow", signal_tree: "BaseSignalTree"):
         self.main_window = main_window  # type: MainWindow
-        self.plots = []  # type: list[Plot]
+        self.plots = []  # type: List[Plot]
 
-        self.navigation_selectors = []  # type: list[BaseSelector]
+        self.navigation_selectors = []  # type: List[BaseSelector]
         self.signal_tree = signal_tree  # type: BaseSignalTree
         self.navigation_manager_states = (
             dict()
