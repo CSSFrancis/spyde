@@ -1,12 +1,20 @@
 import pytest
-from typing import Dict, Any
+from typing import Dict, Any, Union, List
 
 from spyde.qt.shared import open_window as _open_window
 from spyde.qt.shared import create_data as _create_data
+from spyde.main_window import MainWindow
+from spyde.drawing.multiplot import Plot
+from spyde.signal_tree import BaseSignalTree
+from PySide6.QtWidgets import QMdiArea
 
 
 @pytest.fixture()
-def tem_2d_dataset(qtbot) -> Dict[str, Any]:
+def tem_2d_dataset(qtbot) -> Dict[str,
+                                  Union[MainWindow,
+                                  QMdiArea,
+                                  List[Plot],
+                                  List[BaseSignalTree]]]:
     win = _open_window()
     _create_data(win, "Image")
     # Wait for 1 subwindow

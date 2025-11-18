@@ -599,3 +599,9 @@ class BaseSignalTree:
         print(f"Added transformation '{node_name}' to the tree under parent signal.")
         self.update_plot_states(new_signal)
         return new_signal
+
+    def close(self):
+        """Clean up resources associated with the signal tree."""
+        signals = self.signals()
+        for s in signals:
+            print(s)

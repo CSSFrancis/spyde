@@ -168,7 +168,9 @@ class PlotState:
             self.toolbar_top,
             self.toolbar_bottom,
         ]:
-            if tb.num_actions() == 0:
+            if tb is None:
+                pass
+            elif tb.num_actions() == 0:
                 tb.hide()
             else:
                 tb.show()
@@ -209,10 +211,10 @@ class PlotState:
             if tb is not None:
                 try:
                     tb.plot = None
+                    tb.close()
+                    setattr(self, attr, None)
                 except Exception:
                     pass
-                tb.close()
-                setattr(self, attr, None)
 
 class NavigationManagerState:
     """State container for a NavigationPlotManager.

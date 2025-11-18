@@ -22,6 +22,9 @@ from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
 from spyde.drawing.update_functions import update_from_navigation_selection
 from spyde.qt.subwindow import FramelessSubWindow
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 COLORMAPS = {
     "gray": pg.colormap.get("CET-L1"),
@@ -482,7 +485,7 @@ class Plot(FramelessSubWindow):
 
     def update(self):
         """Push the current data to the plot items."""
-        print(
+        logger.info(
             "Plot update called with data:",
             self.current_data,
             " with type:",
@@ -495,8 +498,8 @@ class Plot(FramelessSubWindow):
                 else self.current_data
             )
             axis = self.plot_state.current_signal.axes_manager.signal_axes[0].axis
-            print("Updating 1D plot with axis:", axis)
-            print("Data shape:", current_data)
+            logger.info("Updating 1D plot with axis:", axis)
+            logger.info("Data shape:", current_data)
             self.line_item.setData(axis, current_data)
         elif self.plot_state.dimensions == 2:
             img = (
@@ -531,16 +534,17 @@ class Plot(FramelessSubWindow):
             self.plot_states[plot_state].close()
 
 
-        print("Closing plot:", self)
-        print("Closing parent selector if exists")
+        logger.info("Closing plot:", self)
+        logger.info("Closing parent selector if exists")
         if self.parent_selector is not None:
-            print("Closing parent selector")
+            logger.info("Closing parent selector")
             self.parent_selector.parent.nav_plot_manager.navigation_selectors.remove(
                 self.parent_selector
             )
             self.parent_selector.widget.hide()
             self.parent_selector.close()
 
+        logger.info("Deleting current plot selectors and child plots")
         # need to delete the current selectors and child plots
         for child_plot in (
             self.plot_state.plot_selectors_children
@@ -553,7 +557,7 @@ class Plot(FramelessSubWindow):
 
         # if part of a nav plot manager close everything and clean up the signal
         if self.nav_plot_manager is not None:
-            print("Closing nav plot manager plots")
+            logger.info("Closing nav plot manager plots")
             for plot in self.nav_plot_manager.plots:
                 try:
                     plot.close()
@@ -564,20 +568,25 @@ class Plot(FramelessSubWindow):
                     plot.close()
                 except Exception:
                     pass
-            del self.nav_plot_manager.signal_tree
+            self.main_window.signal_trees.remove(self.signal_tree)
+            self.signal_tree.close()
+            logger.info("Removed signal tree from main window.")
 
         # Remove from main window tracking
         if hasattr(self.main_window, "plot_subwindows"):
             try:
                 self.main_window.plot_subwindows.remove(self)
+                logger.info("MultiPlot: Removed plot from main window tracking.")
+                self.main_window.mdi_area
             except ValueError:
                 pass
+        logger.info("MultiPlot: Removing selector control widgets for this plot")
 
         # Remove the selectors for this plot
         self.remove_selector_control_widgets()
-
-
+        logger.info("MultiPlot: Calling CloseEvent of super class")
         super().closeEvent(event)
+        logger.info("MultiPlot: Plot closed.")
 
 
 class NavigationPlotManager:
@@ -714,7 +723,7 @@ class NavigationPlotManager:
             # create plot states for the child plot
             child.plot_states = self.signal_tree.create_plot_states(plot=child)
 
-            print("Added Child plot states: ", child.plot_states)
+            logger.info("Added Child plot states: ", child.plot_states)
             selector = selector_type(
                 parent=self.plots[0],
                 children=child,
@@ -725,9 +734,8 @@ class NavigationPlotManager:
             # Auto range...
             selector.update_data()
             child.update_data(child.current_data, force=True)
-            print("Auto-ranging child plot")
+            logger.info("Auto-ranging child plot")
             child.plot_item.getViewBox().autoRange()
-            print()
             self.signal_tree.signal_plots.append(child)
             child.needs_auto_level = True
-            print("Added navigation selector and signal plot:", selector, child)
+            logger.info("Added navigation selector and signal plot:", selector, child)
