@@ -91,7 +91,7 @@ def create_data(win: MainWindow, signal_type: str) -> None:
     QtCore.QTimer.singleShot(100, _accept_dialog)
 
     # Wait until at least one subwindow appears
-    wait_until(lambda: len(getattr(win, "mdi_area").subWindowList()) > 0, timeout=5000)
+    wait_until(lambda: len(getattr(win, "mdi_area").subWindowList()) > 0, timeout=10000)
 
 
 def register_window_for_gallery(widget: QtWidgets.QWidget) -> None:

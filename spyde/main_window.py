@@ -798,24 +798,26 @@ class MainWindow(QMainWindow):
     def close(self) -> None:
         """Gracefully stop workers / threads and close the window."""
         try:
-            if (
-                hasattr(self, "_plot_update_worker")
-                and self._plot_update_worker is not None
-            ):
-                self._plot_update_worker.stop()
-            if hasattr(self, "_update_thread") and self._update_thread is not None:
-                self._update_thread.quit()
-                self._update_thread.wait(1000)
+            self.client.shutdown()
         except Exception:
             pass
-        try:
-            self.client.close()
-        except Exception:
-            pass
+        if (
+            hasattr(self, "_plot_update_worker")
+            and self._plot_update_worker is not None
+        ):
+            self._plot_update_worker._timer.stop()
+            self._plot_update_worker.stop()
+        if hasattr(self, "_update_thread") and self._update_thread is not None:
+            self._update_thread.quit()
+            self._update_thread.wait(1000)
+
+
+
+        # stop threads
         super().close()
 
 
-def main() -> int:
+def main() -> MainWindow:
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("SpyDe")  # Set the application name
     # Create and show the splash screen
@@ -838,12 +840,14 @@ def main() -> int:
     if sys.platform == "darwin":
         logo_path = "Spyde.icns"
     else:
-        logo_path = "SpydeDark.png"  # Replace with the actual path to your logo
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        logo_path = os.path.join(base_dir, "SpydeDark.png")
     main_window.setWindowIcon(QIcon(logo_path))
     main_window.show()
     splash.finish(main_window)  # Close the splash screen when the main window is shown
 
     app.exec()
+    return main_window
 
 
 if __name__ == "__main__":
