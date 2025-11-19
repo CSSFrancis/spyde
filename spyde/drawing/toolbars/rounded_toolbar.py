@@ -221,9 +221,6 @@ class RoundedToolBar(QtWidgets.QToolBar):
             self.add_action_widget(name, popout_menu, None)
             popout_menu.adjustSize()
             action.setCheckable(True)
-            action.toggled.connect(
-                lambda checked, w=popout_menu: (w.show() if checked else w.hide())
-            )
             action_widget = popout_menu
         else:
             action.triggered.connect(
