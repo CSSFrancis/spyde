@@ -121,43 +121,50 @@ def add_virtual_image(toolbar: RoundedToolBar,
     icon = QIcon()
     icon.addPixmap(colored_pixmap)
 
-    params = {"type":
-                  {"name": "Detector Type",
-                   "type": "enum",
-                   "default": "annular",
-                   "options": ["annular", "disk", "rectangle", "multiple_disks"]
-                   },
-              "calculation":
-                  {"name": "Calculation",
-                   "type": "enum",
-                   "default": "mean",
-                   "options": ["mean", "FEM Omega", "COM"]
-                   },
-              }
+    params = {
+        "type": {
+            "name": "Detector Type",
+            "type": "enum",
+            "default": "annular",
+            "options": ["annular", "disk", "rectangle", "multiple_disks"],
+        },
+        "calculation": {
+            "name": "Calculation",
+            "type": "enum",
+            "default": "mean",
+            "options": ["mean", "FEM Omega", "COM"],
+        },
+    }
 
-    # The action Widget. (In this case a CaretGroupBox with parameters)
-    # Will hold all the parameters for the virtual image computation as well as
-    # pointers to the selectors on the plot.
+    # Create a parameter caret box as the action widget.
+    # This returns a QAction and the associated CaretParams instance.
+    action, params_caret_box = toolbar.add_action(
+        name=f"Virtual Image ({color})",
+        icon_path=icon,
+        function=compute_virtual_image,
+        toggle=True,
+        parameters=params,
+    )
 
-    action, params_caret_box = toolbar.add_action(name=f"Virtual Image ({color})",
-                                                  icon_path=icon,
-                                                  function=compute_virtual_image,
-                                                  toggle=True,
-                                                  parameters=params
-                                                  )
+    # For some call sites (including this one), the first time the popout is
+    # shown it was being clipped because sizeHint hadn't fully accounted for
+    # its children yet. Force a layout finalization here as a safeguard,
+    # in addition to CaretParams.finalize_layout being called in __init__.
+    try:
+        if hasattr(params_caret_box, "finalize_layout"):
+            params_caret_box.finalize_layout()
+    except Exception:
+        pass
 
-    # on change of the type update the selectors shown on the plot
-
+    # Access parameter widgets as before (e.g. to wire type-dependent behavior)
     type_widget = params_caret_box.kwargs["type"]
 
-    # when the virtual image action is toggled then we
-    def on_type_change(new_type):
+    def on_type_change(new_type: str) -> None:
         print("Type changed to:", new_type)
+        # ...future logic for changing selectors / rows based on new_type...
 
-
-
-
-
+    if hasattr(type_widget, "currentTextChanged"):
+        type_widget.currentTextChanged.connect(on_type_change)
 
 
 def compute_virtual_image(toolbar: RoundedToolBar,

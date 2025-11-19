@@ -165,7 +165,6 @@ class RoundedToolBar(QtWidgets.QToolBar):
             lay.setSpacing(0)
         action_widget = None
         if parameters != {}:
-            #  create a popout menu for the action with a submit button
             from spyde.drawing.toolbars.caret_group import CaretParams
 
             popout = CaretParams(
@@ -176,7 +175,16 @@ class RoundedToolBar(QtWidgets.QToolBar):
                 action_name=name,
                 auto_attach=True,
             )
-            # bind action to show the popout
+
+            # Ensure layout/margins are fully computed once before we ever ask
+            # for sizeHint/position_widget. This is critical for some actions
+            # (e.g. virtual imaging) where the first render was clipping.
+            try:
+                if hasattr(popout, "finalize_layout"):
+                    popout.finalize_layout()
+            except Exception:
+                pass
+
             popout.hide()
             action.setCheckable(True)
             self.add_action_widget(name, popout, None)
@@ -330,6 +338,15 @@ class RoundedToolBar(QtWidgets.QToolBar):
             return None
 
         def position_widget():
+            # Before computing positions, make sure caret-style widgets have
+            # finalized their internal layout/sizeHint. This reduces the chance
+            # of the first placement clipping the content box.
+            try:
+                if hasattr(widget, "finalize_layout"):
+                    widget.finalize_layout()
+            except Exception:
+                pass
+
             # caret must point toward the toolbar (opposite of anchor)
             def _opposite(side: str) -> str:
                 return {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}.get(side, "top")

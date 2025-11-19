@@ -111,12 +111,25 @@ class CaretGroup(QtWidgets.QGroupBox):
         self._update_mask()
         self.update()
 
-    def sizeHint(self):
+    def sizeHint(self) -> QtCore.QSize:
         base = super().sizeHint()
         if self._side in ("top", "bottom"):
             return QtCore.QSize(base.width(), base.height() + self._carrot_depth)
         else:
             return QtCore.QSize(base.width() + self._carrot_depth, base.height())
+
+    def finalize_layout(self) -> None:
+        """
+        Recalculate margins/mask and let Qt recompute the size from children.
+
+        Call this once *after* all child widgets/rows are added, but *before*
+        the CaretGroup is positioned/shown by the toolbar. This ensures the
+        initial sizeHint already accounts for all content and caret padding,
+        preventing first‑render clipping (e.g. for virtual imaging popouts).
+        """
+        self._update_margins()
+        self._update_mask()
+        self.adjustSize()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -428,7 +441,7 @@ class CaretParams(CaretGroup):
         self.submit_button = RoundedButton(text="Submit", parent=self)
         self.layout().addWidget(self.submit_button)
 
-        # Layout/style
+        # Layout/style wiring
         layout = self.layout()
         layout.setContentsMargins(2, 2, 2, 2)
         self.submit_button.clicked.connect(self._on_submit_clicked)
@@ -446,6 +459,9 @@ class CaretParams(CaretGroup):
         self._connect_visibility_triggers()
         # Apply initial visibility
         self._update_all_visibility()
+
+        # Important: ensure sizeHint accounts for all rows + caret before first show
+        self.finalize_layout()
 
     def _connect_visibility_triggers(self):
         from functools import partial
