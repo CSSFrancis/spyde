@@ -10,11 +10,9 @@ from PySide6.QtWidgets import QMdiArea
 
 
 @pytest.fixture()
-def tem_2d_dataset(qtbot) -> Dict[str,
-                                  Union[MainWindow,
-                                  QMdiArea,
-                                  List[Plot],
-                                  List[BaseSignalTree]]]:
+def tem_2d_dataset(
+    qtbot,
+) -> Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]:
     win = _open_window()
     _create_data(win, "Image")
     # Wait for 1 subwindow

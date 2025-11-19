@@ -8,13 +8,15 @@ from typing import Tuple
 from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
 
 
-def center_zero_beam(toolbar: RoundedToolBar,
-                     make_flat_field: bool = False,
-                     method: str = "com",
-                     signal_slice: Tuple[int, int, int, int] = None,
-                     action_name: str = "Center zero-beam",
-                     *args, **kwargs
-                     ):
+def center_zero_beam(
+    toolbar: RoundedToolBar,
+    make_flat_field: bool = False,
+    method: str = "com",
+    signal_slice: Tuple[int, int, int, int] = None,
+    action_name: str = "Center zero-beam",
+    *args,
+    **kwargs,
+):
     """
     Center the zero-beam of a 4D STEM dataset by a couple of different methods.
 
@@ -39,7 +41,12 @@ def center_zero_beam(toolbar: RoundedToolBar,
 
     signal.set_signal_type("electron_diffraction")
 
-    sl = (signal_slice[0], signal_slice[0] + signal_slice[2], signal_slice[1], signal_slice[1] + signal_slice[3])
+    sl = (
+        signal_slice[0],
+        signal_slice[0] + signal_slice[2],
+        signal_slice[1],
+        signal_slice[1] + signal_slice[3],
+    )
 
     shifts = signal.get_direct_beam_position(method=method, signal_slice=sl, **kwargs)
 
@@ -49,20 +56,24 @@ def center_zero_beam(toolbar: RoundedToolBar,
             shifts.compute()
         shifts.get_linear_plane()
 
-    new_signal = toolbar.plot.signal_tree.add_transformation(parent_signal=signal,
-                                                             node_name="Centered",
-                                                             method="center_direct_beam",
-                                                             shifts=shifts,
-                                                             inplace=False)
+    new_signal = toolbar.plot.signal_tree.add_transformation(
+        parent_signal=signal,
+        node_name="Centered",
+        method="center_direct_beam",
+        shifts=shifts,
+        inplace=False,
+    )
     new_signal.calibration.center = None
     toolbar.plot.set_plot_state(new_signal)
 
 
-def virtual_imaging(toolbar: RoundedToolBar,
-                    selector: RectangleSelector,
-                    action_name: str = "Create Virtual Image",
-                    *args, **kwargs
-                    ):
+def virtual_imaging(
+    toolbar: RoundedToolBar,
+    selector: RectangleSelector,
+    action_name: str = "Create Virtual Image",
+    *args,
+    **kwargs,
+):
     """
     Create a virtual image from a 4D STEM dataset by integrating over a selected region.
 
@@ -77,10 +88,9 @@ def virtual_imaging(toolbar: RoundedToolBar,
     pass
 
 
-def add_virtual_image(toolbar: RoundedToolBar,
-                      action_name: str = "Add Virtual Image",
-                      *args, **kwargs
-                      ):
+def add_virtual_image(
+    toolbar: RoundedToolBar, action_name: str = "Add Virtual Image", *args, **kwargs
+):
     """
     Add a virtual image from a 4D STEM dataset by integrating over a specified region.
 
@@ -167,10 +177,9 @@ def add_virtual_image(toolbar: RoundedToolBar,
         type_widget.currentTextChanged.connect(on_type_change)
 
 
-def compute_virtual_image(toolbar: RoundedToolBar,
-                          action_name: str = "Compute Virtual Image",
-                          *args, **kwargs
-                          ):
+def compute_virtual_image(
+    toolbar: RoundedToolBar, action_name: str = "Compute Virtual Image", *args, **kwargs
+):
     """
     Compute the virtual image from a 4D STEM dataset.
 

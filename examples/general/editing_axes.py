@@ -6,10 +6,12 @@ This example demonstrates how to modify the scales and axes of a plot. These are
 can be edited by left-clicking on them which will change them into QLineEdits for text input.
 
 """
+
 # sphinx_gallery_start_ignore
 
-from spyde.qt.shared import open_window, register_window_for_gallery,create_data
+from spyde.qt.shared import open_window, register_window_for_gallery, create_data
 from PySide6 import Qt
+
 win = open_window()
 
 create_data(win, "Insitu TEM")
@@ -63,7 +65,7 @@ units_widg._line_edit.setText("$s^{-1}$")
 register_window_for_gallery(group_widget)
 # sphinx_gallery_end_ignore
 
-#%%
+# %%
 # Finally, we can see the main window with the updated axis labels and scales reflected in the plot.
 
 # sphinx_gallery_start_ignore
@@ -71,4 +73,4 @@ units_widg._finish_editing()
 register_window_for_gallery(win)
 # sphinx_gallery_end_ignore
 
-#%%
+# %%

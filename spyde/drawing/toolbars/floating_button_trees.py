@@ -109,7 +109,8 @@ class ButtonTree(QtWidgets.QWidget):
         self.graphics_view.setMinimumSize(250, 150)
         self.graphics_view.setMaximumSize(300, 200)
         self.graphics_view.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
         )
         self.graphics_view.setHorizontalScrollBarPolicy(
             QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
@@ -121,7 +122,9 @@ class ButtonTree(QtWidgets.QWidget):
         # Transparent background for the view and viewport (remove frame)
         self.graphics_view.setStyleSheet("background: transparent; border: none;")
         self.graphics_view.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        self.graphics_view.viewport().setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.graphics_view.viewport().setAttribute(
+            QtCore.Qt.WidgetAttribute.WA_TranslucentBackground
+        )
         self.graphics_view.viewport().setAutoFillBackground(False)
 
         self.graphics_scene = QtWidgets.QGraphicsScene(self)

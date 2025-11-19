@@ -3,6 +3,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor, QIcon
 from pathlib import Path
 from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
+
 # New imports for painting/tinting
 from PySide6 import QtGui
 
@@ -42,7 +43,6 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_label.setStyleSheet("color: #ffffff;")
         self.title_bar_layout.addWidget(self.title_label)
-
 
         self.minimize_button = QtWidgets.QPushButton(self.title_bar)
         self._icon_minimize = QIcon(resolve_icon_path("qt/assets/icons/minimize.svg"))
@@ -95,7 +95,6 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         for w in self.findChildren(QtWidgets.QWidget):
             w.installEventFilter(self)
 
-
         self._resizing_top = False
         self._resizing_bottom = False
         self._resizing_left = False
@@ -129,13 +128,20 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
 
     @property
     def resizing(self):
-        return self._resizing_top or self._resizing_bottom or self._resizing_left or self._resizing_right
+        return (
+            self._resizing_top
+            or self._resizing_bottom
+            or self._resizing_left
+            or self._resizing_right
+        )
 
     def start_move(self, event):
         # Start dragging the window
         if event.button() == Qt.MouseButton.LeftButton and not self.resizing:
             self._moving = True
-            self._move_start = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._move_start = (
+                event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            )
 
     def move_window(self, event):
         # Move the window while dragging
@@ -237,7 +243,12 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
 
             # Avoid redundant geometry updates
             geo = self.geometry()
-            if (new_x, new_y, new_width, new_height) == (geo.x(), geo.y(), geo.width(), geo.height()):
+            if (new_x, new_y, new_width, new_height) == (
+                geo.x(),
+                geo.y(),
+                geo.width(),
+                geo.height(),
+            ):
                 return
 
             self.setUpdatesEnabled(False)
@@ -300,7 +311,9 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
 
         # Background fill (semi-transparent dark)
         bg_path = QtGui.QPainterPath()
-        bg_path.addRoundedRect(QtCore.QRectF(rect), self._border_radius, self._border_radius)
+        bg_path.addRoundedRect(
+            QtCore.QRectF(rect), self._border_radius, self._border_radius
+        )
         p.fillPath(bg_path, QtGui.QColor(35, 35, 35, 245))
 
         # Gradient border that goes around the full widget (vertical gradient)

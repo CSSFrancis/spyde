@@ -12,7 +12,7 @@ class TestCloseWindows:
         subwindows = win.mdi_area.subWindowList()
         assert len(subwindows) == 2
 
-        nav, sig = stem_4d_dataset["subwindows"] # type: Plot
+        nav, sig = stem_4d_dataset["subwindows"]  # type: Plot
         nav_manager = nav.nav_plot_manager
         assert len(nav_manager.navigation_selectors) == 1
         selector = nav_manager.navigation_selectors[0]
@@ -21,7 +21,7 @@ class TestCloseWindows:
         assert selector.selector in nav.plot_item.items
         sig.close()
 
-        assert len(win.plot_subwindows) ==1
+        assert len(win.plot_subwindows) == 1
         assert nav in win.plot_subwindows
 
         # assert that the selector was removed from the navigation plot
@@ -50,8 +50,3 @@ class TestCloseWindows:
 
         # assert the signalTree is removed from the main window
         assert len(win.signal_trees) == 0
-
-
-
-
-

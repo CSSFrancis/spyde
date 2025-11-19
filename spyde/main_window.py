@@ -70,11 +70,12 @@ class MainWindow(QMainWindow):
                 workers = (cpu_count // 2) - 1
                 threads_per_worker = 2
             else:
-                workers = (cpu_count // 4) - 1 # For very large systems, limit workers
+                workers = (cpu_count // 4) - 1  # For very large systems, limit workers
                 threads_per_worker = 4
-        print(f"Starting Dask LocalCluster with {workers} workers, and {threads_per_worker} threads per worker")
-        cluster = LocalCluster(n_workers=workers,
-                               threads_per_worker=threads_per_worker)
+        print(
+            f"Starting Dask LocalCluster with {workers} workers, and {threads_per_worker} threads per worker"
+        )
+        cluster = LocalCluster(n_workers=workers, threads_per_worker=threads_per_worker)
         self.client = Client(
             cluster
         )  # Start a local Dask client (this should be settable eventually)
@@ -483,7 +484,9 @@ class MainWindow(QMainWindow):
                     value_label = QtWidgets.QLabel(f"{value}")
                     key_label.setStyleSheet("font-size: 10px;")
                     value_label.setStyleSheet("font-size: 10px;")
-                    key_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    key_label.setAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
                     grid.addWidget(key_label, row, 0)
                     grid.addWidget(value_label, row, 1)
 
@@ -526,8 +529,11 @@ class MainWindow(QMainWindow):
             for group in groups:
                 self.axes_layout.addWidget(group)
 
-    def set_cursor_readout(self, x=None, y=None, xpix=None, ypix=None, value=None) -> None:
+    def set_cursor_readout(
+        self, x=None, y=None, xpix=None, ypix=None, value=None
+    ) -> None:
         """Update status bar readout with cursor coordinates and data value."""
+
         def _fmt(v):
             if v is None:
                 return "-"
@@ -550,7 +556,7 @@ class MainWindow(QMainWindow):
             print("Showing selector control widget for window:", window)
             window.show_selector_control_widget()
 
-        ps = getattr(window, "plot_state", None) # type: Union["PlotState", None]
+        ps = getattr(window, "plot_state", None)  # type: Union["PlotState", None]
         if ps is not None:
             print("Updating axes widget for window:", window)
             self.update_axes_widget(window)
@@ -810,8 +816,6 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_update_thread") and self._update_thread is not None:
             self._update_thread.quit()
             self._update_thread.wait(1000)
-
-
 
         # stop threads
         super().close()

@@ -32,7 +32,9 @@ def resolve_icon_path(icon_value: str) -> str:
     return str((base / icon_value).resolve())
 
 
-def get_toolbar_actions_for_plot(plot_state: "PlotState") -> tuple[
+def get_toolbar_actions_for_plot(
+    plot_state: "PlotState",
+) -> tuple[
     list, list[str], list[str], list[str], list[bool], list[dict], list[list[tuple]]
 ]:
     """
@@ -68,7 +70,10 @@ def get_toolbar_actions_for_plot(plot_state: "PlotState") -> tuple[
         add_action = (
             (signal_types is None or plot_signal_type in signal_types)
             and (plot_state.dimensions in plot_dim)
-            and (navigation_only is None or navigation_only == plot_state.plot.is_navigator)
+            and (
+                navigation_only is None
+                or navigation_only == plot_state.plot.is_navigator
+            )
         )
 
         if not add_action:
@@ -98,7 +103,9 @@ def get_toolbar_actions_for_plot(plot_state: "PlotState") -> tuple[
             sub_entries.append(
                 (
                     sub_func,
-                    resolve_icon_path(sub_defs[sub_meta].get("icon", meta.get("icon", ""))),
+                    resolve_icon_path(
+                        sub_defs[sub_meta].get("icon", meta.get("icon", ""))
+                    ),
                     sub_defs[sub_meta].get("name", sub_meta),
                     sub_defs[sub_meta].get("toggle", False),
                     sub_defs[sub_meta].get("parameters", {}),

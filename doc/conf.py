@@ -29,7 +29,7 @@ if importlib.util.find_spec("pydata_sphinx_theme") is None:
     raise RuntimeError("pydata-sphinx-theme is not installed in this environment")
 
 html_theme = "pydata_sphinx_theme"
-#html_static_path = ["_static"]
+# html_static_path = ["_static"]
 html_theme_options = {
     "logo": {
         "image_light": "_static/spyde_banner_light.svg",
@@ -58,6 +58,6 @@ sphinx_gallery_conf = {
     "backreferences_dir": "spyde",
     "doc_module": ("spyde",),
     "reference_url": {"spyde": None},
-    "image_scrapers": ("spyde.qt_scrapper.qt_sg_scraper", ),
-    'capture_repr': (),  # Disable text output capture
+    "image_scrapers": ("spyde.qt_scrapper.qt_sg_scraper",),
+    "capture_repr": (),  # Disable text output capture
 }

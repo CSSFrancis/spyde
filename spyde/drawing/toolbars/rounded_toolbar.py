@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from spyde.drawing.toolbars.caret_group import CaretParams
 
 
-#TODO: Simplify the two classes, expecially the layout/margin management
+# TODO: Simplify the two classes, expecially the layout/margin management
 class RoundedToolBar(QtWidgets.QToolBar):
     """
     A QToolBar with rounded corners and a semi-transparent background.
@@ -37,13 +37,13 @@ class RoundedToolBar(QtWidgets.QToolBar):
     """
 
     def __init__(
-            self,
-            title: str,
-            plot_state: "PlotState" = None,
-            parent: Optional[QtWidgets.QWidget] = None,
-            radius: int = 8,
-            moveable: bool = False,
-            position: str = "top",
+        self,
+        title: str,
+        plot_state: "PlotState" = None,
+        parent: Optional[QtWidgets.QWidget] = None,
+        radius: int = 8,
+        moveable: bool = False,
+        position: str = "top",
     ):
         # Ensure we never parent directly to QMainWindow; prefer content area
         parent = self._resolve_container_parent(parent)
@@ -133,7 +133,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
         self._position_tracker = self._make_position_tracker(self.move_next_to_plot)
         self.installEventFilter(self._position_tracker)
         if (
-                container := self._resolve_container_parent(self.parentWidget())
+            container := self._resolve_container_parent(self.parentWidget())
         ) is not None:
             container.installEventFilter(self._position_tracker)
         if self.plot is not None:
@@ -233,7 +233,9 @@ class RoundedToolBar(QtWidgets.QToolBar):
             self.adjustSize()
         else:
             self.setFixedSize(self.sizeHint())
-        if hasattr(self, "_reposition_function") and callable(self._reposition_function):
+        if hasattr(self, "_reposition_function") and callable(
+            self._reposition_function
+        ):
             self._reposition_function()
         return action, action_widget
 
@@ -289,7 +291,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
 
     @staticmethod
     def _resolve_container_parent(
-            parent: Optional[QtWidgets.QWidget],
+        parent: Optional[QtWidgets.QWidget],
     ) -> Optional[QtWidgets.QWidget]:
         # Prefer a content container instead of QMainWindow for overlays
         if isinstance(parent, QtWidgets.QMainWindow):
@@ -325,7 +327,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
 
         # Find the tool button for the action
         def _find_toolbutton_for_action(
-                act: Optional[QtGui.QAction],
+            act: Optional[QtGui.QAction],
         ) -> Optional[QtWidgets.QToolButton]:
             if act is None:
                 return None
@@ -349,7 +351,12 @@ class RoundedToolBar(QtWidgets.QToolBar):
 
             # caret must point toward the toolbar (opposite of anchor)
             def _opposite(side: str) -> str:
-                return {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}.get(side, "top")
+                return {
+                    "top": "bottom",
+                    "bottom": "top",
+                    "left": "right",
+                    "right": "left",
+                }.get(side, "top")
 
             tb_global_tl = self.mapToGlobal(QtCore.QPoint(0, 0))
             act = self._find_action(action_name)
@@ -362,19 +369,47 @@ class RoundedToolBar(QtWidgets.QToolBar):
             if self.position == "left":
                 anchor = "left"
                 x = tb_global_tl.x() - w_w - self._margin
-                y = (btn.mapToGlobal(QtCore.QPoint(0, 0)).y() + (btn.height() - w_h) // 2) if btn else tb_global_tl.y()
+                y = (
+                    (
+                        btn.mapToGlobal(QtCore.QPoint(0, 0)).y()
+                        + (btn.height() - w_h) // 2
+                    )
+                    if btn
+                    else tb_global_tl.y()
+                )
             elif self.position == "right":
                 anchor = "right"
                 x = tb_global_tl.x() + self.width() + self._margin
-                y = (btn.mapToGlobal(QtCore.QPoint(0, 0)).y() + (btn.height() - w_h) // 2) if btn else tb_global_tl.y()
+                y = (
+                    (
+                        btn.mapToGlobal(QtCore.QPoint(0, 0)).y()
+                        + (btn.height() - w_h) // 2
+                    )
+                    if btn
+                    else tb_global_tl.y()
+                )
             elif self.position == "top":
                 anchor = "top"
                 y = tb_global_tl.y() - w_h - self._margin
-                x = (btn.mapToGlobal(QtCore.QPoint(0, 0)).x() + (btn.width() - w_w) // 2) if btn else tb_global_tl.x()
+                x = (
+                    (
+                        btn.mapToGlobal(QtCore.QPoint(0, 0)).x()
+                        + (btn.width() - w_w) // 2
+                    )
+                    if btn
+                    else tb_global_tl.x()
+                )
             else:
                 anchor = "bottom"
                 y = tb_global_tl.y() + self.height() + self._margin
-                x = (btn.mapToGlobal(QtCore.QPoint(0, 0)).x() + (btn.width() - w_w) // 2) if btn else tb_global_tl.x()
+                x = (
+                    (
+                        btn.mapToGlobal(QtCore.QPoint(0, 0)).x()
+                        + (btn.width() - w_w) // 2
+                    )
+                    if btn
+                    else tb_global_tl.x()
+                )
 
             desired_global = QtCore.QPoint(x, y)
             desired_in_parent = parent.mapFromGlobal(desired_global)
@@ -448,7 +483,9 @@ class RoundedToolBar(QtWidgets.QToolBar):
         # Initial placement (single, clean)
         QtCore.QTimer.singleShot(0, position_widget)
 
-    def register_action_plot_item(self, action_name: str, item: QtWidgets.QGraphicsItem) -> None:
+    def register_action_plot_item(
+        self, action_name: str, item: QtWidgets.QGraphicsItem
+    ) -> None:
         """Associate a QGraphicsItem with an action; auto-hide/show based on toggle state."""
         if action_name not in self.action_widgets:
             self.action_widgets[action_name] = {}
@@ -460,7 +497,9 @@ class RoundedToolBar(QtWidgets.QToolBar):
         act = self._find_action(action_name)
         # Default to hidden unless the action is already checked.
         try:
-            item.setVisible(bool(act.isChecked()) if (act and act.isCheckable()) else False)
+            item.setVisible(
+                bool(act.isChecked()) if (act and act.isCheckable()) else False
+            )
         except Exception:
             pass
 
@@ -532,12 +571,13 @@ class RoundedToolBar(QtWidgets.QToolBar):
     @staticmethod
     def _make_position_tracker(callback: Callable[[], None]) -> QtCore.QObject:
         """Create an event filter object that triggers callback on move/resize/show of watched widgets."""
+
         class _Tracker(QtCore.QObject):
             def eventFilter(self, obj, event):
                 if event.type() in (
-                        QtCore.QEvent.Type.Move,
-                        QtCore.QEvent.Type.Resize,
-                        QtCore.QEvent.Type.Show,
+                    QtCore.QEvent.Type.Move,
+                    QtCore.QEvent.Type.Resize,
+                    QtCore.QEvent.Type.Show,
                 ):
                     QtCore.QTimer.singleShot(0, callback)
                 return False
@@ -751,31 +791,39 @@ class PopoutToolBar(RoundedToolBar):
     """
 
     def __init__(
-            self,
-            title: str,
-            plot: "Plot" = None,
-            parent: Optional[QtWidgets.QWidget] = None,
-            radius: int = 8,
-            moveable: bool = False,
-            position: str = "bottom",
-            reposition_function: Optional[Callable[[], None]] = None,
-            *,
-            side: str = "auto",
-            caret_base: int = 14,
-            caret_depth: int = 8,
-            padding: int = 8,
+        self,
+        title: str,
+        plot: "Plot" = None,
+        parent: Optional[QtWidgets.QWidget] = None,
+        radius: int = 8,
+        moveable: bool = False,
+        position: str = "bottom",
+        reposition_function: Optional[Callable[[], None]] = None,
+        *,
+        side: str = "auto",
+        caret_base: int = 14,
+        caret_depth: int = 8,
+        padding: int = 8,
     ):
 
         # Popout does not need plot tracking; pass plot=None to avoid auto-placement
-        self._side = side if side in ("top", "bottom", "left", "right", "auto") else "auto"
+        self._side = (
+            side if side in ("top", "bottom", "left", "right", "auto") else "auto"
+        )
         self._caret_base = int(caret_base)
         self._caret_depth = int(caret_depth)
         self._padding = int(0)
         self._reposition_function = reposition_function
 
-
         # TODO: Should the plot state be the same as the parent toolbar's?
-        super().__init__(title, plot_state=None, parent=parent, radius=radius, moveable=moveable, position=position)
+        super().__init__(
+            title,
+            plot_state=None,
+            parent=parent,
+            radius=radius,
+            moveable=moveable,
+            position=position,
+        )
         # Visual params for caret bubble
         self._pen_color = QtGui.QColor(255, 255, 255, 120)
         self._bg_color = QtGui.QColor(30, 30, 30, 240)
@@ -814,11 +862,19 @@ class PopoutToolBar(RoundedToolBar):
         # Allow dynamic growth; RoundedToolBar.__init__ fixed the size – undo that here.
         self._unlock_fixed_size()
         self._margin = 1
-        self.layout_padding = (self._padding, self._padding, self._padding, self._padding)  # left, top, right, bottom
+        self.layout_padding = (
+            self._padding,
+            self._padding,
+            self._padding,
+            self._padding,
+        )  # left, top, right, bottom
 
     def _unlock_fixed_size(self):
         # Remove fixed-size constraints introduced by RoundedToolBar.set_size()
-        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Preferred)
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Preferred,
+            QtWidgets.QSizePolicy.Policy.Preferred,
+        )
         self.setMinimumSize(0, 18)  # minimum height to fit buttons
         self.setMaximumSize(16777215, 16777215)
 
@@ -837,7 +893,7 @@ class PopoutToolBar(RoundedToolBar):
             return
         if self._side != side:
             self._side = side
-            #self._update_margins()
+            # self._update_margins()
             self.update()
 
     def sizeHint(self) -> QtCore.QSize:
@@ -885,20 +941,44 @@ class PopoutToolBar(RoundedToolBar):
             x2 = cx + base / 2.0
             if self._side == "top":
                 y = bubble.top()
-                return QtGui.QPolygonF([QtCore.QPointF(x1, y), QtCore.QPointF(x2, y), QtCore.QPointF(cx, y - depth)])
+                return QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(x1, y),
+                        QtCore.QPointF(x2, y),
+                        QtCore.QPointF(cx, y - depth),
+                    ]
+                )
             else:
                 y = bubble.bottom()
-                return QtGui.QPolygonF([QtCore.QPointF(x1, y), QtCore.QPointF(x2, y), QtCore.QPointF(cx, y + depth)])
+                return QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(x1, y),
+                        QtCore.QPointF(x2, y),
+                        QtCore.QPointF(cx, y + depth),
+                    ]
+                )
         else:
             cy = bubble.center().y()
             y1 = cy - base / 2.0
             y2 = cy + base / 2.0
             if self._side == "left":
                 x = bubble.left()
-                return QtGui.QPolygonF([QtCore.QPointF(x, y1), QtCore.QPointF(x, y2), QtCore.QPointF(x - depth, cy)])
+                return QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(x, y1),
+                        QtCore.QPointF(x, y2),
+                        QtCore.QPointF(x - depth, cy),
+                    ]
+                )
             else:
                 x = bubble.right()
-                return QtGui.QPolygonF([QtCore.QPointF(x, y1), QtCore.QPointF(x, y2), QtCore.QPointF(x + depth, cy)])
+                return QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(x, y1),
+                        QtCore.QPointF(x, y2),
+                        QtCore.QPointF(x + depth, cy),
+                    ]
+                )
 
     def paintEvent(self, ev: QtGui.QPaintEvent) -> None:
         p = QtGui.QPainter(self)

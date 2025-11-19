@@ -265,7 +265,6 @@ class Plot(FramelessSubWindow):
             # update the plot range
             self.update_range()
 
-
     def update_image_rectangle(self):
         """Set the x and y range of the plot.
 
@@ -366,7 +365,10 @@ class Plot(FramelessSubWindow):
             is_navigator=False,
         )
         ps = PlotState(
-            signal=self.plot_state.current_signal, dimensions=2, dynamic=True, plot=fft_plot
+            signal=self.plot_state.current_signal,
+            dimensions=2,
+            dynamic=True,
+            plot=fft_plot,
         )
         fft_plot.plot_states[self.plot_state.current_signal] = ps
         fft_plot.set_plot_state(self.plot_state.current_signal)
@@ -395,7 +397,7 @@ class Plot(FramelessSubWindow):
             visible_selectors += self.nav_plot_manager.navigation_selectors
         # Hide selectors from other plots. Faster than deleting and recreating them (also renders nicer).
         for selector in self.main_window.navigation_selectors:
-            if selector not in visible_selectors :
+            if selector not in visible_selectors:
                 selector.widget.hide()
             else:
                 if selector.widget.parent() is None:
@@ -532,7 +534,6 @@ class Plot(FramelessSubWindow):
         # delete all the plot states associated with the plot
         for plot_state in self.plot_states:
             self.plot_states[plot_state].close()
-
 
         logger.info("Closing plot:", self)
         logger.info("Closing parent selector if exists")

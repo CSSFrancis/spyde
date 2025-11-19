@@ -385,7 +385,7 @@ class BaseSignalTree:
             if signal.axes_manager.navigation_dimension == 0:
                 plot_state = PlotState(signal=signal, plot=plot, dynamic=False)
             else:
-                plot_state = PlotState(signal=signal,plot=plot,  dynamic=True)
+                plot_state = PlotState(signal=signal, plot=plot, dynamic=True)
 
             plot_states[signal] = plot_state
         return plot_states
@@ -400,7 +400,7 @@ class BaseSignalTree:
             if new_signal not in plot.plot_states:
                 if new_signal.axes_manager.navigation_dimension == 0:
                     plot.plot_states[new_signal] = PlotState(
-                        signal=new_signal,plot=plot, dynamic=False
+                        signal=new_signal, plot=plot, dynamic=False
                     )
                 else:
                     plot.plot_states[new_signal] = PlotState(

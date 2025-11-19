@@ -173,7 +173,9 @@ def rebin2d(toolbar: "RoundedToolBar", scale_x: int, scale_y: int, *args, **kwar
     )
 
 
-def toggle_signal_tree(toolbar: "RoundedToolBar", action_name="", toggle=None, *args, **kwargs):
+def toggle_signal_tree(
+    toolbar: "RoundedToolBar", action_name="", toggle=None, *args, **kwargs
+):
     """Makes a series of buttons to the side of the action bar for switching between different signal plots.
 
     This is similar to toggle_navigation_plots, but for signal plots and instead of creating a list
@@ -211,7 +213,9 @@ def toggle_signal_tree(toolbar: "RoundedToolBar", action_name="", toggle=None, *
     button_tree_dict = tree2buttons(signal_tree)
 
     if action_name not in toolbar.action_widgets:
-        group = CaretGroup(title="", toolbar=toolbar, action_name=action_name, auto_attach=True)
+        group = CaretGroup(
+            title="", toolbar=toolbar, action_name=action_name, auto_attach=True
+        )
         layout = group.layout()
         button_tree = ButtonTree("Signal Tree", button_tree_dict)
         layout.addWidget(button_tree)

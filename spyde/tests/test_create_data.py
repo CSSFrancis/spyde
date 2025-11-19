@@ -128,7 +128,5 @@ class TestOpenExampleData:
 
         # capture new data from the signal plot and assert it changed
         new_data = sig.current_data
-        assert (current is not None and new_data is not None)  # sanity check
+        assert current is not None and new_data is not None  # sanity check
         assert not np.array_equal(current, new_data)
-
-

@@ -81,7 +81,9 @@ class CaretGroup(QtWidgets.QGroupBox):
         # Ensure this group has a vertical layout (like the ad-hoc code)
         if self.layout() is None:
             vlay = QtWidgets.QVBoxLayout()
-            vlay.setContentsMargins(0, 0, 0, 0)  # layout padding handled in _update_margins
+            vlay.setContentsMargins(
+                0, 0, 0, 0
+            )  # layout padding handled in _update_margins
             self.setLayout(vlay)
 
         # Do NOT auto-insert into any parent layout; keep free-floating.
@@ -335,9 +337,13 @@ class CaretParams(CaretGroup):
 
             label = QtWidgets.QLabel(name, row_widget)
             label.setAlignment(
-                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+                QtCore.Qt.AlignmentFlag.AlignRight
+                | QtCore.Qt.AlignmentFlag.AlignVCenter
             )
-            label.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Preferred)
+            label.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Minimum,
+                QtWidgets.QSizePolicy.Policy.Preferred,
+            )
 
             # Editor
             if dtype == "int":
@@ -348,8 +354,13 @@ class CaretParams(CaretGroup):
                 editor.setValidator(QtGui.QDoubleValidator())
             elif dtype == "enum":
                 editor = QtWidgets.QComboBox(row_widget)
-                editor.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
-                editor.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred)
+                editor.setSizeAdjustPolicy(
+                    QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
+                )
+                editor.setSizePolicy(
+                    QtWidgets.QSizePolicy.Policy.Expanding,
+                    QtWidgets.QSizePolicy.Policy.Preferred,
+                )
                 options = item.get("options", [])
                 editor.addItems([str(opt) for opt in options])
                 if default in options:
@@ -361,18 +372,28 @@ class CaretParams(CaretGroup):
 
                 print("Adding RectangleSelector ROI for parameter:", key)
                 print("Toolbar available:", self.toolbar is not None)
-                print("toolbar.plot available:", getattr(self.toolbar, "plot", None) is not None if self.toolbar else "N/A")
+                print(
+                    "toolbar.plot available:",
+                    (
+                        getattr(self.toolbar, "plot", None) is not None
+                        if self.toolbar
+                        else "N/A"
+                    ),
+                )
 
-                if self.toolbar is not None and getattr(self.toolbar, "plot_state", None) is not None:
+                if (
+                    self.toolbar is not None
+                    and getattr(self.toolbar, "plot_state", None) is not None
+                ):
                     # Create a modest default rectangle; users can reposition/resize.
                     current_signal = self.toolbar.plot_state.current_signal
                     extent = current_signal.axes_manager.signal_extent
                     print("Current signal extent:", extent)
 
-                    center = (extent[1]+extent[0])/2, (extent[3]+extent[2])/2
+                    center = (extent[1] + extent[0]) / 2, (extent[3] + extent[2]) / 2
                     left, right, bottom, top = extent
                     print("Computed signal center:", center)
-                    width = np.abs(extent[1]-extent[0])
+                    width = np.abs(extent[1] - extent[0])
                     print("Computed signal width:", width)
 
                     size = item.get("size", 0.1)
@@ -388,7 +409,9 @@ class CaretParams(CaretGroup):
                     print("Computed ROI size:", roi_w, roi_h)
 
                     if position == "centered":
-                        po = QtCore.QPointF(center[0] - roi_w / 2.0, center[1] - roi_h / 2.0)
+                        po = QtCore.QPointF(
+                            center[0] - roi_w / 2.0, center[1] - roi_h / 2.0
+                        )
                     elif position == "top-left":
                         po = QtCore.QPointF(left, top)
                     elif position == "top-right":
@@ -398,21 +421,25 @@ class CaretParams(CaretGroup):
                     elif position == "bottom-right":
                         po = QtCore.QPointF(right - roi_w, bottom - roi_h)
                     else:
-                        po = QtCore.QPointF(center[0] - roi_w / 2.0, center[1] - roi_h / 2.0)
+                        po = QtCore.QPointF(
+                            center[0] - roi_w / 2.0, center[1] - roi_h / 2.0
+                        )
 
                     print("Computed ROI position:", po)
                     print("Adding RectangleSelector ROI to plot.")
                     roi = RectROI(pos=po, size=(roi_w, roi_h))
 
                     # Ensure it starts hidden; toolbar will toggle visibility with the action.
-                    #roi.setVisible(False)
+                    # roi.setVisible(False)
                     # Add to the plot and register with toolbar for toggle and cleanup.
                     self.toolbar.plot.plot_item.addItem(roi)
                     if self._action_name:
                         self.toolbar.register_action_plot_item(self._action_name, roi)
                     self._rect_rois[key] = roi
                 else:
-                    print("No toolbar/plot available; RectangleSelector ROI not created.")
+                    print(
+                        "No toolbar/plot available; RectangleSelector ROI not created."
+                    )
             else:  # default to string
                 editor = QtWidgets.QLineEdit(str(default), row_widget)
 
@@ -534,7 +561,11 @@ class CaretParams(CaretGroup):
 
             print(self.toolbar)
             print(self.toolbar.plot)
-            if roi is None or self.toolbar is None or getattr(self.toolbar, "plot", None) is None:
+            if (
+                roi is None
+                or self.toolbar is None
+                or getattr(self.toolbar, "plot", None) is None
+            ):
                 return None
             try:
                 lower_left = roi.pos()
@@ -542,7 +573,9 @@ class CaretParams(CaretGroup):
                 # Map ROI geometry to pixel coordinates using the image item's transform.
                 inv_transform, _ = self.toolbar.plot.image_item.transform().inverted()
                 ll_px = inv_transform.map(lower_left)
-                sz_px = inv_transform.map(size) - inv_transform.map(QtCore.QPointF(0, 0))
+                sz_px = inv_transform.map(size) - inv_transform.map(
+                    QtCore.QPointF(0, 0)
+                )
                 x = int(round(ll_px.x()))
                 y = int(round(ll_px.y()))
                 w = int(round(sz_px.x()))
@@ -579,9 +612,13 @@ class CaretParams(CaretGroup):
                 if dtype == "RectangleSelector":
                     params[key] = self._get_param_value(key, dtype)
                     continue
-                if hasattr(widget, "validator") and isinstance(widget.validator(), QtGui.QDoubleValidator):
+                if hasattr(widget, "validator") and isinstance(
+                    widget.validator(), QtGui.QDoubleValidator
+                ):
                     params[key] = float(widget.text())
-                elif hasattr(widget, "validator") and isinstance(widget.validator(), QtGui.QIntValidator):
+                elif hasattr(widget, "validator") and isinstance(
+                    widget.validator(), QtGui.QIntValidator
+                ):
                     params[key] = int(widget.text())
                 elif isinstance(widget, QtWidgets.QComboBox):
                     params[key] = widget.currentText()

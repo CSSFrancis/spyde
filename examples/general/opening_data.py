@@ -8,7 +8,12 @@ We will start by opening the SpyDE main window as shown below.
 """
 
 # sphinx_gallery_start_ignore
-from spyde.qt.shared import open_window, register_window_for_gallery, create_data, _find_menu_action
+from spyde.qt.shared import (
+    open_window,
+    register_window_for_gallery,
+    create_data,
+    _find_menu_action,
+)
 from PySide6 import QtWidgets
 from PySide6 import QtCore
 
@@ -50,6 +55,7 @@ if file_menu_action and hasattr(file_menu_action, "menu"):
                 break
 assert open_action is not None, "'Open' action not found in File menu"
 
+
 def _register_dialog():
     app = win.app
     # Prefer the active modal widget (works during exec() nested loop)
@@ -64,6 +70,7 @@ def _register_dialog():
             return
     # Try again shortly until the dialog appears
     QtCore.QTimer.singleShot(50, _register_dialog)
+
 
 def _set_and_accept_open_dialog():
     app = win.app
@@ -99,12 +106,15 @@ def _set_and_accept_open_dialog():
     # Try again shortly until the dialog appears
     QtCore.QTimer.singleShot(50, _set_and_accept_open_dialog)
 
-QtWidgets.QApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_DontUseNativeDialogs, True)
+
+QtWidgets.QApplication.setAttribute(
+    QtCore.Qt.ApplicationAttribute.AA_DontUseNativeDialogs, True
+)
 QtWidgets.QApplication.processEvents()
 
 # Open the dialog asynchronously and then register it once visible
 QtCore.QTimer.singleShot(0, open_action.trigger)
-#QtCore.QTimer.singleShot(25, _register_dialog)
+# QtCore.QTimer.singleShot(25, _register_dialog)
 QtCore.QTimer.singleShot(2, _set_and_accept_open_dialog)
 
 # sphinx_gallery_end_ignore

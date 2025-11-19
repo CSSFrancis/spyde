@@ -10,6 +10,7 @@ from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
 if TYPE_CHECKING:
     from spyde.drawing.multiplot import NavigationPlotManager, Plot
 
+
 class PlotState:
     """
     Represents the complete visualization state for a (Plot, Signal) pair.
@@ -44,7 +45,6 @@ class PlotState:
         self.current_signal: BaseSignal = signal
         self.plot: "Plot" = plot
 
-
         # Visualization parameters. The min/max percentile are used to determine the contrast/brightness
         self.min_percentile = 100
         self.max_percentile = 0
@@ -52,7 +52,9 @@ class PlotState:
         self.max_level = 1
         self.colormap = "gray"  # default colormap
 
-        self.dynamic: bool = dynamic  # if the image/plot will update based on some selector.
+        self.dynamic: bool = (
+            dynamic  # if the image/plot will update based on some selector.
+        )
 
         # Selectors which are tied to this particular "State" of the signal...
         # When the state is changed these selectors should be removed from the plot
@@ -125,24 +127,32 @@ class PlotState:
             tb.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
             tb.show()
 
-        functions, icons, names, toolbar_sides, toggles, params,  sub_functions = (
+        functions, icons, names, toolbar_sides, toggles, params, sub_functions = (
             get_toolbar_actions_for_plot(self)
         )
 
         # Add actions to the appropriate toolbars
         for func, icon, name, side, toggle, param, sub_function in zip(
-                functions, icons, names, toolbar_sides, toggles, params, sub_functions
+            functions, icons, names, toolbar_sides, toggles, params, sub_functions
         ):
             print(f"Adding toolbar action: {name} to {side} toolbar")
             print(f"Function: {func}, Icon: {icon}, Toggle: {toggle}, Params: {param}")
             if side == "right":
-                self.toolbar_right.add_action(name, icon, func, toggle, param, sub_function)
+                self.toolbar_right.add_action(
+                    name, icon, func, toggle, param, sub_function
+                )
             elif side == "left":
-                self.toolbar_left.add_action(name, icon, func, toggle, param, sub_function)
+                self.toolbar_left.add_action(
+                    name, icon, func, toggle, param, sub_function
+                )
             elif side == "top":
-                self.toolbar_top.add_action(name, icon, func, toggle, param, sub_function)
+                self.toolbar_top.add_action(
+                    name, icon, func, toggle, param, sub_function
+                )
             elif side == "bottom":
-                self.toolbar_bottom.add_action(name, icon, func, toggle, param, sub_function)
+                self.toolbar_bottom.add_action(
+                    name, icon, func, toggle, param, sub_function
+                )
 
         for tb in [
             self.toolbar_right,
@@ -200,8 +210,8 @@ class PlotState:
             self.toolbar_top,
             self.toolbar_bottom,
         ]:
-            #TODO: This should be handled better...
-            if tb: # check if toolbar exists
+            # TODO: This should be handled better...
+            if tb:  # check if toolbar exists
                 tb.hide()
 
     def close(self) -> None:
@@ -216,12 +226,14 @@ class PlotState:
                 except Exception:
                     pass
 
+
 class NavigationManagerState:
     """State container for a NavigationPlotManager.
 
     Wraps a navigation-capable signal and builds the required PlotState list
     corresponding to (signal_dimension, navigation_dimension). Only up to 4D total supported.
     """
+
     def __init__(
         self,
         signal: BaseSignal,
@@ -246,7 +258,6 @@ class NavigationManagerState:
 
         self.current_signal: BaseSignal = signal
         self.plot_manager: "NavigationPlotManager" = plot_manager
-
 
         self.dimensions: List[int] = [
             signal.axes_manager.signal_dimension,
