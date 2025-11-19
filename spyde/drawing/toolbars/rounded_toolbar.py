@@ -37,13 +37,14 @@ class RoundedToolBar(QtWidgets.QToolBar):
     """
 
     def __init__(
-        self,
-        title: str,
-        plot_state: "PlotState" = None,
-        parent: Optional[QtWidgets.QWidget] = None,
-        radius: int = 8,
-        moveable: bool = False,
-        position: str = "top",
+            self,
+            title: str,
+            plot_state: "PlotState" = None,
+            parent: Optional[QtWidgets.QWidget] = None,
+            radius: int = 8,
+            moveable: bool = False,
+            position: str = "top",
+            exclusive_checkable_actions: bool = True,
     ):
         # Ensure we never parent directly to QMainWindow; prefer content area
         parent = self._resolve_container_parent(parent)
@@ -65,6 +66,9 @@ class RoundedToolBar(QtWidgets.QToolBar):
             if "bottom" in p:
                 return "bottom"
             return "top"
+
+        # NEW: store exclusivity flag
+        self.exclusive_checkable_actions: bool = bool(exclusive_checkable_actions)
 
         norm_pos = _normalize_position(position)
         vertical = norm_pos not in ["top", "bottom"]
@@ -187,6 +191,11 @@ class RoundedToolBar(QtWidgets.QToolBar):
 
             popout.hide()
             action.setCheckable(True)
+            # NEW: connect exclusivity handler
+            if self.exclusive_checkable_actions:
+                action.toggled.connect(
+                    lambda checked, a=action: self._enforce_exclusive_checked(a, checked)
+                )
             self.add_action_widget(name, popout, None)
             action.toggled.connect(
                 lambda checked, w=popout: (w.show() if checked else w.hide())
@@ -221,8 +230,20 @@ class RoundedToolBar(QtWidgets.QToolBar):
             self.add_action_widget(name, popout_menu, None)
             popout_menu.adjustSize()
             action.setCheckable(True)
+            # NEW: connect exclusivity handler
+            if self.exclusive_checkable_actions:
+                action.toggled.connect(
+                    lambda checked, a=action: self._enforce_exclusive_checked(a, checked)
+                )
             action_widget = popout_menu
         else:
+            # NOTE: plain (non-popout) actions may also be toggleable via `toggle` arg
+            if toggle:
+                action.setCheckable(True)
+                if self.exclusive_checkable_actions:
+                    action.toggled.connect(
+                        lambda checked, a=action: self._enforce_exclusive_checked(a, checked)
+                    )
             action.triggered.connect(
                 lambda _, f=function, n=name: f(self, action_name=n)
             )
@@ -235,6 +256,27 @@ class RoundedToolBar(QtWidgets.QToolBar):
         ):
             self._reposition_function()
         return action, action_widget
+
+    def _enforce_exclusive_checked(self, action: QtGui.QAction, checked: bool) -> None:
+        """
+        Ensure only one checkable action on this toolbar is checked at a time.
+
+        Parameters
+        ----------
+        action : QtGui.QAction
+            The action whose checked state just changed.
+        checked : bool
+            The new checked state.
+        """
+        if not checked:
+            # Unchecking one action should not affect others.
+            return
+        # Uncheck all other checkable actions on this toolbar.
+        for other in self.actions():
+            if other is action:
+                continue
+            if other.isCheckable() and other.isChecked():
+                other.setChecked(False)
 
     def num_actions(self) -> int:
         """Return the number of actions currently in the toolbar."""

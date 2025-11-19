@@ -803,6 +803,21 @@ class MainWindow(QMainWindow):
 
     def close(self) -> None:
         """Gracefully stop workers / threads and close the window."""
+        import logging
+
+        # Stop plot update worker thread
+        try:
+            worker = getattr(self, "_plot_update_worker", None)
+            if worker is not None:
+                worker.stop()
+            thread = getattr(self, "_update_thread", None)
+            if thread is not None and thread.isRunning():
+                thread.quit()
+                thread.wait(2000)
+        except Exception as e:
+            print("Thread shutdown error:", e)
+
+        # Quiet distributed logging to avoid writes after stream closure
         try:
             self.client.shutdown()
         except Exception:
