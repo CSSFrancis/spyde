@@ -802,39 +802,24 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
 
     def close(self) -> None:
-        """Gracefully stop workers / threads and close the window."""
-        import logging
+        worker = getattr(self, "_plot_update_worker", None)
+        thread = getattr(self, "_update_thread", None)
 
-        # Stop plot update worker thread
-        try:
-            worker = getattr(self, "_plot_update_worker", None)
-            if worker is not None:
-                worker.stop()
-            thread = getattr(self, "_update_thread", None)
-            if thread is not None and thread.isRunning():
-                thread.quit()
-                thread.wait(2000)
-        except Exception as e:
-            print("Thread shutdown error:", e)
+        if worker is not None:
+            QtCore.QMetaObject.invokeMethod(
+                worker, "stop", QtCore.Qt.ConnectionType.QueuedConnection
+            )
 
-        # Quiet distributed logging to avoid writes after stream closure
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            thread.wait(2000)
+
         try:
             self.client.shutdown()
         except Exception:
             pass
-        if (
-            hasattr(self, "_plot_update_worker")
-            and self._plot_update_worker is not None
-        ):
-            self._plot_update_worker._timer.stop()
-            self._plot_update_worker.stop()
-        if hasattr(self, "_update_thread") and self._update_thread is not None:
-            self._update_thread.quit()
-            self._update_thread.wait(1000)
 
-        # stop threads
         super().close()
-
 
 def main() -> MainWindow:
     app = QtWidgets.QApplication(sys.argv)
