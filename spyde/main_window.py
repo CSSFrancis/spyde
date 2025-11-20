@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
 )
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtGui import QPixmap, QColor
 
 from dask.distributed import Client, Future, LocalCluster
@@ -197,6 +197,8 @@ class MainWindow(QMainWindow):
         # For accepting dropped files into the mdi area
         self.mdi_area.setAcceptDrops(True)
         self.mdi_area.installEventFilter(self)
+        if app is not None:
+            app.aboutToQuit.connect(self._shutdown_update_thread)
 
     @property
     def navigation_selectors(self):
@@ -801,7 +803,7 @@ class MainWindow(QMainWindow):
                 return True
         return super().eventFilter(obj, event)
 
-    def close(self) -> None:
+    def _shutdown_update_thread(self) -> None:
         worker = getattr(self, "_plot_update_worker", None)
         thread = getattr(self, "_update_thread", None)
 
@@ -814,12 +816,17 @@ class MainWindow(QMainWindow):
             thread.quit()
             thread.wait(2000)
 
+    def close(self) -> None:
+        self._shutdown_update_thread()
         try:
             self.client.shutdown()
         except Exception:
             pass
-
         super().close()
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        self._shutdown_update_thread()
+        super().closeEvent(event)
 
 def main() -> MainWindow:
     app = QtWidgets.QApplication(sys.argv)
