@@ -1,5 +1,5 @@
 import pytest
-from typing import Dict, Any, Union, List, Generator
+from typing import Dict, Any, Union, List, Iterator
 
 from spyde.qt.shared import open_window as _open_window
 from spyde.qt.shared import create_data as _create_data
@@ -17,7 +17,7 @@ def _close_window(qtbot, win) -> None:
 @pytest.fixture()
 def tem_2d_dataset(
     qtbot,
-) -> Generator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
+) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
     win = _open_window()
     _create_data(win, "Image")
     # Wait for 1 subwindow
@@ -34,7 +34,7 @@ def tem_2d_dataset(
 
 
 @pytest.fixture
-def insitu_tem_2d_dataset(qtbot) -> Generator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
+def insitu_tem_2d_dataset(qtbot) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
     win = _open_window()
     _create_data(win, "Insitu TEM")
     qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 2, timeout=5000)
@@ -50,7 +50,7 @@ def insitu_tem_2d_dataset(qtbot) -> Generator[Dict[str, Union[MainWindow, QMdiAr
 
 
 @pytest.fixture
-def stem_4d_dataset(qtbot) -> Generator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
+def stem_4d_dataset(qtbot) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
     win = _open_window()
     _create_data(win, "4D STEM")
     qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 2, timeout=5000)
