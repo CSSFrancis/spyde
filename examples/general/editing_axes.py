@@ -71,6 +71,8 @@ register_window_for_gallery(group_widget)
 # sphinx_gallery_start_ignore
 units_widg._finish_editing()
 register_window_for_gallery(win)
+
+win.close()
 # sphinx_gallery_end_ignore
 
 # %%

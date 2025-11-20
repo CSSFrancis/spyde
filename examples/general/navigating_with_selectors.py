@@ -12,5 +12,6 @@ from PySide6 import Qt
 win = open_window()
 create_data(win, "4D STEM")
 register_window_for_gallery(win)
+win.close()
 # sphinx_gallery_end_ignore
 # %%
