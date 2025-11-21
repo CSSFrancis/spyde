@@ -7,11 +7,17 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write   # needed for gh-pages deployment
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  build-docs:
-    runs-on: ubuntu-latest
+  Build:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -20,12 +26,22 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install deps
-        run: pip install -U -e '.[doc,all]'
+      - name: Install dependencies and package
+        shell: bash
+        run: |
+          pip install -U -e '.[doc,all]'
 
-      - name: Build docs
-        run: make -C doc html
+      - name: Build documentation
+        shell: bash
+        run: |
+          make -C doc html
 
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: doc/build/html
+
+      # Deploy to GitHub Pages for main branch
       - name: Deploy to GitHub Pages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v3
