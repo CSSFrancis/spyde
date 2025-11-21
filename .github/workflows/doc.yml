@@ -41,11 +41,12 @@ jobs:
         with:
           path: doc/build/html
 
-      - name: Deploy to gh-pages
+      # Deploy to GitHub Pages for main branch
+      - name: Deploy to GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./doc/build/html
           publish_branch: gh-pages
-          commit_message:
-            Deploy docs: ${{ github.sha }}
+          publish_dir: _build/
+          force_orphan: true
