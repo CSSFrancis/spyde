@@ -4,7 +4,7 @@ import os
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtTest import QTest
 
-from spyde.main_window import MainWindow
+from spyde.__main__ import MainWindow
 
 # Registry for windows the gallery scraper should capture
 _SG_QT_WINDOWS: List[QtWidgets.QWidget] = []

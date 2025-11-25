@@ -276,7 +276,9 @@ class RoundedToolBar(QtWidgets.QToolBar):
             if other is action:
                 continue
             if other.isCheckable() and other.isChecked():
-                other.setChecked(False)
+                # Uncheck it by triggering (to ensure signals are emitted to properly hide popouts and plot items)
+                other.trigger()
+
 
     def num_actions(self) -> int:
         """Return the number of actions currently in the toolbar."""

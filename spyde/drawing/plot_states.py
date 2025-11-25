@@ -186,6 +186,15 @@ class PlotState:
                 tb.show()
             tb.raise_()
 
+            # Add all the plot items to the plot. This is needed when restoring a PlotState
+            # This adds things like Selectors, ROIs, etc back to the plot associated with
+            # specific toolbar actions.
+            for action in tb.action_widgets:
+                if "plot_items" in tb.action_widgets[action]:
+                    print("Restoring plot items for action:", action)
+                    for item in tb.action_widgets[action]["plot_items"]:
+                        self.plot.plot_item.addItem(item)
+
     def update_toolbars(self) -> None:
         """Recompute size/visibility for each toolbar after external changes to actions."""
         for tb in [
@@ -213,6 +222,11 @@ class PlotState:
             # TODO: This should be handled better...
             if tb:  # check if toolbar exists
                 tb.hide()
+                for action in tb.action_widgets:
+                    if "plot_items" in tb.action_widgets[action]:
+                        print("Restoring plot items for action:", action)
+                        for item in tb.action_widgets[action]["plot_items"]:
+                            self.plot.plot_item.removeItem(item)
 
     def close(self) -> None:
         self.hide_toolbars()

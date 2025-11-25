@@ -247,7 +247,9 @@ class MainWindow(QMainWindow):
             f"Starting Dask LocalCluster with {workers} workers, and {threads_per_worker} threads per worker"
         )
 
+        # Dask background startup
         self.client = None
+        self.cluster = None  # add: keep cluster reference for clean shutdown
         self._dask_thread = QtCore.QThread(self)
         self._dask_worker = DaskClusterWorker(
             n_workers=workers,
@@ -257,13 +259,17 @@ class MainWindow(QMainWindow):
         self._dask_thread.started.connect(self._dask_worker.start)
         self._dask_worker.finished.connect(self._on_dask_ready)
         self._dask_worker.error.connect(self._on_dask_error)
+        # ensure proper cleanup of worker object
+        self._dask_thread.finished.connect(self._dask_worker.deleteLater)
         self._dask_thread.start()
 
     @QtCore.Slot(object, object)
     def _on_dask_ready(self, cluster, client):
+        # store both client and cluster so we can close cleanly
+        self.cluster = cluster
         self.client = client
         print(f"Dask cluster ready. Dashboard: {client.dashboard_link}")
-        # Clean up worker thread
+        # stop the bootstrap thread
         self._dask_thread.quit()
         self._dask_thread.wait(2000)
 
@@ -907,7 +913,64 @@ class MainWindow(QMainWindow):
             pass
         super().close()
 
+
+    def _shutdown_dask(self) -> None:
+        """Silence distributed logs and close client/cluster synchronously."""
+        try:
+            # prevent 'I/O operation on closed file' during teardown logging
+            for name in ("distributed", "distributed.comm", "distributed.comm.tcp"):
+                lg = logging.getLogger(name)
+                lg.setLevel(logging.CRITICAL)
+                lg.propagate = False
+                try:
+                    lg.handlers.clear()
+                except Exception:
+                    lg.handlers = []
+                lg.addHandler(logging.NullHandler())
+        except Exception:
+            pass
+
+        # Close client first, then cluster
+        try:
+            if getattr(self, "client", None):
+                self.client.close(timeout="2s")
+        except Exception:
+            pass
+        finally:
+            self.client = None
+
+        try:
+            if getattr(self, "cluster", None):
+                # LocalCluster.close is sync when created from sync context
+                self.cluster.close(timeout="2s")
+        except Exception:
+            pass
+        finally:
+            self.cluster = None
+
+    def _shutdown_update_thread(self) -> None:
+        worker = getattr(self, "_plot_update_worker", None)
+        thread = getattr(self, "_update_thread", None)
+
+        if worker is not None:
+            QtCore.QMetaObject.invokeMethod(
+                worker, "stop", QtCore.Qt.ConnectionType.QueuedConnection
+            )
+
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            thread.wait(2000)
+
+        # also ensure the dask bootstrap thread is stopped if still running
+        dthread = getattr(self, "_dask_thread", None)
+        if dthread is not None and dthread.isRunning():
+            dthread.quit()
+            dthread.wait(2000)
+
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        # 1) shutdown Dask to stop its background threads and logging
+        self._shutdown_dask()
+        # 2) stop any QThreads we own
         self._shutdown_update_thread()
         super().closeEvent(event)
 
@@ -934,11 +997,14 @@ def main() -> MainWindow:
     main_window.setWindowTitle("SpyDE")  # Set the window title
 
     if sys.platform == "darwin":
-        logo_path = "Spyde.icns"
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        logo_path = os.path.join(base_dir, "icon.icns")
+        print("Using macOS icon:", logo_path)
     else:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         logo_path = os.path.join(base_dir, "SpydeDark.png")
-    main_window.setWindowIcon(QIcon(logo_path))
+
+    main_window.setWindowIcon(QIcon(str(logo_path)))
     main_window.show()
     splash.finish(main_window)  # Close the splash screen when the main window is shown
 

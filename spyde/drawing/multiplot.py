@@ -250,7 +250,6 @@ class Plot(FramelessSubWindow):
         self.plot_item.getViewBox().autoRange()
 
         # update the toolbars
-        self.plot_state.show_toolbars()
         self.update_image_rectangle()
 
         if self.plot_state.dimensions == 2:
@@ -264,6 +263,10 @@ class Plot(FramelessSubWindow):
             self.needs_update_range = True
             # update the plot range
             self.update_range()
+
+        # show the toolbars should be last so that the widgets can be initialized properly
+        self.plot_state.show_toolbars()
+
 
     def update_image_rectangle(self):
         """Set the x and y range of the plot.
