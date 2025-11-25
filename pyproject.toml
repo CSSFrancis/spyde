@@ -76,4 +76,4 @@ Support = "https://github.com/directelectron/spyde/discussions"
 Source = "https://github.com/directelectron/spyde"
 
 [project.scripts]
-spyde = "spyde.main_window:main"
+spyde = "spyde.__main__:main"

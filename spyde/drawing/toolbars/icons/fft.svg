@@ -23,9 +23,9 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="px"
-     inkscape:zoom="0.4609375"
-     inkscape:cx="256"
-     inkscape:cy="256"
+     inkscape:zoom="0.83387642"
+     inkscape:cx="295.00774"
+     inkscape:cy="235.04682"
      inkscape:window-width="1312"
      inkscape:window-height="707"
      inkscape:window-x="0"
@@ -38,16 +38,10 @@
      inkscape:label="Layer 1"
      inkscape:groupmode="layer"
      id="layer1">
-    <text
-       xml:space="preserve"
-       style="font-size:266.667px;line-height:367.145px;font-family:'Noto Sans Cypriot';-inkscape-font-specification:'Noto Sans Cypriot';letter-spacing:-0.07px;word-spacing:1.06px;fill:#ffffff;stroke:#ffffff;stroke-width:50;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:2.4;stroke-dasharray:none;paint-order:fill markers stroke"
-       x="17.355932"
-       y="347.11865"
-       id="text1"><tspan
-         sodipodi:role="line"
-         id="tspan1"
-         x="17.355932"
-         y="347.11865"
-         style="font-size:266.667px;line-height:367.145px;stroke:none">FFT</tspan></text>
+    <path
+       style="font-size:266.667px;line-height:367.145px;font-family:'Noto Sans Cypriot';-inkscape-font-specification:'Noto Sans Cypriot';letter-spacing:-0.07px;word-spacing:1.06px;fill:#ffffff;stroke-width:50;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:2.4;paint-order:fill markers stroke"
+       d="M 167.22591,176.1549 H 69.178912 v 54.68757 h 84.244898 v 22.91669 H 69.178912 v 93.35949 H 43.397631 V 153.23821 H 167.22591 Z m 153.18539,0 h -98.04699 v 54.68757 h 84.24489 v 22.91669 h -84.24489 v 93.35949 H 196.58302 V 153.23821 H 320.4113 Z m 171.54479,0 H 422.68517 V 347.11865 H 396.90389 V 176.1549 h -69.27092 v -22.91669 h 164.32312 z"
+       id="path1"
+       aria-label="FFT" />
   </g>
 </svg>

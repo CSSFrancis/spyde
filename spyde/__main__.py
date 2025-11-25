@@ -4,6 +4,8 @@ import os
 from typing import Union
 from functools import partial
 import webbrowser
+import multiprocessing
+from time import perf_counter
 
 from PySide6.QtGui import QAction, QIcon, QBrush
 from PySide6.QtCore import Qt, QEvent
@@ -42,6 +44,56 @@ COLORMAPS = {
 
 SUPPORTED_EXTS = (".hspy", ".mrc")  # extend as needed
 
+class DaskClusterWorker(QtCore.QObject):
+    finished = QtCore.Signal(object, object)  # cluster_or_none, client_or_none
+    error = QtCore.Signal(Exception)
+
+    def __init__(self, n_workers: int, threads_per_worker: int, parent=None):
+        super().__init__(parent)
+        self.n_workers = n_workers
+        self.threads_per_worker = threads_per_worker
+        self._stopped = False
+
+    @QtCore.Slot()
+    def start(self):
+        if self._stopped:
+            return
+        try:
+            cluster = LocalCluster(
+                n_workers=self.n_workers,
+                threads_per_worker=self.threads_per_worker,
+            )
+            client = Client(cluster)
+            self.finished.emit(cluster, client)
+        except Exception as e:
+            self.error.emit(e)
+
+    @QtCore.Slot()
+    def stop(self):
+        self._stopped = True
+
+class StartupTimer:
+    """Context manager that prints how long a startup step took."""
+
+    def __init__(self, label: str) -> None:
+        self.label = label
+        self._start = 0.0
+
+    def __enter__(self) -> "StartupTimer":
+        self._start = perf_counter()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        elapsed_ms = (perf_counter() - self._start) * 1000.0
+        status = "failed" if exc_type else "completed"
+        print(f"[startup] {self.label} {status} in {elapsed_ms:.1f} ms")
+        return False
+
+
+def log_startup_time(label: str) -> StartupTimer:
+    """Convenience factory for StartupTimer instances."""
+    return StartupTimer(label)
+
 
 class MainWindow(QMainWindow):
     """
@@ -72,15 +124,7 @@ class MainWindow(QMainWindow):
             else:
                 workers = (cpu_count // 4) - 1  # For very large systems, limit workers
                 threads_per_worker = 4
-        print(
-            f"Starting Dask LocalCluster with {workers} workers, and {threads_per_worker} threads per worker"
-        )
-        cluster = LocalCluster(n_workers=workers, threads_per_worker=threads_per_worker)
-        self.client = Client(
-            cluster
-        )  # Start a local Dask client (this should be settable eventually)
-        print(f"Starting Dashboard at: {self.client.dashboard_link}")
-        self.setWindowTitle("DE-Spy")
+
         # get screen size and set window size to 3/4 of the screen size
         self.dock_widget = None
         screen = QApplication.primaryScreen()
@@ -119,77 +163,76 @@ class MainWindow(QMainWindow):
         self._plot_update_worker.moveToThread(self._update_thread)
         self._update_thread.started.connect(self._plot_update_worker.start)
         self._plot_update_worker.plot_ready.connect(self.on_plot_future_ready)
-        self._update_thread.start()
+        with log_startup_time("Plot update worker thread start"):
+            self._update_thread.start()
 
         if self.app is not None:
             # Use Fusion style on non-macOS
             if sys.platform != "darwin":
                 QtWidgets.QApplication.setStyle("Fusion")
+                with log_startup_time("Apply application stylesheet"):
+                    self.app.setStyleSheet(
+                        """
+                        QMdiArea { background: #0d0d0d; }             /* background: very dark */
+                        QMainWindow { background-color: #0d0d0d; }
+                        QDockWidget, QDockWidget > QWidget { background-color: #141414; color: #ffffff; } /* dock: slightly lighter */
+                        QDockWidget#plotControlDock > QWidget { background-color: #141414; }
+                        QDockWidget::title { background-color: #141414; color: #ffffff; padding: 2px; }
+                        QMenuBar { background-color: #1d1d1d; color: #ffffff; } /* header: lighter than dock */
+                        QMenuBar::item { background-color: transparent; color: #ffffff; }
+                        QStatusBar { background-color: #1d1d1d; color: #ffffff; } /* footer: same as header */
 
-            # Darker background, dock slightly lighter, header/footer slightly lighter than dock, all text white
-            self.app.setStyleSheet(
-                """
-                QMdiArea { background: #0d0d0d; }             /* background: very dark */
-                QMainWindow { background-color: #0d0d0d; }
-                QDockWidget, QDockWidget > QWidget { background-color: #141414; color: #ffffff; } /* dock: slightly lighter */
-                QDockWidget#plotControlDock > QWidget { background-color: #141414; }
-                QDockWidget::title { background-color: #141414; color: #ffffff; padding: 2px; }
-                QMenuBar { background-color: #1d1d1d; color: #ffffff; } /* header: lighter than dock */
-                QMenuBar::item { background-color: transparent; color: #ffffff; }
-                QStatusBar { background-color: #1d1d1d; color: #ffffff; } /* footer: same as header */
+                        /* Dialogs */
+                        QDialog, QMessageBox, QFileDialog { background-color: #141414; color: #ffffff; }
+                        QDialog > QWidget, QMessageBox > QWidget, QFileDialog QWidget { background-color: #141414; color: #ffffff; }
 
-                /* Dialogs */
-                QDialog, QMessageBox, QFileDialog { background-color: #141414; color: #ffffff; }
-                QDialog > QWidget, QMessageBox > QWidget, QFileDialog QWidget { background-color: #141414; color: #ffffff; }
+                        /* Dialog buttons */
+                        QDialog QPushButton, QMessageBox QPushButton, QFileDialog QPushButton {
+                            background-color: #1e1e1e;
+                            color: #ffffff;
+                            border: 1px solid #2a2a2a;
+                            padding: 4px 8px;
+                        }
+                        QDialog QPushButton:hover, QMessageBox QPushButton:hover, QFileDialog QPushButton:hover {
+                            background-color: #2a2a2a;
+                        }
 
-                /* Dialog buttons */
-                QDialog QPushButton, QMessageBox QPushButton, QFileDialog QPushButton {
-                    background-color: #1e1e1e;
-                    color: #ffffff;
-                    border: 1px solid #2a2a2a;
-                    padding: 4px 8px;
-                }
-                QDialog QPushButton:hover, QMessageBox QPushButton:hover, QFileDialog QPushButton:hover {
-                    background-color: #2a2a2a;
-                }
+                        /* Inputs */
+                        QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextEdit,
+                        QDateEdit, QTimeEdit, QDateTimeEdit {
+                            color: #ffffff;
+                            background-color: #1a1a1a;
+                            border: 1px solid #2a2a2a;
+                        }
 
-                /* Inputs */
-                QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextEdit,
-                QDateEdit, QTimeEdit, QDateTimeEdit {
-                    color: #ffffff;
-                    background-color: #1a1a1a;
-                    border: 1px solid #2a2a2a;
-                }
+                        /* Views inside dialogs (file lists, trees, tables) */
+                        QListView, QTreeView, QTableView {
+                            background-color: #1a1a1a;
+                            color: #ffffff;
+                            alternate-background-color: #151515;
+                            selection-background-color: #2a2a2a;
+                            selection-color: #ffffff;
+                        }
+                        QHeaderView::section {
+                            background-color: #1d1d1d;
+                            color: #ffffff;
+                            border: 0px;
+                            padding: 4px;
+                        }
 
-                /* Views inside dialogs (file lists, trees, tables) */
-                QListView, QTreeView, QTableView {
-                    background-color: #1a1a1a;
-                    color: #ffffff;
-                    alternate-background-color: #151515;
-                    selection-background-color: #2a2a2a;
-                    selection-color: #ffffff;
-                }
-                QHeaderView::section {
-                    background-color: #1d1d1d;
-                    color: #ffffff;
-                    border: 0px;
-                    padding: 4px;
-                }
-
-                QLabel, QGroupBox, QPushButton, QComboBox, QLineEdit, QSpinBox, QCheckBox {
-                    color: #ffffff;
-                    background-color: transparent;
-                }
-                """
-            )
+                        QLabel, QGroupBox, QPushButton, QComboBox, QLineEdit, QSpinBox, QCheckBox {
+                            color: #ffffff;
+                            background-color: transparent;
+                        }
+                        """
+                    )
         else:
-            # Fallback: just make the MDI area dark if no app reference
             self.mdi_area.setStyleSheet("background-color: #0d0d0d;")
 
         self.signal_trees = []  # type: list[BaseSignalTree]
-
-        self.add_plot_control_widget()
         self.current_selected_signal_tree = None  # type: Union[BaseSignalTree, None]
+        with log_startup_time("Plot control dock creation"):
+            self.add_plot_control_widget()
 
         self.cursor_readout = QtWidgets.QLabel("x: -, y: -, value: -")
         self.statusBar().addPermanentWidget(self.cursor_readout)
@@ -199,6 +242,46 @@ class MainWindow(QMainWindow):
         self.mdi_area.installEventFilter(self)
         if app is not None:
             app.aboutToQuit.connect(self._shutdown_update_thread)
+
+        print(
+            f"Starting Dask LocalCluster with {workers} workers, and {threads_per_worker} threads per worker"
+        )
+
+        self.client = None
+        self._dask_thread = QtCore.QThread(self)
+        self._dask_worker = DaskClusterWorker(
+            n_workers=workers,
+            threads_per_worker=threads_per_worker,
+        )
+        self._dask_worker.moveToThread(self._dask_thread)
+        self._dask_thread.started.connect(self._dask_worker.start)
+        self._dask_worker.finished.connect(self._on_dask_ready)
+        self._dask_worker.error.connect(self._on_dask_error)
+        self._dask_thread.start()
+
+    @QtCore.Slot(object, object)
+    def _on_dask_ready(self, cluster, client):
+        self.client = client
+        print(f"Dask cluster ready. Dashboard: {client.dashboard_link}")
+        # Clean up worker thread
+        self._dask_thread.quit()
+        self._dask_thread.wait(2000)
+
+    @QtCore.Slot(Exception)
+    def _on_dask_error(self, exc):
+        print(f"Failed to start Dask cluster: {exc}")
+        self._dask_thread.quit()
+        self._dask_thread.wait(2000)
+
+    def init_dask_cluster(self):
+        with log_startup_time("Dask LocalCluster + Client setup"):
+            cluster = LocalCluster(
+                n_workers=self.n_workers,
+                threads_per_worker=self.threads_per_worker
+            )
+            self.client = Client(cluster)
+        print(f"Starting Dashboard at: {self.client.dashboard_link}")
+
 
     @property
     def navigation_selectors(self):
@@ -829,8 +912,9 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 def main() -> MainWindow:
-    app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("SpyDe")  # Set the application name
+    with log_startup_time("QApplication startup"):
+        app = QtWidgets.QApplication(sys.argv)
+        app.setApplicationName("SpyDe")  # Set the application name
     # Create and show the splash screen
     logo_path = "SpydeDark.png"
     pixmap = QPixmap(logo_path).scaled(
@@ -844,7 +928,8 @@ def main() -> MainWindow:
     splash.show()
     splash.raise_()  # Bring the splash screen to the front
     app.processEvents()
-    main_window = MainWindow(app=app)
+    with log_startup_time("MainWindow construction"):
+        main_window = MainWindow(app=app)
 
     main_window.setWindowTitle("SpyDE")  # Set the window title
 
@@ -862,4 +947,5 @@ def main() -> MainWindow:
 
 
 if __name__ == "__main__":
+    #multiprocessing.freeze_support()
     sys.exit(main())
