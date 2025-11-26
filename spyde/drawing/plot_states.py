@@ -191,9 +191,8 @@ class PlotState:
             # specific toolbar actions.
             for action in tb.action_widgets:
                 if "plot_items" in tb.action_widgets[action]:
-                    print("Restoring plot items for action:", action)
-                    for item in tb.action_widgets[action]["plot_items"]:
-                        self.plot.plot_item.addItem(item)
+                    for key in tb.action_widgets[action]["plot_items"]:
+                        self.plot.plot_item.addItem(tb.action_widgets[action]["plot_items"][key])
 
     def update_toolbars(self) -> None:
         """Recompute size/visibility for each toolbar after external changes to actions."""
@@ -219,14 +218,13 @@ class PlotState:
             self.toolbar_top,
             self.toolbar_bottom,
         ]:
-            # TODO: This should be handled better...
             if tb:  # check if toolbar exists
                 tb.hide()
                 for action in tb.action_widgets:
                     if "plot_items" in tb.action_widgets[action]:
                         print("Restoring plot items for action:", action)
-                        for item in tb.action_widgets[action]["plot_items"]:
-                            self.plot.plot_item.removeItem(item)
+                        for key in tb.action_widgets[action]["plot_items"]:
+                            self.plot.plot_item.removeItem(tb.action_widgets[action]["plot_items"][key])
 
     def close(self) -> None:
         self.hide_toolbars()
@@ -239,6 +237,72 @@ class PlotState:
                     setattr(self, attr, None)
                 except Exception:
                     pass
+
+
+class MultiImageManager:
+    """The MultiImageManager manages multiple images within a single plotting context.
+
+    The idea is that there are cases where you have multiple images which represent
+    things like different Virtual Images, different channels, etc.  These images
+    can be toggled between in the same plot area. In addition, you might want to overlay
+    multiple image at once, adjusting their opacities independently. Or you might want
+    to create a grid of images.
+
+    In the case of 1D Spectra this could be multiple spectra overlaid, or stacked, etc.
+    In the case of 2D images this could be multiple images in a grid.
+
+    The idea is that this functionality is shared between multiple classes. The most common
+    use case is the NavigationPlotManager, but it is also used to manage multiple Virtual
+    Images.
+
+    Parameters
+    ----------
+    plot_states : List[PlotState]
+        A list of PlotState instances managed by this MultiImageManager.
+    plot : Plot
+        The Plot instance associated with this MultiImageManager.
+
+    """
+    def __init__(self,
+                 plot_states: List[PlotState],
+                 plot: "Plot",
+                 ):
+
+        # initialize the MultiImageManager with the provided plot states and plot
+        self.plot_states: List[PlotState] = plot_states
+        self.plot: "Plot" = plot
+
+
+    def add_plot_state(self,
+                       plot_state: PlotState):
+        """
+        Add a new PlotState to the MultiImageManager.
+
+        Parameters
+        ----------
+        plot_state : PlotState
+            The PlotState to add.
+
+        Returns
+        -------
+        None
+        """
+        self.plot_states.append(plot_state)
+
+    def remove_plot_state(self,
+                            plot_state: PlotState):
+        """
+        Remove a PlotState from the MultiImageManager.
+
+        Parameters
+        ----------
+        plot_state : PlotState
+            The PlotState to remove.
+        Returns
+        -------
+        None
+        """
+        self.plot_states.remove(plot_state)
 
 
 class NavigationManagerState:
