@@ -488,6 +488,26 @@ class Plot(FramelessSubWindow):
             except Exception:
                 pass
 
+    def get_annular_roi_parameters(self):
+        """
+        Get the parameters for an annular ROI. This should be centered on the middle
+        of the plot and have an inner radius of 25% of the width and an outer
+        radius of 90% of the width.
+        """
+        # Create a modest default rectangle; users can reposition/resize.
+        current_signal = self.plot_state.current_signal
+        extent = current_signal.axes_manager.signal_extent
+        center = (extent[1] + extent[0]) / 2, (extent[3] + extent[2]) / 2
+        left, right, bottom, top = extent
+        print("Computed signal center:", center)
+        width = np.abs(extent[1] - extent[0])
+        print("Computed signal width:", width)
+
+        inner_rad = width * 0.125
+        outer_rad = width * 0.45
+        return center, inner_rad, outer_rad
+
+
     def update(self):
         """Push the current data to the plot items."""
         logger.info(

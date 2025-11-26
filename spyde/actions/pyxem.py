@@ -1,11 +1,16 @@
+import numpy as np
+from PyQt6.QtCore import QPoint
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPointF
 
 from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
 from spyde.drawing.selector import RectangleSelector
 from typing import Tuple
 
 from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
+
+from pyqtgraph import RectROI, CircleROI, mkPen
+from spyde.qt.ring_roi import RingROI
 
 
 def center_zero_beam(
@@ -67,26 +72,13 @@ def center_zero_beam(
     toolbar.plot.set_plot_state(new_signal)
 
 
-def virtual_imaging(
-    toolbar: RoundedToolBar,
-    selector: RectangleSelector,
-    action_name: str = "Create Virtual Image",
-    *args,
-    **kwargs,
-):
+def virtual_imaging(*args, **kwargs):
     """
-    Create a virtual image from a 4D STEM dataset by integrating over a selected region.
-
-    Parameters
-    ----------
-    toolbar : spyde.plugins.toolbar.Toolbar
-        The toolbar instance from which to get the current signal.
-    selector : spyde.plugins.selector.Selector
-        The selector instance from which to get the current signal.
+    Placeholder for virtual imaging action.
 
     """
+    print("Virtual imaging action triggered.")
     pass
-
 
 def add_virtual_image(
     toolbar: RoundedToolBar, action_name: str = "Add Virtual Image", *args, **kwargs
@@ -128,6 +120,8 @@ def add_virtual_image(
     painter.fillRect(colored_pixmap.rect(), QColor(color))
     painter.end()
 
+    pen = mkPen(color=color, width=6, )  # type: pg.mkPen
+
     icon = QIcon()
     icon.addPixmap(colored_pixmap)
 
@@ -135,7 +129,7 @@ def add_virtual_image(
         "type": {
             "name": "Detector Type",
             "type": "enum",
-            "default": "annular",
+            "default": "disk",
             "options": ["annular", "disk", "rectangle", "multiple_disks"],
         },
         "calculation": {
@@ -148,8 +142,10 @@ def add_virtual_image(
 
     # Create a parameter caret box as the action widget.
     # This returns a QAction and the associated CaretParams instance.
+    # need to give each action a unique name (if the colors repeat)
+    action_name = f"Virtual Image ({color})"
     action, params_caret_box = toolbar.add_action(
-        name=f"Virtual Image ({color})",
+        name=action_name,
         icon_path=icon,
         function=compute_virtual_image,
         toggle=True,
@@ -169,12 +165,65 @@ def add_virtual_image(
     # Access parameter widgets as before (e.g. to wire type-dependent behavior)
     type_widget = params_caret_box.kwargs["type"]
 
+    # add a roi.  These should be based on the type selected in the caret box
+    # all of them should be the same color as the icon and only the one that is
+    # selected should be movable. The rest should be opaque and not movable.
+
+    plot = toolbar.parent_toolbar.plot
+    center, inner_rad, outer_rad = plot.get_annular_roi_parameters()
+
+    if params_caret_box.kwargs["type"].currentText() == "annular":
+        # make an annular roi
+        roi = RingROI(center,
+                      inner_radius=inner_rad,
+                      outer_radius=outer_rad,
+                      pen=pen)
+    elif params_caret_box.kwargs["type"].currentText() == "disk":
+        roi = CircleROI(center,inner_rad, pen=pen)
+    else: # params_caret_box.kwargs["type"].currentText() == "rectangle":
+        roi = RectROI(center, inner_rad, pen=pen)
+
+    # add to the parent toolbar so that all the rois are shown on the same plot
+    toolbar.parent_toolbar.register_action_plot_item(action_name="Virtual Imaging",
+                                      item=roi, key=action_name)
+    # arrange the z values of the rois based on their size
+    def arrange_widgets_on_move():
+        rois = list(toolbar.parent_toolbar.action_widgets["Virtual Imaging"]["plot_items"].values())
+        sizes = [r.size().x() for r in rois]
+        sorted_index = np.argsort(sizes)
+        for i, idx in enumerate(sorted_index[::-1]):
+            r = rois[idx]
+            r.setZValue(10 + i)
+    roi.sigRegionChangeFinished.connect(arrange_widgets_on_move)
+
     def on_type_change(new_type: str) -> None:
         print("Type changed to:", new_type)
-        # ...future logic for changing selectors / rows based on new_type...
+        # Remove existing ROI
+        # Create new ROI based on selected type
+        old_roi = toolbar.parent_toolbar.unregister_action_plot_item(action_name="Virtual Imaging",
+                                                           key=action_name)
+        pos = old_roi.pos()
+        size = old_roi.size()
+        inner_r = min(size) / 2.0
+        outer_r = inner_r * 2.0
+        nonlocal roi
+        if new_type == "annular":
+            roi = RingROI(center=pos, inner_rad=inner_r, outer_rad=outer_r, pen=pen)
+        elif new_type == "disk":
+
+            roi = CircleROI(pos=pos, size=size, pen=pen)
+        else:  # "rectangle"
+            roi = RectROI(pos=pos, size=size, pen=pen)
+        # Add new ROI to the toolbar
+
+        toolbar.parent_toolbar.register_action_plot_item(action_name="Virtual Imaging",
+                                                         item=roi,
+                                                         key=action_name)
+
 
     if hasattr(type_widget, "currentTextChanged"):
         type_widget.currentTextChanged.connect(on_type_change)
+
 
 
 def compute_virtual_image(

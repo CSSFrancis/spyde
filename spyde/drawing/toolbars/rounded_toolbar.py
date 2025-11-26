@@ -209,6 +209,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
                 radius=int(self._radius),
                 moveable=False,
                 position=self.position,
+                parent_toolbar=self,
             )
             popout_menu.setOrientation(
                 QtCore.Qt.Orientation.Vertical
@@ -341,6 +342,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
                 return cw.viewport()
             return cw or parent
         return parent
+
 
     def add_action_widget(
         self,
@@ -524,16 +526,32 @@ class RoundedToolBar(QtWidgets.QToolBar):
         # Initial placement (single, clean)
         QtCore.QTimer.singleShot(0, position_widget)
 
+    def unregister_action_plot_item(self, action_name: str, key:str) -> None:
+        """Deregister all QGraphicsItems associated with an action."""
+        if (action_name in self.action_widgets and
+                "plot_items" in self.action_widgets[action_name] and
+                key in list(self.action_widgets[action_name]["plot_items"])):
+            item =  self.action_widgets[action_name]["plot_items"].pop(key)
+            try:
+                if self.plot is not None and hasattr(self.plot, "plot_item"):
+                    self.plot.plot_item.removeItem(item)
+            except Exception:
+                pass
+            return item
+
+
     def register_action_plot_item(
-        self, action_name: str, item: QtWidgets.QGraphicsItem
+        self, action_name: str, item: QtWidgets.QGraphicsItem, key: Optional[str] = None
     ) -> None:
         """Associate a QGraphicsItem with an action; auto-hide/show based on toggle state."""
+        self.plot.plot_item.addItem(item)
         if action_name not in self.action_widgets:
             self.action_widgets[action_name] = {}
-
-        items = self.action_widgets[action_name].setdefault("plot_items", [])
-        if item not in items:
-            items.append(item)
+        if "plot_items" not in self.action_widgets[action_name]:
+            self.action_widgets[action_name]["plot_items"] = {}
+        if key is None:
+            key = f"item_{len(self.action_widgets[action_name]['plot_items'])}"
+        self.action_widgets[action_name]["plot_items"][key] = item
 
         act = self._find_action(action_name)
         # Default to hidden unless the action is already checked.
@@ -817,6 +835,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
             caret_base=caret_base,
             caret_depth=caret_depth,
             padding=padding,
+            parent_toolbar=self,
         )
         sub.setOrientation(orientation)
         sub.hide()
@@ -845,6 +864,7 @@ class PopoutToolBar(RoundedToolBar):
         caret_base: int = 14,
         caret_depth: int = 8,
         padding: int = 8,
+        parent_toolbar: Optional[RoundedToolBar] = None,
     ):
 
         # Popout does not need plot tracking; pass plot=None to avoid auto-placement
@@ -855,6 +875,7 @@ class PopoutToolBar(RoundedToolBar):
         self._caret_depth = int(caret_depth)
         self._padding = int(0)
         self._reposition_function = reposition_function
+        self.parent_toolbar = parent_toolbar
 
         # TODO: Should the plot state be the same as the parent toolbar's?
         super().__init__(

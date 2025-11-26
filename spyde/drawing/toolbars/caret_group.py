@@ -432,7 +432,7 @@ class CaretParams(CaretGroup):
                     # Ensure it starts hidden; toolbar will toggle visibility with the action.
                     # roi.setVisible(False)
                     # Add to the plot and register with toolbar for toggle and cleanup.
-                    self.toolbar.plot.plot_item.addItem(roi)
+                    #self.toolbar.plot.plot_item.addItem(roi)
                     if self._action_name:
                         self.toolbar.register_action_plot_item(self._action_name, roi)
                     self._rect_rois[key] = roi
