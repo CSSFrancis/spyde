@@ -1,12 +1,15 @@
 from __future__ import annotations
 import sys
 import os
+import time
 from typing import Union
 from functools import partial
 import webbrowser
 import multiprocessing
 from time import perf_counter
+from uuid import uuid4
 
+import numpy as np
 from PySide6.QtGui import QAction, QIcon, QBrush
 from PySide6.QtCore import Qt, QEvent
 from PySide6.QtWidgets import (
@@ -24,15 +27,18 @@ from dask.distributed import Client, Future, LocalCluster
 import pyqtgraph as pg
 import hyperspy.api as hs
 import pyxem.data
+from lmfit.lineshapes import pearson4
+from pyqtgraph import GraphicsLayoutWidget
 
 from spyde.misc.dialogs import DatasetSizeDialog, CreateDataDialog, MovieExportDialog
-from spyde.drawing.multiplot import Plot
+from spyde.drawing.plot import Plot
 from spyde.signal_tree import BaseSignalTree
 from spyde.external.pyqtgraph.histogram_widget import (
     HistogramLUTWidget,
     HistogramLUTItem,
 )
 from spyde.workers.plot_update_worker import PlotUpdateWorker
+from spyde.actions.base import NAVIGATOR_DRAG_MIME
 
 COLORMAPS = {
     "gray": pg.colormap.get("CET-L1"),
@@ -102,6 +108,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, app=None):
         super().__init__()
+        self._original_layout = None
         self.btn_reset = None
         self.btn_auto = None
         self.app = app
@@ -110,7 +117,6 @@ class MainWindow(QMainWindow):
 
         self.axes_group = None  # type: Union[QtWidgets.QGroupBox, None]
         self.axes_layout = None  # type: Union[QtWidgets.QVBoxLayout, None]
-
         cpu_count = os.cpu_count()
         print("CPU Count:", cpu_count)
         if cpu_count is None or cpu_count < 4:
@@ -124,7 +130,6 @@ class MainWindow(QMainWindow):
             else:
                 workers = (cpu_count // 4) - 1  # For very large systems, limit workers
                 threads_per_worker = 4
-
         # get screen size and set window size to 3/4 of the screen size
         self.dock_widget = None
         screen = QApplication.primaryScreen()
@@ -231,6 +236,9 @@ class MainWindow(QMainWindow):
 
         self.signal_trees = []  # type: list[BaseSignalTree]
         self.current_selected_signal_tree = None  # type: Union[BaseSignalTree, None]
+        self._pending_navigator_assignment = None
+        self._navigator_drag_payloads: dict[str, dict[str, object]] = {}
+        self._navigator_drag_over_active = False
         with log_startup_time("Plot control dock creation"):
             self.add_plot_control_widget()
 
@@ -262,6 +270,10 @@ class MainWindow(QMainWindow):
         # ensure proper cleanup of worker object
         self._dask_thread.finished.connect(self._dask_worker.deleteLater)
         self._dask_thread.start()
+
+        self.app.aboutToQuit.connect(self._shutdown_dask)
+        self.app.aboutToQuit.connect(self._shutdown_update_thread)
+
 
     @QtCore.Slot(object, object)
     def _on_dask_ready(self, cluster, client):
@@ -784,7 +796,7 @@ class MainWindow(QMainWindow):
     def _active_plot_window(self) -> Union[Plot, None]:
         """Return the currently active QMdiSubWindow (Plot) or None."""
         sub = self.mdi_area.activeSubWindow()
-        return sub if sub is not None else None
+        return sub
 
     def on_contrast_auto_click(self) -> None:
         """
@@ -880,44 +892,437 @@ class MainWindow(QMainWindow):
         """Handle drag/drop events on the MDI area to load supported data files."""
         if obj is self.mdi_area and event is not None:
             et = event.type()
+
+            # Handle navigator drag events only when entering/moving over the active subwindow
+            # on drag start then save the layout
+
             if et in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
-                paths = self._extract_file_paths(event.mimeData())
+                mime = event.mimeData()
+                if mime is not None and mime.hasFormat(NAVIGATOR_DRAG_MIME):
+                    active_sub = self.mdi_area.activeSubWindow()
+                    if active_sub is not None:
+                        try:
+                            pos = event.position().toPoint()
+                        except Exception:
+                            pos = event.pos()
+                        contains = active_sub.geometry().contains(pos)
+                        if contains:
+                            local_x = pos.x() - active_sub.geometry().x()
+                            local_y = pos.y() - active_sub.geometry().y()
+                            if not self._navigator_drag_over_active:
+                                self.navigator_enter()
+                                print(
+                                    f"Navigator drag entered active subwindow at local position: ({local_x}, {local_y})"
+                                )
+                            else:
+                                self.navigator_move(pos=pos)
+                                print(
+                                    f"Navigator drag moving inside active subwindow at local position: ({local_x}, {local_y})"
+                                )
+                            self._navigator_drag_over_active = True
+                            event.acceptProposedAction()
+                            return True
+                        if self._navigator_drag_over_active:
+                            print("Navigator drag over")
+                            self.navigator_leave()
+                            print("Navigator drag left active subwindow")
+                            self._navigator_drag_over_active = False
+                        return False
+                # Fallback: existing file-drag handling (unchanged)
+                paths = self._extract_file_paths(mime)
                 if any(self._is_supported_file(p) for p in paths):
                     event.acceptProposedAction()
                     return True
+
             elif et == QEvent.Type.Drop:
-                paths = self._extract_file_paths(event.mimeData())
-                self._handle_drop_files(paths)
-                event.acceptProposedAction()
-                return True
+                mime = event.mimeData()
+                # Handle navigator drop only if over active subwindow
+                if mime is not None and mime.hasFormat(NAVIGATOR_DRAG_MIME):
+                    active_sub = self.mdi_area.activeSubWindow()
+                    try:
+                        pos = event.position().toPoint()
+                    except Exception:
+                        pos = event.pos()
+                    contains = (
+                        active_sub is not None and active_sub.geometry().contains(pos)
+                    )
+                    if contains:
+                        local_x = pos.x() - active_sub.geometry().x()
+                        local_y = pos.y() - active_sub.geometry().y()
+                        print(
+                            f"Navigator dropped into active subwindow at local position: ({local_x}, {local_y})"
+                        )
+                        self._navigator_drag_over_active = False
+                        self.navigator_drop(pos=pos, mime_data=mime)
+                        event.acceptProposedAction()
+                        return True
+                    if self._navigator_drag_over_active:
+                        print("Navigator drag left active subwindow before drop")
+                        self._navigator_drag_over_active = False
+                    return False
+
+            elif et == QEvent.Type.DragLeave:
+                if self._navigator_drag_over_active:
+                    print("Navigator drag left active subwindow")
+                    self.navigator_leave()
+                    self._navigator_drag_over_active = False
         return super().eventFilter(obj, event)
 
-    def _shutdown_update_thread(self) -> None:
-        worker = getattr(self, "_plot_update_worker", None)
-        thread = getattr(self, "_update_thread", None)
+    def register_navigator_drag_payload(self, signal, nav_manager) -> str:
+        token = uuid4().hex
+        self._navigator_drag_payloads[token] = {
+            "signal": signal,
+            "nav_manager": nav_manager,
+        }
+        return token
 
-        if worker is not None:
-            QtCore.QMetaObject.invokeMethod(
-                worker, "stop", QtCore.Qt.ConnectionType.QueuedConnection
-            )
+    def navigator_enter(self):
+        """
+        Handle navigator drag enter event. Creates a visual placeholder. This is used to show where the
+        navigator plot will be placed.
+        """
+        # Create placeholder
+        placeholder = pg.PlotItem()
+        placeholder.setTitle("Drop Navigator Here", color='#888888')
+        placeholder.hideAxis('left')
+        placeholder.hideAxis('bottom')
 
-        if thread is not None and thread.isRunning():
-            thread.quit()
-            thread.wait(2000)
+        rect = pg.QtWidgets.QGraphicsRectItem()
+        rect.setBrush(pg.mkBrush((100, 100, 255, 100)))
+        rect.setPen(pg.mkPen((100, 100, 255), width=2))
+        placeholder.addItem(rect)
 
-    def close(self) -> None:
-        self._shutdown_update_thread()
+        self._navigator_placeholder = placeholder
+        self._navigator_placeholder_rect = rect
+        current_plot = self._active_plot_window()
+
+    def build_new_layout(self,
+                         active_plot,
+                         drop_pos,
+                         plot_to_add):
+        new_pos, zone = self.arrange_graphics_layout_preview(active_plot.previous_subplots_pos,
+                                                             active_plot.previous_graphics_layout_widget,
+                                                             drop_pos)
+
+        # build a new layout based on previous layout and the new position
+        # new_layout_dictionary = active_plot.previous_subplots_pos.copy()
+        new_layout_dictionary = {}
+        if new_pos is not None:
+            # reset to the previous layout
+            col, row = new_pos
+
+            # cycle though all the items and shift them if needed
+
+            # old: [0,0]  pos[0], pos[1]
+            # new: [1,0] col, row
+
+            for plot, position in active_plot.previous_subplots_pos.items():
+                # Columns should add to the right.
+                prev_pos = position[0]  # this is a list of (col, row) positions
+                # rows should shift that column down
+                if col == prev_pos[1] and row <= prev_pos[0] and zone in ('top', 'bottom'):
+                    new_layout_dictionary[plot] = (prev_pos[0] + 1, prev_pos[1])
+                # columns to the right should shift right
+                elif col <= prev_pos[1] and zone in ('left', 'right'):
+                    new_layout_dictionary[plot] = (prev_pos[0], prev_pos[1] + 1)
+                # columns to the right/bottom should stay the same
+                else:
+                    new_layout_dictionary[plot] = (prev_pos[0], prev_pos[1])
+            # add the placeholder at the new position
+            new_layout_dictionary[plot_to_add] = (new_pos[1], new_pos[0])
+
+            active_plot.set_graphics_layout_widget(new_layout_dictionary)
+
+    def navigator_move(self, pos: QtCore.QPointF):
+        """
+        Handle navigator drag move event. Just repositions the placeholder without clearing/redrawing
+        the entire layout.
+
+        This is more efficient than recreating the layout each time but more complicated...
+        """
+        active_plot = self._active_plot_window()
+        if active_plot is None or not hasattr(self, '_navigator_placeholder'):
+            return
+        # Calculate new position
+        self.build_new_layout(active_plot, drop_pos=pos, plot_to_add=self._navigator_placeholder)
+
+        if hasattr(self, '_navigator_placeholder_rect'):
+            vb = self._navigator_placeholder.getViewBox()
+            self._navigator_placeholder_rect.setRect(vb.rect())
+
+
+    def arrange_graphics_layout_preview(self,
+                                        graphics_layout_dict: dict,
+                                        graphics_layout: GraphicsLayoutWidget,
+                                        drop_pos: QtCore.QPointF):
+        """
+        Calculate where to place a new plot without modifying the layout.
+        Returns (row, col) tuple.
+
+        Parameters
+        ----------
+        graphics_layout_dict : dict
+            Current layout as a dictionary mapping plots to (col, row) positions.
+        graphics_layout : GraphicsLayoutWidget
+            The graphics layout widget.
+        drop_pos : QtCore.QPointF
+            The position where the navigator is being dropped.
+        """
+        # Get existing plot positions (excluding placeholder)
+        col_inds = []
+        row_inds = []
+        for plot, position in graphics_layout_dict.items():
+            if isinstance(position, list):
+                position = position[0]
+            col_inds.append(position[1])
+            row_inds.append(position[0])
+        max_col = max(col_inds) + 1 if col_inds else 1
+        max_row = max(row_inds) + 1 if row_inds else 1
+        print("MaxCol:",max_col," MaxRow:", max_row)
+        # Get drop position
+        x_pos = drop_pos.x() if hasattr(drop_pos, 'x') else drop_pos[0]
+        y_pos = drop_pos.y() if hasattr(drop_pos, 'y') else drop_pos[1]
+
+        layout_width = graphics_layout.width()
+        layout_height = graphics_layout.height()
+
+        cell_width = layout_width / max_col
+        cell_height = layout_height / max_row
+
+        drop_col = min(int(x_pos / cell_width), max_col)
+        drop_row = min(int(y_pos / cell_height), max_row)
+
+        cell_x = x_pos - (drop_col * cell_width)
+        cell_y = y_pos - (drop_row * cell_height)
+
+        norm_x = cell_x / cell_width
+        norm_y = cell_y / cell_height
+
+        print("NormX:",norm_x," NormY:", norm_y,  " CellX", drop_col, " CellY:", drop_row,)
+        # split cell into zones in an x
+        angle = np.arctan2(norm_y - 0.5, norm_x - 0.5)  # -pi to pi
+
+        if angle >= -3*np.pi/4 and angle < -np.pi/4:
+            zone = 'top'
+        elif angle >= -np.pi/4 and angle < np.pi/4:
+            zone = 'right'
+        elif angle >= np.pi/4 and angle < 3*np.pi/4:
+            zone = 'bottom'
+        else:
+            zone = 'left'
+
+        # Calculate target position
+        new_pos = None
+        if zone == 'top' or zone =="left":
+            new_pos = (drop_col, drop_row )
+        elif zone == 'bottom':
+            new_pos = (drop_col, drop_row+1)
+        else: # zone == 'right':
+            new_pos = (drop_col+ 1, drop_row)
+        print("zone:", zone, " new pos:", new_pos)
+        return new_pos, zone
+
+    def navigator_leave(self):
+        """
+        Handle navigator drag leave event. Removes the placeholder and
+        restores the original layout.
+        """
+        active_plot = self._active_plot_window()
+        print("Setting back original layout:", active_plot.previous_subplots_pos)
+        active_plot.set_graphics_layout_widget(active_plot.previous_subplots_pos)
+
+    def navigator_drop(self, pos: QtCore.QPointF, mime_data):
+        """
+        Handle navigator drop event. Creates the actual navigator plot
+        at the drop position.
+        """
+        active_plot = self._active_plot_window()
+        nav_plot = pg.PlotItem()
+        if active_plot is None:
+            return
+
+        # Extract navigator data from mime
+        token = mime_data.data(NAVIGATOR_DRAG_MIME).data().decode('utf-8')
+        payload = self._navigator_drag_payloads.pop(token, None)
+        if payload is None:
+            return
+
+        signal = payload['signal'] # type: hs.signals.BaseSignal
+
+        self.build_new_layout(active_plot=active_plot,
+                              drop_pos=pos,
+                              plot_to_add=nav_plot)
+
+        nav_plot.setTitle(signal.metadata.General.title)
+
+        # Add the navigator image/data to the plot
+        # This will depend on your navigator implementation
+        # Example:
+        img = pg.ImageItem()
+        nav_plot.addItem(img)
+        img.setImage(signal.data)
+        nav_plot.setAspectLocked(True, ratio=1)
+        # Clean up
+        self._original_layout_state = {}
+        active_plot.previous_subplots_pos = {}
+        active_plot.previous_subplot_added = None
+        self._original_layout = None
+
+    def arrange_graphics_layout(self, graphics_layout: GraphicsLayoutWidget, drop_pos):
+        """
+        Rearrange plots in the graphics layout based on drop position.
+        Balances the grid by avoiding unnecessary new rows.
+
+        Parameters
+        ----------
+        graphics_layout : GraphicsLayoutWidget
+            The graphics layout widget containing the plots.
+        drop_pos : tuple or QPointF
+            The position where a new plot will be added (x, y).
+
+        Returns
+        -------
+        tuple
+            (row, col) position where the new plot should be added.
+        """
+        # Get all existing plots with their positions
+        existing_plots = {}  # {(row, col): item}
+        max_row, max_col = 0, 0
+
+        for row in range(graphics_layout.ci.layout.rowCount()):
+            for col in range(graphics_layout.ci.layout.columnCount()):
+                item = graphics_layout.ci.layout.itemAt(row, col)
+                if item is not None:
+                    existing_plots[(row, col)] = item
+                    max_row = max(max_row, row)
+                    max_col = max(max_col, col)
+
+        if not existing_plots:
+            return (0, 0)
+
+        # Get drop position coordinates
         try:
-            self.client.shutdown()
-        except Exception:
-            pass
-        super().close()
+            x_pos = drop_pos.x() if hasattr(drop_pos, 'x') else drop_pos[0]
+            y_pos = drop_pos.y() if hasattr(drop_pos, 'y') else drop_pos[1]
+        except (TypeError, IndexError):
+            x_pos = graphics_layout.width() / 2
+            y_pos = graphics_layout.height() / 2
 
+        # Calculate which plot cell was dropped on
+        layout_width = graphics_layout.width()
+        layout_height = graphics_layout.height()
+
+        cell_width = layout_width / (max_col + 1)
+        cell_height = layout_height / (max_row + 1)
+
+        drop_col = min(int(x_pos / cell_width), max_col)
+        drop_row = min(int(y_pos / cell_height), max_row)
+
+        # Determine zone within the cell
+        cell_x = x_pos - (drop_col * cell_width)
+        cell_y = y_pos - (drop_row * cell_height)
+
+        norm_x = cell_x / cell_width
+        norm_y = cell_y / cell_height
+
+        if norm_y < 0.3:
+            zone = 'top'
+        elif norm_y > 0.7:
+            zone = 'bottom'
+        elif norm_x < 0.3:
+            zone = 'left'
+        elif norm_x > 0.7:
+            zone = 'right'
+        else:
+            zone = 'bottom'
+
+        # Calculate column heights to find if we need a new row
+        col_heights = {}  # {col: max_row_in_col}
+        for (r, c) in existing_plots.keys():
+            col_heights[c] = max(col_heights.get(c, -1), r)
+
+        graphics_layout.clear()
+
+        if zone == 'top':
+            # Check if we can add to an existing row instead of creating a new one
+            target_col_height = col_heights.get(drop_col, -1)
+            min_col_height = min(col_heights.values()) if col_heights else 0
+
+            if target_col_height > min_col_height:
+                # This column is taller, so just add to the shortest available row
+                new_plot_position = (min_col_height + 1, drop_col)
+                for (old_row, old_col), item in existing_plots.items():
+                    graphics_layout.addItem(item, row=old_row, col=old_col)
+            else:
+                # Need to insert a new row
+                for (old_row, old_col), item in existing_plots.items():
+                    if old_row < drop_row:
+                        graphics_layout.addItem(item, row=old_row, col=old_col)
+                    else:
+                        graphics_layout.addItem(item, row=old_row + 1, col=old_col)
+                new_plot_position = (drop_row, drop_col)
+
+        elif zone == 'bottom':
+            target_col_height = col_heights.get(drop_col, -1)
+            max_col_height = max(col_heights.values()) if col_heights else 0
+
+            if target_col_height < max_col_height:
+                # This column is shorter, add to its next row
+                new_plot_position = (target_col_height + 1, drop_col)
+                for (old_row, old_col), item in existing_plots.items():
+                    graphics_layout.addItem(item, row=old_row, col=old_col)
+            else:
+                # Add new row below
+                for (old_row, old_col), item in existing_plots.items():
+                    if old_row <= drop_row:
+                        graphics_layout.addItem(item, row=old_row, col=old_col)
+                    else:
+                        graphics_layout.addItem(item, row=old_row + 1, col=old_col)
+                new_plot_position = (drop_row + 1, drop_col)
+
+        elif zone == 'left':
+            for (old_row, old_col), item in existing_plots.items():
+                if old_col < drop_col:
+                    graphics_layout.addItem(item, row=old_row, col=old_col)
+                else:
+                    graphics_layout.addItem(item, row=old_row, col=old_col + 1)
+            new_plot_position = (drop_row, drop_col)
+
+        else: # zone == 'right':
+            for (old_row, old_col), item in existing_plots.items():
+                if old_col <= drop_col:
+                    graphics_layout.addItem(item, row=old_row, col=old_col)
+                else:
+                    graphics_layout.addItem(item, row=old_row, col=old_col + 1)
+            new_plot_position = (drop_row, drop_col + 1)
+
+        return new_plot_position
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        # 1) shutdown Dask to stop its background threads and logging
+        self._shutdown_dask()
+        # 2) stop any QThreads we own
+        self._shutdown_update_thread()
+        super().closeEvent(event)
 
     def _shutdown_dask(self) -> None:
-        """Silence distributed logs and close client/cluster synchronously."""
+        """Robust shutdown for Dask used during application quit.
+
+        - Silence distributed logging.
+        - Scale cluster to 0, close cluster, then close client.
+        - Wait briefly to let processes exit, then attempt to terminate
+          any multiprocessing children started from this process.
+        - Must be called on the main thread before QApplication teardown.
+        """
+        import logging
+        import time
+        import multiprocessing as mp
+        import gc
+
+        print("Shutting down Dask cluster and client...")
+
+        # Silence distributed logs to avoid I/O errors during teardown
         try:
-            # prevent 'I/O operation on closed file' during teardown logging
             for name in ("distributed", "distributed.comm", "distributed.comm.tcp"):
                 lg = logging.getLogger(name)
                 lg.setLevel(logging.CRITICAL)
@@ -930,23 +1335,76 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-        # Close client first, then cluster
+        # Close client first if present (client talks to cluster)
         try:
-            if getattr(self, "client", None):
-                self.client.close(timeout="2s")
+            client = getattr(self, "client", None)
+            if client is not None:
+                try:
+                    client.close(timeout="2s")
+                except TypeError:
+                    # older/newer API may expect numeric timeout
+                    try:
+                        client.close(timeout=2)
+                    except Exception:
+                        client.close()
+                except Exception:
+                    # fallback to best-effort close
+                    try:
+                        client.close()
+                    except Exception:
+                        pass
+                finally:
+                    self.client = None
         except Exception:
-            pass
-        finally:
             self.client = None
 
+        # Then scale down and close the cluster
         try:
-            if getattr(self, "cluster", None):
-                # LocalCluster.close is sync when created from sync context
-                self.cluster.close(timeout="2s")
+            cluster = getattr(self, "cluster", None)
+            if cluster is not None:
+                try:
+                    # try a graceful scale-down first
+                    try:
+                        cluster.scale(0)
+                    except Exception:
+                        pass
+                    # close the cluster (synchronous)
+                    try:
+                        cluster.close(timeout="2s")
+                    except TypeError:
+                        cluster.close(timeout=2)
+                    except Exception:
+                        cluster.close()
+                except Exception:
+                    pass
+                finally:
+                    self.cluster = None
+        except Exception:
+            self.cluster = None
+
+        # Give OS a moment to reap processes and release semaphores
+        time.sleep(0.5)
+
+        # Attempt to clean up multiprocessing children started by this process
+        try:
+            for child in mp.active_children():
+                print("Terminating leftover child process:", child.pid)
+                try:
+                    child.terminate()
+                    child.join(timeout=0.5)
+                except Exception:
+                    try:
+                        child.kill()
+                    except Exception:
+                        pass
         except Exception:
             pass
-        finally:
-            self.cluster = None
+
+        # Force garbage collection (helps resource_tracker cleanup)
+        try:
+            gc.collect()
+        except Exception:
+            pass
 
     def _shutdown_update_thread(self) -> None:
         worker = getattr(self, "_plot_update_worker", None)
@@ -956,7 +1414,6 @@ class MainWindow(QMainWindow):
             QtCore.QMetaObject.invokeMethod(
                 worker, "stop", QtCore.Qt.ConnectionType.QueuedConnection
             )
-
         if thread is not None and thread.isRunning():
             thread.quit()
             thread.wait(2000)
@@ -967,12 +1424,14 @@ class MainWindow(QMainWindow):
             dthread.quit()
             dthread.wait(2000)
 
-    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
-        # 1) shutdown Dask to stop its background threads and logging
-        self._shutdown_dask()
-        # 2) stop any QThreads we own
+    def close(self) -> None:
         self._shutdown_update_thread()
-        super().closeEvent(event)
+        try:
+            self.client.shutdown()
+        except Exception:
+            pass
+        super().close()
+
 
 def main() -> MainWindow:
     with log_startup_time("QApplication startup"):

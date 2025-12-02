@@ -5,9 +5,10 @@ if TYPE_CHECKING:
 from spyde.drawing.toolbars.floating_button_trees import RoundedButton, ButtonTree
 from spyde.drawing.toolbars.caret_group import CaretGroup
 
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtCore, QtGui
 
 ZOOM_STEP = 0.8
+NAVIGATOR_DRAG_MIME = "application/x-spyde-navigator"
 
 
 def zoom_in(toolbar: "RoundedToolBar", *args, **kwargs):
@@ -74,6 +75,75 @@ def add_fft_selector(toolbar: "RoundedToolBar", *args, **kwargs):
     toolbar.plot.add_fft_selector()
 
 
+class NavigatorButton(RoundedButton):
+    """Rounded button that supports click-to-select and drag-to-create behavior."""
+
+    def __init__(self, label: str, signal, toolbar: "RoundedToolBar"):
+        super().__init__(text=label, parent=toolbar)
+        self.signal = signal
+        self.toolbar = toolbar
+        self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._drag_origin = QtCore.QPointF()
+        self._allow_click = False
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        current_plot = self.toolbar.plot
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self._drag_origin = event.position()
+            self._allow_click = True
+            print("Saving current plot state for navigator drag...")
+            current_plot.previous_subplots_pos = current_plot.plot_widget.ci.items.copy() # shallow copy
+            print(current_plot.plot_widget.ci.items)
+            current_plot.previous_graphics_layout_widget = current_plot.plot_widget
+
+        # on enter, save the current layout
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        if (
+            self._allow_click
+            and event.buttons() & QtCore.Qt.MouseButton.LeftButton
+        ):
+            delta = event.position() - self._drag_origin
+            if (
+                abs(delta.x()) + abs(delta.y())
+                >= QtWidgets.QApplication.startDragDistance()
+            ):
+                self._allow_click = False
+                self._start_drag()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self._allow_click and event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self._allow_click = False
+            mw = self.toolbar.plot.main_window
+            active_plot = mw._active_plot_window()
+            if active_plot is not self.toolbar.plot:
+                mw.statusBar().showMessage(
+                    "Activate this plot before assigning a navigator", 4000
+                )
+                super().mouseReleaseEvent(event)
+                return
+            mw.set_pending_navigator_assignment(
+                self.signal,
+                self.toolbar.plot.nav_plot_manager,
+                target_plot=active_plot,
+            )
+        super().mouseReleaseEvent(event)
+
+    def _start_drag(self) -> None:
+        mw = self.toolbar.plot.main_window
+        token = mw.register_navigator_drag_payload(
+            self.signal, self.toolbar.plot.nav_plot_manager
+        )
+        drag = QtGui.QDrag(self)
+        mime = QtCore.QMimeData()
+        mime.setData(NAVIGATOR_DRAG_MIME, token.encode("utf-8"))
+        drag.setMimeData(mime)
+        drag.setPixmap(self.grab())
+        drag.exec(QtCore.Qt.DropAction.CopyAction)
+
+
 def toggle_navigation_plots(
     toolbar: "RoundedToolBar", action_name="", toggle=None, *args, **kwargs
 ):
@@ -89,12 +159,12 @@ def toggle_navigation_plots(
     if toolbar.plot.nav_plot_manager is None:
         raise RuntimeError("Plot does not have a navigation plot manager.")
 
-    signal_options = toolbar.plot.nav_plot_manager.navigation_signals.keys()
+    signal_options = toolbar.plot.nav_plot_manager.navigation_signals
 
-    if (
-        action_name not in toolbar.action_widgets
-        or toolbar.action_widgets[action_name].get("widget", None) is None
-    ):
+    first_init = (action_name not in toolbar.action_widgets or
+                  toolbar.action_widgets[action_name].get("widget", None) is None)
+
+    if first_init:
         group = CaretGroup(
             title="", toolbar=toolbar, action_name=action_name, auto_attach=True
         )
@@ -114,14 +184,9 @@ def toggle_navigation_plots(
         if isinstance(w, RoundedButton):
             current_buttons[w.text()] = w
 
-    for signal_name in signal_options:
+    for signal_name, signal in signal_options.items():
         if signal_name not in current_buttons:
-            button = RoundedButton(text=signal_name, parent=group)
-            button.clicked.connect(
-                lambda _, sn=signal_name: toolbar.plot.nav_plot_manager.set_navigation_manager_state(
-                    sn
-                )
-            )
+            button = NavigatorButton(signal_name, signal, toolbar)
             layout.addWidget(button)
             current_buttons[signal_name] = button
 
@@ -131,21 +196,19 @@ def toggle_navigation_plots(
             layout.removeWidget(btn_widget)
             btn_widget.setParent(None)
 
-    # add final button for adding a new navigation plot using a system dialog
-    # add_button_name = "+ Add Plot"
-    # if add_button_name not in current_buttons:
-    #    add_button = RoundedButton(text=add_button_name, parent=group)
-    #    add_button.clicked.connect(lambda _: toolbar.plot.nav_plot_manager.add_navigation_plot_via_dialog())
-    #    layout.addWidget(add_button)
-    #    current_buttons[add_button_name] = add_button
-
     if toolbar.action_widgets.get(action_name, None) is None:
         print(f"Adding toolbar action widget: {action_name}")
         toolbar.add_action_widget(action_name, group, layout)
 
-    if toggle is not None:
-        group.setVisible(toggle)
-
+    if first_init:
+        navigator_action = None
+        for action in toolbar.actions():
+            print("Action text:", action.text())
+            if action.text() == "Select Navigator":
+                navigator_action = action
+        if navigator_action is not None:
+            # Simulate clicking the "Select Navigator" action
+            navigator_action.trigger()
 
 def rebin2d(toolbar: "RoundedToolBar", scale_x: int, scale_y: int, *args, **kwargs):
     """

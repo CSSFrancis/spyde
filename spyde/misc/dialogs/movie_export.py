@@ -32,7 +32,7 @@ from spyde.misc.utils import get_nice_length
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from spyde.drawing.multiplot import Plot
+    from spyde.drawing.plot import Plot
 
 import pyqtgraph as pg
 

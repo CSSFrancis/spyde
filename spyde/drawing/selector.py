@@ -11,7 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Union, List
 
 if TYPE_CHECKING:
-    from spyde.drawing.multiplot import Plot, NavigationPlotManager
+    from spyde.drawing.plot import Plot, NavigationPlotManager
 
 Logger = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from spyde.drawing.plot_states import PlotState
     from spyde.main_window import MainWindow
 
-from spyde.drawing.multiplot import NavigationPlotManager, Plot
+from spyde.drawing.plot import NavigationPlotManager, Plot
 from spyde.external.qt.labels import EditableLabel
 from spyde import METADATA_WIDGET_CONFIG
 

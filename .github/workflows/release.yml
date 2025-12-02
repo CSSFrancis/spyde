@@ -53,7 +53,7 @@ jobs:
           pip install . pyinstaller
 
       - name: Build with PyInstaller
-        run: pyinstaller --noconfirm --name spyde main_window.py
+        run:  pyinstaller --noconfirm --name  spyde spyde/__main__.py 
 
       - name: Smoke test (Linux/macOS)
         if: runner.os != 'Windows'

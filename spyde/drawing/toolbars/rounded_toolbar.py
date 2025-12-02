@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 
 if TYPE_CHECKING:
-    from spyde.drawing.multiplot import Plot
+    from spyde.drawing.plot import Plot
     from spyde.drawing.plot_states import PlotState
     from spyde.drawing.toolbars.caret_group import CaretParams
 

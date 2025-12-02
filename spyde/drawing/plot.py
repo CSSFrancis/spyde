@@ -17,8 +17,6 @@ if TYPE_CHECKING:
 from hyperspy.signal import BaseSignal
 
 from spyde.drawing.plot_states import PlotState, NavigationManagerState
-from spyde.drawing.toolbars.plot_control_toolbar import get_toolbar_actions_for_plot
-from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
 from spyde.drawing.update_functions import update_from_navigation_selection
 from spyde.qt.subwindow import FramelessSubWindow
 
@@ -52,6 +50,9 @@ class Plot(FramelessSubWindow):
         `compute_data` method for the SignalTreeSelector is called.
 
 
+    Each plot has the ability to be multiplexed as well. When a plot is multiplexed the plot_state
+    is a list.  This uses the pyqtgraph `items` layout which matches an item to a (row, col) position.
+
 
     Parameters
     ----------
@@ -81,6 +82,9 @@ class Plot(FramelessSubWindow):
         QtCore.QTimer.singleShot(0, self._attach_mouse_move)
         self.needs_auto_level = True
 
+        self.previous_subplots_pos = dict()  # type: dict[pg.PlotItem:tuple[int, int]]
+        self.previous_graphics_layout_widget = None # type: pg.GraphicsLayoutWidget | None
+
         # State
         # -----
         # managing the current state of the plot. Including child plots and (non-navigation) selectors
@@ -94,22 +98,21 @@ class Plot(FramelessSubWindow):
         # the current data being displayed in the plot
         self.current_data = None  # type: Union[np.ndarray, da.Array, Future, None]
 
-        # Container and plot widget
+        self.nav_plot_manager = nav_plot_manager  # type: NavigationPlotManager | None
+
         self.container = QtWidgets.QWidget()  # type: QtWidgets.QWidget
         container_layout = QtWidgets.QVBoxLayout(self.container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
 
-        # set up the plot widget with pyqtgraph
-        self.plot_widget = pg.PlotWidget(self.container)  # type: pg.PlotWidget
+        # Always use a graphics layout for consistency
+        # This allows us to add multiple plots if necessary
+        self.plot_widget = pg.GraphicsLayoutWidget(self.container)
+        self.plot_item = self.plot_widget.addPlot()  # type: pg.PlotItem
         container_layout.addWidget(self.plot_widget)
-        self.plot_item = self.plot_widget.getPlotItem()  # type: pg.PlotItem
-
         self.image_item = pg.ImageItem()  # type: pg.ImageItem
         self.line_item = pg.PlotDataItem()  # type: pg.PlotDataItem
-        self.nav_plot_manager = nav_plot_manager  # type: NavigationPlotManager | None
 
-        # Attach the container to the QMdiSubWindow so content is visible
         self.setWidget(self.container)
         self.plot_item.getViewBox().setAspectLocked(
             True, ratio=1
@@ -131,6 +134,42 @@ class Plot(FramelessSubWindow):
         cmap = COLORMAPS.get(colormap, COLORMAPS["gray"])
         self.image_item.setColorMap(cmap)
         self.plot_state.colormap = colormap
+
+    def set_graphics_layout_widget(self, layout_dictionary:dict):
+        """
+        Set the graphics layout widget based on a layout dictionary. This will compare the current
+        layout with the layout dictionary and rearrange the subplots accordingly.
+
+        This is mostly used for restoring saved layouts.
+        """
+        # first remove any subplots that are not in the layout dictionary or are in the wrong position
+
+        print("The items", self.plot_widget.ci.items, " layout dict:", layout_dictionary)
+
+        # only clear if there are changes
+        needs_update = False
+        for plot_item, pos in self.plot_widget.ci.items.items():
+            if isinstance(pos, list):
+                pos = pos[0]
+            if plot_item not in layout_dictionary or layout_dictionary[plot_item] != pos:
+                needs_update = True
+
+        for plot_item in layout_dictionary:
+            if plot_item not in self.plot_widget.ci.items:
+                needs_update = True
+
+        if needs_update:
+            print("Old layout:", self.plot_widget.ci.items, "New layout:", layout_dictionary)
+            try:
+                self.plot_widget.clear() # clear all items first
+            except ValueError as e:
+                print("Error clearing plot widget:", e)
+                print("Continuing...")
+            for plot_item, pos in layout_dictionary.items():
+                if isinstance(pos, list):
+                    pos = pos[0]
+                self.plot_widget.addItem(plot_item, pos[0], pos[1])
+
 
     def enable_scale_bar(self, enabled: bool = True):
         """Enable or disable an auto-updating horizontal scale bar."""
@@ -611,6 +650,22 @@ class Plot(FramelessSubWindow):
         logger.info("MultiPlot: Calling CloseEvent of super class")
         super().closeEvent(event)
         logger.info("MultiPlot: Plot closed.")
+
+    def _apply_pending_navigator_assignment(self) -> bool:
+        """Replace this plot with the queued navigator signal, if any."""
+        mw = getattr(self, "main_window", None)
+        payload = getattr(mw, "pending_navigator_assignment", None)
+        if not payload or payload.get("target_plot") is not self:
+            return False
+        nav_manager = payload.get("nav_manager")
+        signal = payload.get("signal")
+
+        # clear any existing pending assignment
+        mw.clear_pending_navigator_assignment()
+        self.set_plot_state(signal)
+        mw.statusBar().showMessage("Plot replaced", 2500)
+        return True
+
 
 
 class NavigationPlotManager:

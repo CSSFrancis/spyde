@@ -2,7 +2,7 @@
 # appropriate resources are released.
 import pytest
 
-from spyde.drawing.multiplot import Plot
+from spyde.drawing.plot import Plot
 from typing import Tuple
 
 

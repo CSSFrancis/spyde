@@ -2,7 +2,7 @@ import pytest
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtTest import QTest
 import numpy as np
-from spyde.main_window import MainWindow
+from spyde.__main__ import MainWindow
 
 
 def _find_menu_action(menu_or_bar, action_name: str):

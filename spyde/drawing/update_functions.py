@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from spyde.drawing.selector import BaseSelector
-    from spyde.drawing.multiplot import Plot
+    from spyde.drawing.plot import Plot
 
 
 def update_from_navigation_selection(
