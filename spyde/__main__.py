@@ -31,7 +31,7 @@ from lmfit.lineshapes import pearson4
 from pyqtgraph import GraphicsLayoutWidget
 
 from spyde.misc.dialogs import DatasetSizeDialog, CreateDataDialog, MovieExportDialog
-from spyde.drawing.plot import Plot
+from spyde.drawing.plot import Plot, PlotWindow
 from spyde.signal_tree import BaseSignalTree
 from spyde.external.pyqtgraph.histogram_widget import (
     HistogramLUTWidget,
@@ -150,7 +150,7 @@ class MainWindow(QMainWindow):
         self.mdi_area.setBackground(QBrush(QColor("#0d0d0d")))
         self.setCentralWidget(self.mdi_area)
 
-        self.plot_subwindows = []  # type: list[Plot]
+        self.plot_subwindows = []  # type: list[PlotWindow]
 
         self.mdi_area.subWindowActivated.connect(self.on_subwindow_activated)
         self.create_menu()
@@ -311,11 +311,12 @@ class MainWindow(QMainWindow):
 
     def update_plots_loop(self) -> None:
         """Poll plot futures on the GUI thread and apply finished results."""
-        for p in self.plot_subwindows:
-            if isinstance(p.current_data, Future) and p.current_data.done():
-                print("Updating Plot in loop...")
-                p.current_data = p.current_data.result()
-                p.update()
+        for plot_window in self.plot_subwindows:
+            for p in plot_window.plots:
+                if isinstance(p.current_data, Future) and p.current_data.done():
+                    print("Updating Plot in loop...")
+                    p.current_data = p.current_data.result()
+                    p.update()
 
     @QtCore.Slot(object, object)
     def on_plot_future_ready(self, plot: Plot, result: object) -> None:
@@ -510,7 +511,9 @@ class MainWindow(QMainWindow):
         self.add_signal(signal)
         print("Example data loaded:", name)
 
-    def add_plot(self, plot: Plot) -> None:
+    def add_plot_window(self, plot_window: PlotWindow) -> None:
+
+    def add_plot(self, plot: PlotWindow) -> None:
         """Add a plot to the MDI area.
 
         Parameters
@@ -533,6 +536,8 @@ class MainWindow(QMainWindow):
         plot.show()
         self.plot_subwindows.append(plot)
         plot.mdi_area = self.mdi_area
+        # set the main window reference in the plot
+        plot.main_window = self
         return
 
     def update_metadata_widget(self, window) -> None:
@@ -649,7 +654,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "cursor_readout") and self.cursor_readout is not None:
             self.cursor_readout.setText(txt)
 
-    def on_subwindow_activated(self, window: "Plot") -> None:
+    def on_subwindow_activated(self, window: "PlotWindow") -> None:
         """MDI activation handler: update toolbars, metadata, histogram binding, and colormap selector."""
         if window is None:
             return
@@ -669,8 +674,8 @@ class MainWindow(QMainWindow):
         for plot in self.plot_subwindows:
             if plot is window:
                 continue
-            if hasattr(plot.plot_state, "hide_toolbars"):
-                plot.plot_state.hide_toolbars()
+            if hasattr(plot.current_plot_item.plot_state, "hide_toolbars"):
+                plot.current_plot_item.plot_state.hide_toolbars()
             if hasattr(plot, "hide_selector_control_widget"):
                 plot.hide_selector_control_widget()
 

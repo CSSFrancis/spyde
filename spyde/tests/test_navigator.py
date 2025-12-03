@@ -239,6 +239,50 @@ class TestNavigatorMultiplex:
         # after leaving, the preview should be removed
         assert len(nav.plot_widget.ci.items)  == 1
 
+    def test_navigator_drop_3d(self, qtbot, insitu_tem_2d_dataset,monkeypatch):
+        win = insitu_tem_2d_dataset["window"]
+        nav, sig = insitu_tem_2d_dataset["subwindows"]
+
+        toolbar = nav.plot_state.toolbar_right
+        win.mdi_area.activatePreviousSubWindow()
+        qtbot.wait(200)
+
+        navigator_action = next(
+            action for action in toolbar.actions() if action.text() == "Select Navigator"
+        )
+        navigator_action.trigger()
+        qtbot.wait(200)
+
+        button_widget = toolbar.action_widgets["Select Navigator"]["widget"]
+        first_button = next(
+            child for child in button_widget.children() if isinstance(child, NavigatorButton)
+        )
+
+        drop_pos = nav.plot_item.mapToScene(nav.plot_item.boundingRect().center())
+        initial_item_count = len(nav.plot_widget.ci.items)
+
+        def fake_start_drag(btn: NavigatorButton):
+            mw = btn.toolbar.plot.main_window
+            token = mw.register_navigator_drag_payload(
+                btn.signal, btn.toolbar.plot.nav_plot_manager
+            )
+            mime = QtCore.QMimeData()
+            mime.setData(NAVIGATOR_DRAG_MIME, token.encode("utf-8"))
+            mw.navigator_enter()
+            mw._navigator_drag_over_active = True
+            mw.navigator_drop(drop_pos, mime)
+            mw._navigator_drag_over_active = False
+
+        monkeypatch.setattr(NavigatorButton, "_start_drag", fake_start_drag)
+
+        center = first_button.rect().center()
+        qtbot.mousePress(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
+        qtbot.mouseMove(first_button, QtCore.QPoint(center.x() + 50, center.y()))
+        qtbot.mouseRelease(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
+        # there should be two plots now stacked in one column
+
+        assert len(nav.plot_widget.ci.items)  == 2
+
 
 
 

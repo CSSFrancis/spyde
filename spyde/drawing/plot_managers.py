@@ -17,7 +17,10 @@ Images.
 """
 
 from typing import TYPE_CHECKING, List, Union
-from spyde.drawing.plot import Plot
+
+from hyperspy.signal import BaseSignal
+
+from spyde.drawing.plot import Plot, PlotWindow
 from spyde.drawing.plot_states import PlotState
 from spyde.drawing.update_functions import update_from_navigation_selection
 
@@ -75,7 +78,7 @@ class NavigationPlotManager:
 
     def __init__(self, main_window: "MainWindow", signal_tree: "BaseSignalTree"):
         self.main_window = main_window  # type: MainWindow
-        self.plots = []  # type: List[Plot]
+        self.plots = []  # type: List[PlotWindow]
 
         self.navigation_selectors = []  # type: List[BaseSelector]
         self.signal_tree = signal_tree  # type: BaseSignalTree
@@ -90,12 +93,18 @@ class NavigationPlotManager:
                 "NavigationPlotManager requires at least 1 navigation dimension."
             )
         elif self.nav_dim < 3:
+            # create the navigation plot
+            plot_window = PlotWindow(is_navigator=True,
+                                     plot_manager=self,
+                                     signal_tree=self.signal_tree,
+                                     main_window=self.main_window)
             nav_plot = Plot(
                 signal_tree=self.signal_tree,
                 is_navigator=True,
                 nav_plot_manager=self,
             )
-            self.plots.append(nav_plot)
+            plot_window.plot_widget.addItem(nav_plot)
+            self.plots.append(plot_window)
             # create plot states for the nav plot
         for signal in self.signal_tree.navigator_signals.values():
             self.add_state(signal)
@@ -191,7 +200,7 @@ class NavigationPlotManager:
                 is_navigator=False,
             )
             # create plot states for the child plot
-            child.plot_states = self.signal_tree.create_plot_states(plot=child)
+            self.signal_tree.create_plot_states(plot=child)
 
             logger.info("Added Child plot states: ", child.plot_states)
             selector = selector_type(

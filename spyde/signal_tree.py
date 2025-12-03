@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, Union, List
 
 if TYPE_CHECKING:
     from spyde.drawing.plot_states import PlotState
-    from spyde.main_window import MainWindow
+    from spyde.__main__ import MainWindow
 
-from spyde.drawing.plot import NavigationPlotManager, Plot
+from spyde.drawing.plot import Plot, PlotWindow
+from spyde.drawing.plot import NavigationPlotManager
 from spyde.external.qt.labels import EditableLabel
 from spyde import METADATA_WIDGET_CONFIG
 
@@ -104,28 +105,43 @@ class BaseSignalTree:
 
         self.navigator_plot_manager = None  # type: Union[NavigationPlotManager, None]
         # setting up plots
+
+        self._initialize_initial_plots()
+        print("Created Signal Tree with root signal: ", self.root)
+
+
+    def _initialize_initial_plots(self):
+        """
+        Initialize the initial plots based on the root signal.
+        """
         if (
             self.root.axes_manager.navigation_dimension > 0
         ):  # pass to NavigationPlotManager
             self.navigator_plot_manager = NavigationPlotManager(
-                main_window=main_window, signal_tree=self
+                main_window=self.main_window, signal_tree=self
             )
         else:
             self.navigator_plot_manager = None
+            self.add_signal_plot()
 
-            plot = Plot(
-                signal_tree=self,
-                is_navigator=False,
-            )
-            self.signal_plots.append(plot)
+    def add_signal_plot(self, dynamic: bool = True):
+        """
+        Add a new signal plot for the root signal.
+        """
+        PlotWindow(is_navigator=False,
+                   plot_manager=None,
+                   signal_tree=self,
+                   main_window=self.main_window)
+        plot = Plot(
+            signal_tree=self,
+            is_navigator=False,
+            dynamic =dynamic,
+        )
+        self.signal_plots.append(plot)
 
-            plot_states = self.create_plot_states(plot=plot)
-            plot.plot_states = plot_states
-            plot.set_plot_state(self.root)
-            self.signal_plots.append(plot)
-            plot.update()
-
-        print("Created Signal Tree with root signal: ", self.root)
+        self.create_plot_states(plot=plot)
+        self.signal_plots.append(plot)
+        plot.update()
 
     def _preprocess_navigator(self, signal: BaseSignal) -> BaseSignal:
         """
@@ -383,11 +399,11 @@ class BaseSignalTree:
         plot_states = {}
         for signal in self.signals():
             if signal.axes_manager.navigation_dimension == 0:
-                plot_state = PlotState(signal=signal, plot=plot, dynamic=False)
+                plot.add_plot_state(signal=signal,
+                                    dynamic=False)
             else:
-                plot_state = PlotState(signal=signal, plot=plot, dynamic=True)
-
-            plot_states[signal] = plot_state
+                plot.add_plot_state(signal=signal,
+                                    dynamic=True)
         return plot_states
 
     def update_plot_states(self, new_signal: BaseSignal):

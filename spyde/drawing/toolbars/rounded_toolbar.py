@@ -67,7 +67,6 @@ class RoundedToolBar(QtWidgets.QToolBar):
                 return "bottom"
             return "top"
 
-        # NEW: store exclusivity flag
         self.exclusive_checkable_actions: bool = bool(exclusive_checkable_actions)
 
         norm_pos = _normalize_position(position)
@@ -76,9 +75,11 @@ class RoundedToolBar(QtWidgets.QToolBar):
         super().__init__(title, parent)
 
         if plot_state is None:
-            self.plot = None
+            self.plot_window = None
+            self.plot: Optional[Plot] = None
         else:
-            self.plot: Optional[Plot] = self.plot_state.plot
+            self.plot : Plot = self.plot_state.plot
+            self.plot_window = self.plot.plot_window
 
         self._radius = float(radius)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -140,8 +141,8 @@ class RoundedToolBar(QtWidgets.QToolBar):
             container := self._resolve_container_parent(self.parentWidget())
         ) is not None:
             container.installEventFilter(self._position_tracker)
-        if self.plot is not None:
-            self.plot.installEventFilter(self._position_tracker)
+        if self.plot_window is not None:
+            self.plot_window.installEventFilter(self._position_tracker)
 
     def add_action(
         self,
@@ -499,8 +500,8 @@ class RoundedToolBar(QtWidgets.QToolBar):
         tracker = self._make_position_tracker(position_widget)
         self.installEventFilter(tracker)
         parent.installEventFilter(tracker)
-        if self.plot is not None:
-            self.plot.installEventFilter(tracker)
+        if self.plot_window is not None:
+            self.plot_window.installEventFilter(tracker)
 
         self.action_widgets[action_name]["widget"] = widget
         self.action_widgets[action_name]["layout"] = layout
@@ -533,8 +534,8 @@ class RoundedToolBar(QtWidgets.QToolBar):
                 key in list(self.action_widgets[action_name]["plot_items"])):
             item =  self.action_widgets[action_name]["plot_items"].pop(key)
             try:
-                if self.plot is not None and hasattr(self.plot, "plot_item"):
-                    self.plot.plot_item.removeItem(item)
+                if self.plot_window is not None and hasattr(self.plot_state, "plot_item"):
+                    self.plot.removeItem(item)
             except Exception:
                 pass
             return item
@@ -544,7 +545,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
         self, action_name: str, item: QtWidgets.QGraphicsItem, key: Optional[str] = None
     ) -> None:
         """Associate a QGraphicsItem with an action; auto-hide/show based on toggle state."""
-        self.plot.plot_item.addItem(item)
+        self.plot.addItem(item)
         if action_name not in self.action_widgets:
             self.action_widgets[action_name] = {}
         if "plot_items" not in self.action_widgets[action_name]:
@@ -588,7 +589,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
         if parent is None:
             return
 
-        plot_global_tl = self.plot.mapToGlobal(QtCore.QPoint(0, 0))
+        plot_global_tl = self.plot_window.mapToGlobal(QtCore.QPoint(0, 0))
 
         if self.position == "left":
             desired_global = QtCore.QPoint(

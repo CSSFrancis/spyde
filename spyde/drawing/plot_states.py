@@ -44,6 +44,7 @@ class PlotState:
 
         self.current_signal: BaseSignal = signal
         self.plot: "Plot" = plot
+        #self.plot_window: "PlotWindow" = plot.
 
         # Visualization parameters. The min/max percentile are used to determine the contrast/brightness
         self.min_percentile = 100
@@ -192,7 +193,7 @@ class PlotState:
             for action in tb.action_widgets:
                 if "plot_items" in tb.action_widgets[action]:
                     for key in tb.action_widgets[action]["plot_items"]:
-                        self.plot.plot_item.addItem(tb.action_widgets[action]["plot_items"][key])
+                        self.plot.addItem(tb.action_widgets[action]["plot_items"][key])
 
     def update_toolbars(self) -> None:
         """Recompute size/visibility for each toolbar after external changes to actions."""
@@ -224,7 +225,7 @@ class PlotState:
                     if "plot_items" in tb.action_widgets[action]:
                         print("Restoring plot items for action:", action)
                         for key in tb.action_widgets[action]["plot_items"]:
-                            self.plot.plot_item.removeItem(tb.action_widgets[action]["plot_items"][key])
+                            self.plot.removeItem(tb.action_widgets[action]["plot_items"][key])
 
     def close(self) -> None:
         self.hide_toolbars()
