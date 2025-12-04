@@ -2,6 +2,7 @@ from functools import partial
 
 from PySide6 import QtCore
 from PySide6.QtCore import QRectF
+from pyqtgraph.examples.MultiDataPlot import pltItem
 
 from spyde.actions.base import NAVIGATOR_DRAG_MIME
 from spyde.actions.base import NavigatorButton
@@ -291,6 +292,14 @@ class TestNavigatorMultiplex:
         # there should be two plots now stacked in one column
 
         assert len(nav_subwindow.plot_widget.ci.items)  == 2
+
+        # assert only one toolbar visible
+        num = 0
+        for plot in nav_subwindow.plots:
+            for tb in plot.toolbars:
+                num += tb.isVisible()
+
+        assert num == 1
 
 
 

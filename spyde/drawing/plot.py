@@ -1,6 +1,7 @@
 from PySide6 import QtCore, QtWidgets, QtGui
 
 import pyqtgraph as pg
+from PySide6.QtCore import QEvent
 from pyqtgraph import GraphicsItem, PlotItem, GraphicsLayoutWidget
 
 from spyde.external.pyqtgraph.scale_bar import OutlinedScaleBar as ScaleBar
@@ -34,6 +35,9 @@ COLORMAPS = {
     "fire": pg.colormap.get("CET-L3"),
 }
 
+
+
+
 class PlotWindow(FramelessSubWindow):
     """
      A QMdi sub-window that contains either a single Plot or potentially multiple plots in some layout.
@@ -59,6 +63,7 @@ class PlotWindow(FramelessSubWindow):
     flexibility of multiple plots within the same window without needing to manage multiple sets of toolbars. The active
     `Plot` within the `PlotWindow` is shown by a small highlight around the plot area.
     """
+
     def __init__(self,
         is_navigator: bool = False, # if navigator then it will share the navigation selectors
         plot_manager: Union["MultiplotManager", None] = None,
@@ -102,6 +107,16 @@ class PlotWindow(FramelessSubWindow):
         if self._current_plot_item is None and len(self.plots) > 0:
             self._current_plot_item = self.plots[0]
         return self._current_plot_item
+
+    @current_plot_item.setter
+    def current_plot_item(self, plot: "Plot"):
+        """Set the currently active Plot in this PlotWindow."""
+        if plot in self.plots:
+            self._current_plot_item = plot
+            # Notify the main window that this subwindow is active
+            self.main_window.on_subwindow_activated(self)
+        else:
+            raise ValueError("Plot is not in this PlotWindow.")
 
     @property
     def current_plot_state(self) -> Union["PlotState", None]:
@@ -317,6 +332,7 @@ class PlotWindow(FramelessSubWindow):
                     pos = pos[0]
                 self.add_item(plot_item, pos[0], pos[1])
 
+
     def reposition_toolbars(self):
         """Reposition the floating toolbars around the subwindow."""
         if self.current_plot_state is None:
@@ -373,7 +389,6 @@ class PlotWindow(FramelessSubWindow):
         self.close_window()
         super().closeEvent(ev)
 
-        
 
 class Plot(PlotItem):
     """
@@ -449,6 +464,11 @@ class Plot(PlotItem):
 
         self.plot_window = plot_window  # type: PlotWindow | None
         # Register with the main window for needs update
+
+    @property
+    def toolbars(self):
+        return [self.plot_state.toolbar_top, self.plot_state.toolbar_bottom,
+                self.plot_state.toolbar_left, self.plot_state.toolbar_right]
 
     def set_colormap(self, colormap: str):
         """Set the colormap for the image item."""
@@ -662,6 +682,15 @@ class Plot(PlotItem):
     def update_range(self):
         """Update the view range to fit the current data."""
         self.getViewBox().autoRange()
+
+    def mousePressEvent(self, ev):
+        """Ensure clicking a plot marks it as the active plot."""
+        super().mousePressEvent(ev)
+        if (
+                ev.button() == QtCore.Qt.MouseButton.LeftButton
+                and self.plot_window is not None
+        ):
+            self.plot_window.current_plot_item = self
 
     def update_data(
         self, new_data: Union[np.ndarray, da.Array, Future], force: bool = False

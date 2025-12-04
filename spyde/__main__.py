@@ -707,6 +707,13 @@ class MainWindow(QMainWindow):
                 p.plot_state.hide_toolbars()
                 p.remove_selector_control_widgets()
 
+        # hide all toolbar from other plots in the same window
+        for p in window.plots:
+            if p is plot:
+                continue
+            p.plot_state.hide_toolbars()
+            p.remove_selector_control_widgets()
+
         # Histogram binding: use the image_item on the inner widget / plot
         img_item = plot.image_item
         if (
@@ -926,84 +933,100 @@ class MainWindow(QMainWindow):
         obj,
         event: QEvent,
     ) -> bool:
-        """Handle drag/drop events on the MDI area to load supported data files."""
-        if obj is self.mdi_area and event is not None:
+        """Handle clicks, drags and drops into the main window."""
+
+        if event is not None:
             et = event.type()
+            if obj is self._active_plot_window() and et == QEvent.Type.MouseButtonPress:
+                try:
+                    pos = event.position().toPoint()
+                except Exception:
+                    pos = event.pos()
+                print("click pos:", pos)
+                for plot in self.plots:
+                    contains = plot.geometry().contains(pos)
+                    if contains:
+                        print("Clicked on plot:", plot)
+                        self.current_plot_item = plot
 
-            # Handle navigator drag events only when entering/moving over the active subwindow
-            # on drag start then save the layout
+            if obj is self.mdi_area:
+                et = event.type()
 
-            if et in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
-                mime = event.mimeData()
-                if mime is not None and mime.hasFormat(NAVIGATOR_DRAG_MIME):
-                    active_sub = self.mdi_area.activeSubWindow()
-                    if active_sub is not None:
+                # Handle navigator drag events only when entering/moving over the active subwindow
+                # on drag start then save the layout
+
+                if et in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
+                    mime = event.mimeData()
+                    if mime is not None and mime.hasFormat(NAVIGATOR_DRAG_MIME):
+                        active_sub = self.mdi_area.activeSubWindow()
+                        if active_sub is not None:
+                            try:
+                                pos = event.position().toPoint()
+                            except Exception:
+                                pos = event.pos()
+                            contains = active_sub.geometry().contains(pos)
+                            if contains:
+                                local_x = pos.x() - active_sub.geometry().x()
+                                local_y = pos.y() - active_sub.geometry().y()
+                                if not self._navigator_drag_over_active:
+                                    self.navigator_enter()
+                                    print(
+                                        f"Navigator drag entered active subwindow at local position: ({local_x}, {local_y})"
+                                    )
+                                else:
+                                    self.navigator_move(pos=pos)
+                                    print(
+                                        f"Navigator drag moving inside active subwindow at local position: ({local_x}, {local_y})"
+                                    )
+                                self._navigator_drag_over_active = True
+                                event.acceptProposedAction()
+                                return True
+                            if self._navigator_drag_over_active:
+                                print("Navigator drag over")
+                                self.navigator_leave()
+                                print("Navigator drag left active subwindow")
+                                self._navigator_drag_over_active = False
+                            return False
+                    # Fallback: existing file-drag handling (unchanged)
+                    paths = self._extract_file_paths(mime)
+                    if any(self._is_supported_file(p) for p in paths):
+                        event.acceptProposedAction()
+                        return True
+
+                elif et == QEvent.Type.Drop:
+                    mime = event.mimeData()
+                    # Handle navigator drop only if over active subwindow
+                    if mime is not None and mime.hasFormat(NAVIGATOR_DRAG_MIME):
+                        active_sub = self.mdi_area.activeSubWindow()
                         try:
                             pos = event.position().toPoint()
                         except Exception:
                             pos = event.pos()
-                        contains = active_sub.geometry().contains(pos)
+                        contains = (
+                            active_sub is not None and active_sub.geometry().contains(pos)
+                        )
                         if contains:
                             local_x = pos.x() - active_sub.geometry().x()
                             local_y = pos.y() - active_sub.geometry().y()
-                            if not self._navigator_drag_over_active:
-                                self.navigator_enter()
-                                print(
-                                    f"Navigator drag entered active subwindow at local position: ({local_x}, {local_y})"
-                                )
-                            else:
-                                self.navigator_move(pos=pos)
-                                print(
-                                    f"Navigator drag moving inside active subwindow at local position: ({local_x}, {local_y})"
-                                )
-                            self._navigator_drag_over_active = True
+                            print(
+                                f"Navigator dropped into active subwindow at local position: ({local_x}, {local_y})"
+                            )
+                            self._navigator_drag_over_active = False
+                            self.navigator_drop(pos=pos, mime_data=mime)
                             event.acceptProposedAction()
                             return True
                         if self._navigator_drag_over_active:
-                            print("Navigator drag over")
-                            self.navigator_leave()
-                            print("Navigator drag left active subwindow")
+                            print("Navigator drag left active subwindow before drop")
                             self._navigator_drag_over_active = False
                         return False
-                # Fallback: existing file-drag handling (unchanged)
-                paths = self._extract_file_paths(mime)
-                if any(self._is_supported_file(p) for p in paths):
-                    event.acceptProposedAction()
-                    return True
 
-            elif et == QEvent.Type.Drop:
-                mime = event.mimeData()
-                # Handle navigator drop only if over active subwindow
-                if mime is not None and mime.hasFormat(NAVIGATOR_DRAG_MIME):
-                    active_sub = self.mdi_area.activeSubWindow()
-                    try:
-                        pos = event.position().toPoint()
-                    except Exception:
-                        pos = event.pos()
-                    contains = (
-                        active_sub is not None and active_sub.geometry().contains(pos)
-                    )
-                    if contains:
-                        local_x = pos.x() - active_sub.geometry().x()
-                        local_y = pos.y() - active_sub.geometry().y()
-                        print(
-                            f"Navigator dropped into active subwindow at local position: ({local_x}, {local_y})"
-                        )
-                        self._navigator_drag_over_active = False
-                        self.navigator_drop(pos=pos, mime_data=mime)
-                        event.acceptProposedAction()
-                        return True
+                elif et == QEvent.Type.DragLeave:
                     if self._navigator_drag_over_active:
-                        print("Navigator drag left active subwindow before drop")
+                        print("Navigator drag left active subwindow")
+                        self.navigator_leave()
                         self._navigator_drag_over_active = False
-                    return False
-
-            elif et == QEvent.Type.DragLeave:
-                if self._navigator_drag_over_active:
-                    print("Navigator drag left active subwindow")
-                    self.navigator_leave()
-                    self._navigator_drag_over_active = False
-        return super().eventFilter(obj, event)
+            return super().eventFilter(obj, event)
+        return None
 
     def register_navigator_drag_payload(self, signal, nav_manager) -> str:
         token = uuid4().hex

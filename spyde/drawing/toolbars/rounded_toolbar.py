@@ -357,6 +357,8 @@ class RoundedToolBar(QtWidgets.QToolBar):
 
         # Re-parent to a safe content container (not QMainWindow)
         parent = self._resolve_container_parent(self.parentWidget())
+
+        #parent = self.plot_window
         if parent is None:
             return
 
@@ -582,13 +584,12 @@ class RoundedToolBar(QtWidgets.QToolBar):
 
     def move_next_to_plot(self) -> None:
         """Anchor the toolbar adjacent to its Plot according to self.position and re-place visible popouts."""
-        if self.plot is None:
+        if self.plot_window is None:
             return
 
         parent = self._resolve_container_parent(self.parentWidget())
         if parent is None:
             return
-
         plot_global_tl = self.plot_window.mapToGlobal(QtCore.QPoint(0, 0))
 
         if self.position == "left":
@@ -598,7 +599,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
             )
         elif self.position == "right":
             desired_global = QtCore.QPoint(
-                plot_global_tl.x() + self.plot.width() + self._margin,
+                plot_global_tl.x() + self.plot_window.width() + self._margin,
                 plot_global_tl.y() + self._margin,
             )
         elif self.position == "top":
@@ -609,7 +610,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
         else:  # "bottom"
             desired_global = QtCore.QPoint(
                 plot_global_tl.x() + self._margin,
-                plot_global_tl.y() + self.plot.height() + self._margin,
+                plot_global_tl.y() + self.plot_window.height() + self._margin,
             )
 
         desired_in_parent = parent.mapFromGlobal(desired_global)
