@@ -20,7 +20,7 @@ def zoom_in(toolbar: "RoundedToolBar", *args, **kwargs):
     toolbar : RoundedToolBar
         The plot to zoom in.
     """
-    vb = toolbar.plot.plot_item.getViewBox()
+    vb = toolbar.plot.getViewBox()
     vb.scaleBy((ZOOM_STEP, ZOOM_STEP))
 
 
@@ -33,7 +33,7 @@ def zoom_out(toolbar: "RoundedToolBar", *args, **kwargs):
     toolbar : RoundedToolBar
         The plot to zoom out.
     """
-    vb = toolbar.plot.plot_item.getViewBox()
+    vb = toolbar.plot.getViewBox()
     factor = 1.0 / ZOOM_STEP
     vb.scaleBy((factor, factor))
 
@@ -47,7 +47,7 @@ def reset_view(toolbar: "RoundedToolBar", *args, **kwargs):
     toolbar : RoundedToolBar
         The plot to reset the view.
     """
-    vb = toolbar.plot.plot_item.getViewBox()
+    vb = toolbar.plot.getViewBox()
     vb.autoRange()
 
 
@@ -87,14 +87,14 @@ class NavigatorButton(RoundedButton):
         self._allow_click = False
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        current_plot = self.toolbar.plot
+        current_plot_window = self.toolbar.plot_window
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self._drag_origin = event.position()
             self._allow_click = True
             print("Saving current plot state for navigator drag...")
-            current_plot.previous_subplots_pos = current_plot.plot_widget.ci.items.copy() # shallow copy
-            print(current_plot.plot_widget.ci.items)
-            current_plot.previous_graphics_layout_widget = current_plot.plot_widget
+            current_plot_window.previous_subplots_pos = current_plot_window.plot_widget.ci.items.copy() # shallow copy
+            print(current_plot_window.plot_widget.ci.items)
+            current_plot_window.previous_graphics_layout_widget = current_plot_window.plot_widget
 
         # on enter, save the current layout
         super().mousePressEvent(event)
@@ -117,7 +117,7 @@ class NavigatorButton(RoundedButton):
         if self._allow_click and event.button() == QtCore.Qt.MouseButton.LeftButton:
             self._allow_click = False
             mw = self.toolbar.plot.main_window
-            active_plot = mw._active_plot_window()
+            active_plot = mw._active_plot()
             if active_plot is not self.toolbar.plot:
                 mw.statusBar().showMessage(
                     "Activate this plot before assigning a navigator", 4000

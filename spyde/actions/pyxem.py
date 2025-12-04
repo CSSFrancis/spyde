@@ -1,15 +1,12 @@
 import numpy as np
-from PyQt6.QtCore import QPoint
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
-from PySide6.QtCore import Qt, QPointF
-
-from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
-from spyde.drawing.selector import RectangleSelector
 from typing import Tuple
 
-from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
-
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
+from PySide6.QtCore import Qt
 from pyqtgraph import RectROI, CircleROI, mkPen
+
+from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
+from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
 from spyde.qt.ring_roi import RingROI
 
 

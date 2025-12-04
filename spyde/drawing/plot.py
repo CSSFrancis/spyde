@@ -10,7 +10,7 @@ import numpy as np
 import dask.array as da
 from dask.distributed import Future
 
-from typing import TYPE_CHECKING, Union, List, Dict, Tuple
+from typing import TYPE_CHECKING, Union, List, Dict, Tuple, Optional
 
 if TYPE_CHECKING:
     from spyde.signal_tree import BaseSignalTree
@@ -75,21 +75,41 @@ class PlotWindow(FramelessSubWindow):
         # this is for managing multiple Plot windows.
         self.plot_manager = plot_manager # type: MultiplotManager | None
 
-        self.current_plot_item = None # type: Plot | None
+        # Instance state: track the currently active Plot (or None)
+        self._current_plot_item = None  # type: Plot | None
 
-        # Always use a graphics layout for handling multiple plots
+        # Previous layout state: used when restoring saved multiplexed layouts
+        self.previous_subplots_pos = dict()  # type: Dict[pg.PlotItem, Tuple[int, int]] | Dict
+        self.previous_graphics_layout_widget = None  # type: pg.GraphicsLayoutWidget | None
+
+        # UI: container widget + layout that will host the GraphicsLayoutWidget.
+        # Use a QVBoxLayout with zero margins/spacing so the plot fills the subwindow.
         self.container = QtWidgets.QWidget()  # type: QtWidgets.QWidget
         container_layout = QtWidgets.QVBoxLayout(self.container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
+
+        # The central plot widget: a pyqtgraph GraphicsLayoutWidget parented to our container.
         self.plot_widget = pg.GraphicsLayoutWidget(self.container)
+        container_layout.addWidget(self.plot_widget)
+        self.setWidget(self.container)
 
-        # Previous layout state
-        self.previous_subplots_pos = dict()  # type: Dict[pg.PlotItem:tuple[int, int]] | Dict
-        self.previous_graphics_layout_widget = None  # type: pg.GraphicsLayoutWidget | None
+        # Explicitly store the main window reference provided at construction.
+        self.main_window = main_window  # type: "MainWindow"
 
-        # explicitly set the main window on construction
-        self.main_window = main_window # type: "MainWindow"
+    @property
+    def current_plot_item(self) -> Union["Plot", None]:
+        """Get or set the currently active Plot in this PlotWindow."""
+        if self._current_plot_item is None and len(self.plots) > 0:
+            self._current_plot_item = self.plots[0]
+        return self._current_plot_item
+
+    @property
+    def current_plot_state(self) -> Union["PlotState", None]:
+        """Get the PlotState of the currently active Plot in this PlotWindow."""
+        if self.current_plot_item is not None:
+            return self.current_plot_item.plot_state
+        return None
 
     @property
     def plots(self) -> List["Plot"]:
@@ -100,11 +120,19 @@ class PlotWindow(FramelessSubWindow):
                 plots.append(item)
         return plots
 
-    def add_new_plot(self, row: int=0, col: int=0) -> "Plot":
+    @property
+    def mdi_area(self):
+        return self.main_window.mdi_area
+
+    def add_new_plot(self,
+                     row: int=0,
+                     col: int=0,
+                     nav_plot_manager:Optional["NavigationPlotManager"]=None) -> "Plot":
         """ Creates and returns a new (empty) Plot."""
         plot =  Plot(signal_tree=self.signal_tree,
                      is_navigator=self.is_navigator,
                      plot_window=self,
+                     nav_plot_manager=nav_plot_manager
         )
         self.add_item(plot, row, col)
         return plot
@@ -117,7 +145,7 @@ class PlotWindow(FramelessSubWindow):
 
         if isinstance(item, Plot):
             item.plot_window = self
-            self.current_plot_item = item
+            self._current_plot_item = item
 
     def set_graphics_layout_widget(self,
                                    layout_dictionary:Dict[GraphicsItem, List[Tuple[int, int]]],
@@ -162,7 +190,31 @@ class PlotWindow(FramelessSubWindow):
                     pos = pos[0]
                 self.add_item(plot_item, pos[0], pos[1])
 
+    def reposition_toolbars(self):
+        """Reposition the floating toolbars around the subwindow."""
+        if self.current_plot_state is None:
+            return
+        else:
+            for tb in (
+                getattr(self.current_plot_state, "toolbar_right", None),
+                getattr(self.current_plot_state, "toolbar_left", None),
+                getattr(self.current_plot_state, "toolbar_top", None),
+                getattr(self.current_plot_state, "toolbar_bottom", None),
+            ):
+                if tb is not None and tb.isVisible():
+                    tb.move_next_to_plot()
 
+    def showEvent(self, ev: QtGui.QShowEvent) -> None:
+        super().showEvent(ev)
+        self.reposition_toolbars()
+
+    def moveEvent(self, ev: QtGui.QMoveEvent) -> None:
+        super().moveEvent(ev)
+        self.reposition_toolbars()
+
+    def resizeEvent(self, ev: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(ev)
+        self.reposition_toolbars()
 
 class Plot(PlotItem):
     """
@@ -373,7 +425,7 @@ class Plot(PlotItem):
             self.enable_scale_bar(True)
         else:
             self.enable_scale_bar(False)
-        self.main_window.on_subwindow_activated(self)
+        self.main_window.on_subwindow_activated(self.plot_window)
         # update the plot
         if self.parent_selector is not None:
             self.parent_selector.delayed_update_data(force=True)
@@ -444,30 +496,7 @@ class Plot(PlotItem):
     @property
     def main_window(self) -> "MainWindow":
         """Get the main window containing this sub-window."""
-        return self.signal_tree.main_window
-
-    def reposition_toolbars(self):
-        """Reposition the floating toolbars around the subwindow."""
-        for tb in (
-            getattr(self.plot_state, "toolbar_right", None),
-            getattr(self.plot_state, "toolbar_left", None),
-            getattr(self.plot_state, "toolbar_top", None),
-            getattr(self.plot_state, "toolbar_bottom", None),
-        ):
-            if tb is not None and tb.isVisible():
-                tb.move_next_to_plot()
-
-    def showEvent(self, ev: QtGui.QShowEvent) -> None:
-        super().showEvent(ev)
-        self.reposition_toolbars()
-
-    def moveEvent(self, ev: QtGui.QMoveEvent) -> None:
-        super().moveEvent(ev)
-        self.reposition_toolbars()
-
-    def resizeEvent(self, ev: QtGui.QResizeEvent) -> None:
-        super().resizeEvent(ev)
-        self.reposition_toolbars()
+        return self.plot_window.main_window
 
     def update_range(self):
         """Update the view range to fit the current data."""
@@ -639,7 +668,6 @@ class Plot(PlotItem):
         outer_rad = width * 0.45
         return center, inner_rad, outer_rad
 
-
     def update(self):
         """Push the current data to the plot items."""
         logger.info(
@@ -802,15 +830,11 @@ class NavigationPlotManager:
                 "NavigationPlotManager requires at least 1 navigation dimension."
             )
         elif self.nav_dim < 3:
-            nav_plot_window = PlotWindow(
-                is_navigator=True,
-                plot_manager=self,
-                signal_tree=self.signal_tree,
-                main_window=main_window
-            )
-            nav_plot = nav_plot_window.add_new_plot()
-            self.main_window.add_plot(nav_plot_window)
-
+            nav_plot_window = self.main_window.add_plot_window(is_navigator=True,
+                                                               plot_manager=self,
+                                                               signal_tree=self.signal_tree
+                                                               )
+            nav_plot = nav_plot_window.add_new_plot(nav_plot_manager=self)
             self.plots.append(nav_plot)
             # create plot states for the nav plot
         for signal in self.signal_tree.navigator_signals.values():
@@ -901,12 +925,11 @@ class NavigationPlotManager:
             )
         else:
             logger.info("Adding navigation selector for 2+ dimensional navigation signals")
-            window = PlotWindow(
+            window = self.main_window.add_plot_window(
                 is_navigator=False,
                 plot_manager=None,
                 signal_tree=self.signal_tree,
-                main_window=self.main_window,
-                       )
+            )
             child = window.add_new_plot()
             # create plot states for the child plot
             self.signal_tree.create_plot_states(plot=child)

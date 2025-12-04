@@ -8,7 +8,7 @@ from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar, PopoutToolBar
 class TestActions:
     def test_center_direct_beam(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
-        subwindows = win.mdi_area.subWindowList()
+        subwindows = win.plots
         assert len(subwindows) == 2
 
         nav, sig = subwindows
@@ -101,7 +101,7 @@ class TestActions:
 
     def test_rebin(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
-        subwindows = win.mdi_area.subWindowList()
+        subwindows = win.plots
         assert len(subwindows) == 2
 
         nav, sig = subwindows
@@ -135,7 +135,7 @@ class TestActions:
 
     def test_virtual_imaging(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
-        subwindows = win.mdi_area.subWindowList()
+        subwindows = win.plots
         assert len(subwindows) == 2
 
         nav, sig = subwindows

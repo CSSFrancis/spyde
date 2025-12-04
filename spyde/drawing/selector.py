@@ -351,7 +351,7 @@ class LinearRegionSelector(BaseSelector):
         )
         self._last_size_sig = self._size_signature()
         self.selector.sigRegionChangeFinished.connect(self._on_region_change_finished)
-        parent.plot_item.addItem(self.selector)
+        parent.addItem(self.selector)
         self.selector.sigRegionChanged.connect(self.update_data)
 
     def get_selected_indices(self):

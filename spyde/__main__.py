@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
         # Start background worker thread to poll plot Futures
         self._update_thread = QtCore.QThread(self)
         self._plot_update_worker = PlotUpdateWorker(
-            lambda: list(self.plot_subwindows), interval_ms=5
+            lambda: [p for plots in self.plot_subwindows for p in plots.plots], interval_ms=5
         )
         self._plot_update_worker.moveToThread(self._update_thread)
         self._update_thread.started.connect(self._plot_update_worker.start)
@@ -300,6 +300,13 @@ class MainWindow(QMainWindow):
             self.client = Client(cluster)
         print(f"Starting Dashboard at: {self.client.dashboard_link}")
 
+    @property
+    def plots(self) -> list[Plot]:
+        """Get a flat list of all Plot instances in all plot windows."""
+        all_plots = []
+        for pw in self.plot_subwindows:
+            all_plots.extend(pw.plots)
+        return all_plots
 
     @property
     def navigation_selectors(self):
@@ -311,8 +318,11 @@ class MainWindow(QMainWindow):
 
     def update_plots_loop(self) -> None:
         """Poll plot futures on the GUI thread and apply finished results."""
+        print("Running update_plots_loop...")
         for plot_window in self.plot_subwindows:
+            print("plots", plot_window.plots)
             for p in plot_window.plots:
+                print("Checking Plot in loop...")
                 if isinstance(p.current_data, Future) and p.current_data.done():
                     print("Updating Plot in loop...")
                     p.current_data = p.current_data.result()
@@ -390,11 +400,11 @@ class MainWindow(QMainWindow):
             self.dock_widget.setVisible(not is_visible)
 
     def export_current_signal(self):
-        if not isinstance(self._active_plot_window(), Plot):
+        if not isinstance(self._active_plot(), Plot):
             QMessageBox.warning(self, "Error", "No active plot window to export from.")
             return
         export_dialog = MovieExportDialog(
-            plot=self._active_plot_window(), parent=self
+            plot=self._active_plot(), parent=self
         ).exec()
 
     def open_dask_dashboard(self) -> None:
@@ -511,36 +521,57 @@ class MainWindow(QMainWindow):
         self.add_signal(signal)
         print("Example data loaded:", name)
 
-    def add_plot_window(self, plot_window: PlotWindow) -> None:
-
-    def add_plot(self, plot: PlotWindow) -> None:
-        """Add a plot to the MDI area.
+    def add_plot_window(self,
+                        is_navigator: bool = False,  # if navigator then it will share the navigation selectors
+                        plot_manager: Union["MultiplotManager", None] = None,
+                        signal_tree: Union["BaseSignalTree", None] = None,
+                        *args,
+                        **kwargs,
+                        ) -> PlotWindow:
+        """
+        Plot window construction:
+        Create a new PlotWindow instance, add it to the MDI area, and set it up.
 
         Parameters
         ----------
-        plot : Plot
-            The plot to add.
-
+        is_navigator : bool
+            Whether this plot window is for a navigator signal.
+        plot_manager : MultiplotManager or None
+            The plot manager to associate with this plot window.
+        signal_tree : BaseSignalTree or None
+            The signal tree to associate with this plot window.
+        Returns
+        -------
+        PlotWindow
+            The created PlotWindow instance.
         """
-        plot.resize(self.screen_size.height() // 2, self.screen_size.height() // 2)
+        pw = PlotWindow(
+                is_navigator=is_navigator,
+                main_window=self,
+                signal_tree=signal_tree,
+                plot_manager=plot_manager,
+                *args,
+                **kwargs,
+                       )
+        #pw.setWidget(pw.container)
+
+        pw.resize(self.screen_size.height() // 2, self.screen_size.height() // 2)
 
         # Add to MDI and make the subwindow frameless
-        self.mdi_area.addSubWindow(plot)
+        self.mdi_area.addSubWindow(pw)
         try:
             # Remove title bar and frame
-            plot.setWindowFlags(plot.windowFlags() | Qt.WindowType.FramelessWindowHint)
-            plot.setStyleSheet("QMdiSubWindow { border: none; }")
+            pw.setWindowFlags(pw.windowFlags() | Qt.WindowType.FramelessWindowHint)
+            pw.setStyleSheet("QMdiSubWindow { border: none; }")
         except Exception:
             pass
 
-        plot.show()
-        self.plot_subwindows.append(plot)
-        plot.mdi_area = self.mdi_area
+        pw.show()
+        self.plot_subwindows.append(pw)
         # set the main window reference in the plot
-        plot.main_window = self
-        return
+        return pw
 
-    def update_metadata_widget(self, window) -> None:
+    def update_metadata_widget(self, plot: Plot) -> None:
         """Rebuild metadata panel for the active Plot's signal tree."""
         # Clear existing layout (including spacers)
         if self.metadata_layout is None:
@@ -554,8 +585,8 @@ class MainWindow(QMainWindow):
                 del item
 
         # Add new metadata
-        if hasattr(window, "signal_tree"):
-            signal_tree = window.signal_tree
+        if hasattr(plot, "signal_tree"):
+            signal_tree = plot.signal_tree
             metadata_dict = signal_tree.get_metadata_widget()
             for subsection, items in metadata_dict.items():
                 group = QtWidgets.QGroupBox(str(subsection))
@@ -656,60 +687,53 @@ class MainWindow(QMainWindow):
 
     def on_subwindow_activated(self, window: "PlotWindow") -> None:
         """MDI activation handler: update toolbars, metadata, histogram binding, and colormap selector."""
-        if window is None:
+        if window is None or not isinstance(window, PlotWindow):
+            return
+        plot = window.current_plot_item
+        plot_state = getattr(plot, "plot_state", None)
+        if plot is None:
             return
 
-        # Show controls for the active window
-        if hasattr(window, "show_selector_control_widget"):
-            print("Showing selector control widget for window:", window)
-            window.show_selector_control_widget()
+        # Show selector controls for the active plot
+        plot.show_selector_control_widget()
+        # Get active PlotState from the active plot item
 
-        ps = getattr(window, "plot_state", None)  # type: Union["PlotState", None]
-        if ps is not None:
-            print("Updating axes widget for window:", window)
-            self.update_axes_widget(window)
-            ps.show_toolbars()
+        if plot_state is not None:
+            self.update_axes_widget(plot)
+            plot_state.show_toolbars()
 
-        # Hide controls for other windows
-        for plot in self.plot_subwindows:
-            if plot is window:
+        # Hide toolbars for all other windows
+        for sub in self.plot_subwindows:
+            if sub is window:
                 continue
-            if hasattr(plot.current_plot_item.plot_state, "hide_toolbars"):
-                plot.current_plot_item.plot_state.hide_toolbars()
-            if hasattr(plot, "hide_selector_control_widget"):
-                plot.hide_selector_control_widget()
+            for p in sub.plots:
+                p.plot_state.hide_toolbars()
+                p.remove_selector_control_widgets()
 
-        # Rebind histogram only if the ImageItem changed
-        img_item = getattr(window, "image_item", None)
+        # Histogram binding: use the image_item on the inner widget / plot
+        img_item = plot.image_item
         if (
-            self.histogram is not None
-            and img_item is not None
-            and img_item is not self._histogram_image_item
+                self.histogram is not None
+                and img_item is not None
+                and img_item is not self._histogram_image_item
         ):
             try:
-                print("Binding histogram to new image item:", img_item)
                 self.histogram.setImageItem(img_item)
                 self._histogram_image_item = img_item
-                if ps is not None:
-                    self.histogram.setLevels(ps.min_level, ps.max_level)
+                if plot_state is not None:
+                    self.histogram.setLevels(
+                        plot_state.min_level, plot_state.max_level
+                    )
             except Exception:
                 pass
-        print("updating histogram levels from plot state:", ps)
 
-        # Update metadata if signal tree changed
         st = getattr(window, "signal_tree", None)
         if st is not None and st is not self.current_selected_signal_tree:
             self.current_selected_signal_tree = st
-            self.update_metadata_widget(window)
+            self.update_metadata_widget(plot)
 
-        # Sync colormap selector
-        if (
-            ps is not None
-            and hasattr(self, "cmap_selector")
-            and self.cmap_selector is not None
-        ):
-            self.cmap_selector.setCurrentText(ps.colormap)
-        print("Sub-window activated:", window)
+        if plot_state is not None and hasattr(self, "cmap_selector"):
+            self.cmap_selector.setCurrentText(plot_state.colormap)
 
     def add_plot_control_widget(self):
         """
@@ -798,17 +822,28 @@ class MainWindow(QMainWindow):
             QtCore.Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget
         )
 
-    def _active_plot_window(self) -> Union[Plot, None]:
+    def _active_plot(self) -> Union[Plot, None]:
         """Return the currently active QMdiSubWindow (Plot) or None."""
         sub = self.mdi_area.activeSubWindow()
-        return sub
+        if not isinstance(sub, PlotWindow):
+            return None
+        else:
+            return sub.current_plot_item
+
+    def _active_plot_window(self) -> Union[PlotWindow, None]:
+        """Return the currently active QMdiSubWindow (PlotWindow) or None."""
+        sub = self.mdi_area.activeSubWindow()
+        if not isinstance(sub, PlotWindow):
+            return None
+        else:
+            return sub
 
     def on_contrast_auto_click(self) -> None:
         """
         Set image contrast to [1st, 99th] percentile for 2D; y-range percentiles for 1D.
         Persist on PlotState, so it remains constant when data changes.
         """
-        w = self._active_plot_window()
+        w = self._active_plot()
         if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
             return
 
@@ -821,7 +856,7 @@ class MainWindow(QMainWindow):
         Reset contrast to full range for 2D; re-enable y auto-range for 1D.
         Persist on PlotState.
         """
-        w = self._active_plot_window()
+        w = self._active_plot()
         if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
             return
         if getattr(w.plot_state, "dimensions", 0) == 2:
@@ -851,7 +886,7 @@ class MainWindow(QMainWindow):
             return
         percentiles = signal.get_percentile_levels()
         levels = signal.getLevels()
-        w = self._active_plot_window()
+        w = self._active_plot()
         if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
             return
         else:
@@ -999,12 +1034,12 @@ class MainWindow(QMainWindow):
 
         self._navigator_placeholder = placeholder
         self._navigator_placeholder_rect = rect
-        current_plot = self._active_plot_window()
+        current_plot = self._active_plot()
 
     def build_new_layout(self,
-                         active_plot,
-                         drop_pos,
-                         plot_to_add):
+                         active_plot: PlotWindow,
+                         drop_pos: QtCore.QPointF,
+                         plot_to_add: Plot):
         new_pos, zone = self.arrange_graphics_layout_preview(active_plot.previous_subplots_pos,
                                                              active_plot.previous_graphics_layout_widget,
                                                              drop_pos)
@@ -1045,11 +1080,11 @@ class MainWindow(QMainWindow):
 
         This is more efficient than recreating the layout each time but more complicated...
         """
-        active_plot = self._active_plot_window()
-        if active_plot is None or not hasattr(self, '_navigator_placeholder'):
+        active_plot_window = self._active_plot_window()
+        if active_plot_window is None or not hasattr(self, '_navigator_placeholder'):
             return
         # Calculate new position
-        self.build_new_layout(active_plot, drop_pos=pos, plot_to_add=self._navigator_placeholder)
+        self.build_new_layout(active_plot_window, drop_pos=pos, plot_to_add=self._navigator_placeholder)
 
         if hasattr(self, '_navigator_placeholder_rect'):
             vb = self._navigator_placeholder.getViewBox()
@@ -1132,18 +1167,18 @@ class MainWindow(QMainWindow):
         Handle navigator drag leave event. Removes the placeholder and
         restores the original layout.
         """
-        active_plot = self._active_plot_window()
-        print("Setting back original layout:", active_plot.previous_subplots_pos)
-        active_plot.set_graphics_layout_widget(active_plot.previous_subplots_pos)
+        active_plot_window = self._active_plot_window()
+        print("Setting back original layout:", active_plot_window.previous_subplots_pos)
+        active_plot_window.set_graphics_layout_widget(active_plot_window.previous_subplots_pos)
 
     def navigator_drop(self, pos: QtCore.QPointF, mime_data):
         """
         Handle navigator drop event. Creates the actual navigator plot
         at the drop position.
         """
-        active_plot = self._active_plot_window()
+        active_plot_window = self._active_plot_window()
         nav_plot = pg.PlotItem()
-        if active_plot is None:
+        if active_plot_window is None:
             return
 
         # Extract navigator data from mime
@@ -1154,7 +1189,7 @@ class MainWindow(QMainWindow):
 
         signal = payload['signal'] # type: hs.signals.BaseSignal
 
-        self.build_new_layout(active_plot=active_plot,
+        self.build_new_layout(active_plot=active_plot_window,
                               drop_pos=pos,
                               plot_to_add=nav_plot)
 
@@ -1163,14 +1198,15 @@ class MainWindow(QMainWindow):
         # Add the navigator image/data to the plot
         # This will depend on your navigator implementation
         # Example:
+
         img = pg.ImageItem()
         nav_plot.addItem(img)
         img.setImage(signal.data)
         nav_plot.setAspectLocked(True, ratio=1)
         # Clean up
         self._original_layout_state = {}
-        active_plot.previous_subplots_pos = {}
-        active_plot.previous_subplot_added = None
+        active_plot_window.previous_subplots_pos = {}
+        active_plot_window.previous_subplot_added = None
         self._original_layout = None
 
     def arrange_graphics_layout(self, graphics_layout: GraphicsLayoutWidget, drop_pos):

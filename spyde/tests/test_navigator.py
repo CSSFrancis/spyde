@@ -10,7 +10,7 @@ class TestNavigatorMultiplex:
 
     def test_navigator_drop(self, qtbot, stem_4d_dataset, monkeypatch):
         win = stem_4d_dataset["window"]
-        nav, sig = stem_4d_dataset["subwindows"]
+        nav, sig  = win.plots
 
         toolbar = nav.plot_state.toolbar_right
         win.mdi_area.activatePreviousSubWindow()
@@ -70,7 +70,7 @@ class TestNavigatorMultiplex:
 
     def test_navigator_preview(self, qtbot, stem_4d_dataset, monkeypatch):
         win = stem_4d_dataset["window"]
-        nav, sig = stem_4d_dataset["subwindows"]
+        nav, sig  = win.plots
 
         win.mdi_area.setActiveSubWindow(nav)
         qtbot.wait(200)
@@ -140,7 +140,7 @@ class TestNavigatorMultiplex:
 
     def test_navigator_preview_left(self, qtbot, stem_4d_dataset, monkeypatch):
         win = stem_4d_dataset["window"]
-        nav, sig = stem_4d_dataset["subwindows"]
+        nav, sig  = win.plots
 
         rows =nav.plot_widget.ci.layout.rowCount()
         cols = nav.plot_widget.ci.layout.columnCount()
@@ -241,7 +241,7 @@ class TestNavigatorMultiplex:
 
     def test_navigator_drop_3d(self, qtbot, insitu_tem_2d_dataset,monkeypatch):
         win = insitu_tem_2d_dataset["window"]
-        nav, sig = insitu_tem_2d_dataset["subwindows"]
+        nav, sig  = win.plots
 
         toolbar = nav.plot_state.toolbar_right
         win.mdi_area.activatePreviousSubWindow()

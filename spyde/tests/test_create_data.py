@@ -78,25 +78,25 @@ class TestOpenExampleData:
     # Add 5D STEM once supported
     def test_create_test_2d_data(self, qtbot, tem_2d_dataset):
         win = tem_2d_dataset["window"]
-        subwindows = win.mdi_area.subWindowList()
+        subwindows = win.plots
         assert len(subwindows) == 1
         win.close()
 
     def test_create_test_3d_data(self, qtbot, insitu_tem_2d_dataset):
         win = insitu_tem_2d_dataset["window"]
-        subwindows = win.mdi_area.subWindowList()
+        subwindows = win.plots
         assert len(subwindows) == 2
         win.close()
 
     def test_create_test_4d_data(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
-        subwindows = win.mdi_area.subWindowList()
+        subwindows = win.plots
         assert len(subwindows) == 2
         win.close()
 
     def test_navigator_moving(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
-        subwindows = win.mdi_area.subWindowList()
+        subwindows = win.plots
         assert len(subwindows) == 2
 
         nav, sig = stem_4d_dataset["subwindows"]  # type: Plot

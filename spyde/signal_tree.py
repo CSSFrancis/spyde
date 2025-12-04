@@ -124,21 +124,16 @@ class BaseSignalTree:
             self.navigator_plot_manager = None
             self.add_signal_plot()
 
-    def add_signal_plot(self, dynamic: bool = True):
+    def add_signal_plot(self):
         """
         Add a new signal plot for the root signal.
         """
-        PlotWindow(is_navigator=False,
+        pw = PlotWindow(is_navigator=False,
                    plot_manager=None,
                    signal_tree=self,
                    main_window=self.main_window)
-        plot = Plot(
-            signal_tree=self,
-            is_navigator=False,
-            dynamic =dynamic,
-        )
-        self.signal_plots.append(plot)
 
+        plot = pw.add_new_plot()
         self.create_plot_states(plot=plot)
         self.signal_plots.append(plot)
         plot.update()
@@ -400,10 +395,12 @@ class BaseSignalTree:
         for signal in self.signals():
             if signal.axes_manager.navigation_dimension == 0:
                 plot.add_plot_state(signal=signal,
-                                    dynamic=False)
+                                    dynamic=False,
+                                    dimensions=signal.axes_manager.signal_dimension)
             else:
                 plot.add_plot_state(signal=signal,
-                                    dynamic=True)
+                                    dynamic=True,
+                                    dimensions=signal.axes_manager.signal_dimension)
         return plot_states
 
     def update_plot_states(self, new_signal: BaseSignal):

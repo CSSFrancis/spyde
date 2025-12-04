@@ -5,7 +5,7 @@ import pytest
 class TestDrawing:
     def test_toolbar_drawing(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
-        subwindows = win.mdi_area.subWindowList()
+        subwindows = win.plots
         assert len(subwindows) == 2
 
         # Click on the navigation plot and make sure that the toolbar is fully visible

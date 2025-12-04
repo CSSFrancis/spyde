@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from spyde.drawing.toolbars.caret_group import CaretParams
 
 
-# TODO: Simplify the two classes, expecially the layout/margin management
+# TODO: Simplify the two classes, especially the layout/margin management
 class RoundedToolBar(QtWidgets.QToolBar):
     """
     A QToolBar with rounded corners and a semi-transparent background.
