@@ -1,11 +1,9 @@
 from __future__ import annotations
 import sys
 import os
-import time
 from typing import Union
 from functools import partial
 import webbrowser
-import multiprocessing
 from time import perf_counter
 from uuid import uuid4
 
@@ -27,7 +25,6 @@ from dask.distributed import Client, Future, LocalCluster
 import pyqtgraph as pg
 import hyperspy.api as hs
 import pyxem.data
-from lmfit.lineshapes import pearson4
 from pyqtgraph import GraphicsLayoutWidget
 
 from spyde.misc.dialogs import DatasetSizeDialog, CreateDataDialog, MovieExportDialog
@@ -1034,44 +1031,6 @@ class MainWindow(QMainWindow):
 
         self._navigator_placeholder = placeholder
         self._navigator_placeholder_rect = rect
-        current_plot = self._active_plot()
-
-    def build_new_layout(self,
-                         active_plot: PlotWindow,
-                         drop_pos: QtCore.QPointF,
-                         plot_to_add: Plot):
-        new_pos, zone = self.arrange_graphics_layout_preview(active_plot.previous_subplots_pos,
-                                                             active_plot.previous_graphics_layout_widget,
-                                                             drop_pos)
-
-        # build a new layout based on previous layout and the new position
-        # new_layout_dictionary = active_plot.previous_subplots_pos.copy()
-        new_layout_dictionary = {}
-        if new_pos is not None:
-            # reset to the previous layout
-            col, row = new_pos
-
-            # cycle though all the items and shift them if needed
-
-            # old: [0,0]  pos[0], pos[1]
-            # new: [1,0] col, row
-
-            for plot, position in active_plot.previous_subplots_pos.items():
-                # Columns should add to the right.
-                prev_pos = position[0]  # this is a list of (col, row) positions
-                # rows should shift that column down
-                if col == prev_pos[1] and row <= prev_pos[0] and zone in ('top', 'bottom'):
-                    new_layout_dictionary[plot] = (prev_pos[0] + 1, prev_pos[1])
-                # columns to the right should shift right
-                elif col <= prev_pos[1] and zone in ('left', 'right'):
-                    new_layout_dictionary[plot] = (prev_pos[0], prev_pos[1] + 1)
-                # columns to the right/bottom should stay the same
-                else:
-                    new_layout_dictionary[plot] = (prev_pos[0], prev_pos[1])
-            # add the placeholder at the new position
-            new_layout_dictionary[plot_to_add] = (new_pos[1], new_pos[0])
-
-            active_plot.set_graphics_layout_widget(new_layout_dictionary)
 
     def navigator_move(self, pos: QtCore.QPointF):
         """
@@ -1084,83 +1043,12 @@ class MainWindow(QMainWindow):
         if active_plot_window is None or not hasattr(self, '_navigator_placeholder'):
             return
         # Calculate new position
-        self.build_new_layout(active_plot_window, drop_pos=pos, plot_to_add=self._navigator_placeholder)
+        active_plot_window._build_new_layout(drop_pos=pos, plot_to_add=self._navigator_placeholder)
+        #self.build_new_layout(active_plot_window, drop_pos=pos, plot_to_add=self._navigator_placeholder)
 
         if hasattr(self, '_navigator_placeholder_rect'):
             vb = self._navigator_placeholder.getViewBox()
             self._navigator_placeholder_rect.setRect(vb.rect())
-
-
-    def arrange_graphics_layout_preview(self,
-                                        graphics_layout_dict: dict,
-                                        graphics_layout: GraphicsLayoutWidget,
-                                        drop_pos: QtCore.QPointF):
-        """
-        Calculate where to place a new plot without modifying the layout.
-        Returns (row, col) tuple.
-
-        Parameters
-        ----------
-        graphics_layout_dict : dict
-            Current layout as a dictionary mapping plots to (col, row) positions.
-        graphics_layout : GraphicsLayoutWidget
-            The graphics layout widget.
-        drop_pos : QtCore.QPointF
-            The position where the navigator is being dropped.
-        """
-        # Get existing plot positions (excluding placeholder)
-        col_inds = []
-        row_inds = []
-        for plot, position in graphics_layout_dict.items():
-            if isinstance(position, list):
-                position = position[0]
-            col_inds.append(position[1])
-            row_inds.append(position[0])
-        max_col = max(col_inds) + 1 if col_inds else 1
-        max_row = max(row_inds) + 1 if row_inds else 1
-        print("MaxCol:",max_col," MaxRow:", max_row)
-        # Get drop position
-        x_pos = drop_pos.x() if hasattr(drop_pos, 'x') else drop_pos[0]
-        y_pos = drop_pos.y() if hasattr(drop_pos, 'y') else drop_pos[1]
-
-        layout_width = graphics_layout.width()
-        layout_height = graphics_layout.height()
-
-        cell_width = layout_width / max_col
-        cell_height = layout_height / max_row
-
-        drop_col = min(int(x_pos / cell_width), max_col)
-        drop_row = min(int(y_pos / cell_height), max_row)
-
-        cell_x = x_pos - (drop_col * cell_width)
-        cell_y = y_pos - (drop_row * cell_height)
-
-        norm_x = cell_x / cell_width
-        norm_y = cell_y / cell_height
-
-        print("NormX:",norm_x," NormY:", norm_y,  " CellX", drop_col, " CellY:", drop_row,)
-        # split cell into zones in an x
-        angle = np.arctan2(norm_y - 0.5, norm_x - 0.5)  # -pi to pi
-
-        if angle >= -3*np.pi/4 and angle < -np.pi/4:
-            zone = 'top'
-        elif angle >= -np.pi/4 and angle < np.pi/4:
-            zone = 'right'
-        elif angle >= np.pi/4 and angle < 3*np.pi/4:
-            zone = 'bottom'
-        else:
-            zone = 'left'
-
-        # Calculate target position
-        new_pos = None
-        if zone == 'top' or zone =="left":
-            new_pos = (drop_col, drop_row )
-        elif zone == 'bottom':
-            new_pos = (drop_col, drop_row+1)
-        else: # zone == 'right':
-            new_pos = (drop_col+ 1, drop_row)
-        print("zone:", zone, " new pos:", new_pos)
-        return new_pos, zone
 
     def navigator_leave(self):
         """
@@ -1177,9 +1065,9 @@ class MainWindow(QMainWindow):
         at the drop position.
         """
         active_plot_window = self._active_plot_window()
-        nav_plot = pg.PlotItem()
         if active_plot_window is None:
             return
+        nav_plot = active_plot_window.insert_new_plot(drop_pos=pos,)
 
         # Extract navigator data from mime
         token = mime_data.data(NAVIGATOR_DRAG_MIME).data().decode('utf-8')
@@ -1189,155 +1077,14 @@ class MainWindow(QMainWindow):
 
         signal = payload['signal'] # type: hs.signals.BaseSignal
 
-        self.build_new_layout(active_plot=active_plot_window,
-                              drop_pos=pos,
-                              plot_to_add=nav_plot)
-
-        nav_plot.setTitle(signal.metadata.General.title)
-
-        # Add the navigator image/data to the plot
-        # This will depend on your navigator implementation
-        # Example:
-
-        img = pg.ImageItem()
-        nav_plot.addItem(img)
-        img.setImage(signal.data)
-        nav_plot.setAspectLocked(True, ratio=1)
+        nav_plot.add_plot_state(signal=signal,
+                                )
+        nav_plot.set_plot_state(signal=signal,)
         # Clean up
         self._original_layout_state = {}
         active_plot_window.previous_subplots_pos = {}
         active_plot_window.previous_subplot_added = None
         self._original_layout = None
-
-    def arrange_graphics_layout(self, graphics_layout: GraphicsLayoutWidget, drop_pos):
-        """
-        Rearrange plots in the graphics layout based on drop position.
-        Balances the grid by avoiding unnecessary new rows.
-
-        Parameters
-        ----------
-        graphics_layout : GraphicsLayoutWidget
-            The graphics layout widget containing the plots.
-        drop_pos : tuple or QPointF
-            The position where a new plot will be added (x, y).
-
-        Returns
-        -------
-        tuple
-            (row, col) position where the new plot should be added.
-        """
-        # Get all existing plots with their positions
-        existing_plots = {}  # {(row, col): item}
-        max_row, max_col = 0, 0
-
-        for row in range(graphics_layout.ci.layout.rowCount()):
-            for col in range(graphics_layout.ci.layout.columnCount()):
-                item = graphics_layout.ci.layout.itemAt(row, col)
-                if item is not None:
-                    existing_plots[(row, col)] = item
-                    max_row = max(max_row, row)
-                    max_col = max(max_col, col)
-
-        if not existing_plots:
-            return (0, 0)
-
-        # Get drop position coordinates
-        try:
-            x_pos = drop_pos.x() if hasattr(drop_pos, 'x') else drop_pos[0]
-            y_pos = drop_pos.y() if hasattr(drop_pos, 'y') else drop_pos[1]
-        except (TypeError, IndexError):
-            x_pos = graphics_layout.width() / 2
-            y_pos = graphics_layout.height() / 2
-
-        # Calculate which plot cell was dropped on
-        layout_width = graphics_layout.width()
-        layout_height = graphics_layout.height()
-
-        cell_width = layout_width / (max_col + 1)
-        cell_height = layout_height / (max_row + 1)
-
-        drop_col = min(int(x_pos / cell_width), max_col)
-        drop_row = min(int(y_pos / cell_height), max_row)
-
-        # Determine zone within the cell
-        cell_x = x_pos - (drop_col * cell_width)
-        cell_y = y_pos - (drop_row * cell_height)
-
-        norm_x = cell_x / cell_width
-        norm_y = cell_y / cell_height
-
-        if norm_y < 0.3:
-            zone = 'top'
-        elif norm_y > 0.7:
-            zone = 'bottom'
-        elif norm_x < 0.3:
-            zone = 'left'
-        elif norm_x > 0.7:
-            zone = 'right'
-        else:
-            zone = 'bottom'
-
-        # Calculate column heights to find if we need a new row
-        col_heights = {}  # {col: max_row_in_col}
-        for (r, c) in existing_plots.keys():
-            col_heights[c] = max(col_heights.get(c, -1), r)
-
-        graphics_layout.clear()
-
-        if zone == 'top':
-            # Check if we can add to an existing row instead of creating a new one
-            target_col_height = col_heights.get(drop_col, -1)
-            min_col_height = min(col_heights.values()) if col_heights else 0
-
-            if target_col_height > min_col_height:
-                # This column is taller, so just add to the shortest available row
-                new_plot_position = (min_col_height + 1, drop_col)
-                for (old_row, old_col), item in existing_plots.items():
-                    graphics_layout.addItem(item, row=old_row, col=old_col)
-            else:
-                # Need to insert a new row
-                for (old_row, old_col), item in existing_plots.items():
-                    if old_row < drop_row:
-                        graphics_layout.addItem(item, row=old_row, col=old_col)
-                    else:
-                        graphics_layout.addItem(item, row=old_row + 1, col=old_col)
-                new_plot_position = (drop_row, drop_col)
-
-        elif zone == 'bottom':
-            target_col_height = col_heights.get(drop_col, -1)
-            max_col_height = max(col_heights.values()) if col_heights else 0
-
-            if target_col_height < max_col_height:
-                # This column is shorter, add to its next row
-                new_plot_position = (target_col_height + 1, drop_col)
-                for (old_row, old_col), item in existing_plots.items():
-                    graphics_layout.addItem(item, row=old_row, col=old_col)
-            else:
-                # Add new row below
-                for (old_row, old_col), item in existing_plots.items():
-                    if old_row <= drop_row:
-                        graphics_layout.addItem(item, row=old_row, col=old_col)
-                    else:
-                        graphics_layout.addItem(item, row=old_row + 1, col=old_col)
-                new_plot_position = (drop_row + 1, drop_col)
-
-        elif zone == 'left':
-            for (old_row, old_col), item in existing_plots.items():
-                if old_col < drop_col:
-                    graphics_layout.addItem(item, row=old_row, col=old_col)
-                else:
-                    graphics_layout.addItem(item, row=old_row, col=old_col + 1)
-            new_plot_position = (drop_row, drop_col)
-
-        else: # zone == 'right':
-            for (old_row, old_col), item in existing_plots.items():
-                if old_col <= drop_col:
-                    graphics_layout.addItem(item, row=old_row, col=old_col)
-                else:
-                    graphics_layout.addItem(item, row=old_row, col=old_col + 1)
-            new_plot_position = (drop_row, drop_col + 1)
-
-        return new_plot_position
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         # 1) shutdown Dask to stop its background threads and logging

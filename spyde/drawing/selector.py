@@ -11,7 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Union, List
 
 if TYPE_CHECKING:
-    from spyde.drawing.plot import Plot, NavigationPlotManager
+    from spyde.drawing.plot import Plot, MultiplotManager
 
 Logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class BaseSelector:
 
     def __init__(
         self,
-        parent: Union["Plot", "NavigationPlotManager"],
+        parent: Union["Plot", "MultiplotManager"],
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         width: int = 3,
@@ -54,7 +54,7 @@ class BaseSelector:
 
         # the parent plot (data source) and the child plot (where the data is plotted)
         # a selector can have multiple children.
-        self.parent = parent  # type: Plot | NavigationPlotManager
+        self.parent = parent  # type: Plot | MultiplotManager
         if not isinstance(children, list):
             self.children = {children: update_function}  # type: dict[Plot, callable]
             self.active_children = [
@@ -158,7 +158,7 @@ class BaseSelector:
     # Helper: autorange a child plot based on its dimension
     def _autorange_child_plot(self, child_plot):
         try:
-            vb = child_plot.plot_item.getViewBox()
+            vb = child_plot.getViewBox()
         except Exception:
             return
         dim = getattr(getattr(child_plot, "plot_state", None), "dimensions", None)
@@ -181,15 +181,15 @@ class BaseSelector:
         Clean up the selector.
         """
         if self.selector is not None:
-            self.parent.plot_item.removeItem(self.selector)
-            self.parent.plot_item.update()
+            self.parent.removeItem(self.selector)
+            self.parent.update()
         self.selector = None
 
 
 class RectangleSelector(BaseSelector):
     def __init__(
         self,
-        parent: Union["Plot", "NavigationPlotManager"],
+        parent: Union["Plot", "MultiplotManager"],
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         live_delay: int = 20,
@@ -319,7 +319,7 @@ class IntegratingSelectorMixin:
 class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
     def __init__(
         self,
-        parent: Union["Plot", "NavigationPlotManager"],
+        parent: Union["Plot", "MultiplotManager"],
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         live_delay: int = 20,
@@ -339,7 +339,7 @@ class LinearRegionSelector(BaseSelector):
 
     def __init__(
         self,
-        parent: Union["Plot", "NavigationPlotManager"],
+        parent: Union["Plot", "MultiplotManager"],
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         *args,
@@ -374,7 +374,7 @@ class LinearRegionSelector(BaseSelector):
 class IntegratingLinearRegionSelector(IntegratingSelectorMixin, LinearRegionSelector):
     def __init__(
         self,
-        parent: Union["Plot", "NavigationPlotManager"],
+        parent: Union["Plot", "MultiplotManager"],
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         *args,
@@ -391,7 +391,7 @@ class LineSelector(BaseSelector):
 
     def __init__(
         self,
-        parent: Union["Plot", "NavigationPlotManager"],
+        parent: Union["Plot", "MultiplotManager"],
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         *args,

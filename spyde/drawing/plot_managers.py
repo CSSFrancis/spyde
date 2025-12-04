@@ -101,7 +101,7 @@ class NavigationPlotManager:
             nav_plot = Plot(
                 signal_tree=self.signal_tree,
                 is_navigator=True,
-                nav_plot_manager=self,
+                multiplot_manager=self,
             )
             plot_window.plot_widget.addItem(nav_plot)
             self.plots.append(plot_window)

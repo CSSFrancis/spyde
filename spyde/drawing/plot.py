@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtWidgets, QtGui
 
 import pyqtgraph as pg
-from pyqtgraph import GraphicsItem, PlotItem
+from pyqtgraph import GraphicsItem, PlotItem, GraphicsLayoutWidget
 
 from spyde.external.pyqtgraph.scale_bar import OutlinedScaleBar as ScaleBar
 from math import floor, log10
@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from spyde.signal_tree import BaseSignalTree
     from spyde.__main__ import MainWindow
     from spyde.drawing.selector import BaseSelector
-    from spyde.drawing.plot_managers import MultiplotManager
 from hyperspy.signal import BaseSignal
 
 from spyde.drawing.plot_states import PlotState, NavigationManagerState
@@ -73,7 +72,7 @@ class PlotWindow(FramelessSubWindow):
         self.is_navigator = is_navigator  # type: bool
         # the plot manager for managing multiple plot windows.  Different from Multiplexed Plots as
         # this is for managing multiple Plot windows.
-        self.plot_manager = plot_manager # type: MultiplotManager | None
+        self.multiplot_manager = plot_manager # type: MultiplotManager | None
 
         # Instance state: track the currently active Plot (or None)
         self._current_plot_item = None  # type: Plot | None
@@ -127,15 +126,143 @@ class PlotWindow(FramelessSubWindow):
     def add_new_plot(self,
                      row: int=0,
                      col: int=0,
-                     nav_plot_manager:Optional["NavigationPlotManager"]=None) -> "Plot":
+                     multiplot_manager:Optional["MultiplotManager"]=None) -> "Plot":
         """ Creates and returns a new (empty) Plot."""
         plot =  Plot(signal_tree=self.signal_tree,
                      is_navigator=self.is_navigator,
                      plot_window=self,
-                     nav_plot_manager=nav_plot_manager
-        )
+                     multiplot_manager=multiplot_manager
+                     )
         self.add_item(plot, row, col)
         return plot
+
+    def _arrange_graphics_layout_preview(self,
+                                        graphics_layout_dict: dict,
+                                        graphics_layout: GraphicsLayoutWidget,
+                                        drop_pos: QtCore.QPointF):
+        """
+        Calculate where to place a new plot without modifying the layout.
+        Returns (row, col) tuple.
+
+        Parameters
+        ----------
+        graphics_layout_dict : dict
+            Current layout as a dictionary mapping plots to (col, row) positions.
+        graphics_layout : GraphicsLayoutWidget
+            The graphics layout widget.
+        drop_pos : QtCore.QPointF
+            The position where the navigator is being dropped.
+        """
+        # Get existing plot positions (excluding placeholder)
+        col_inds = []
+        row_inds = []
+        for plot, position in graphics_layout_dict.items():
+            if isinstance(position, list):
+                position = position[0]
+            col_inds.append(position[1])
+            row_inds.append(position[0])
+        max_col = max(col_inds) + 1 if col_inds else 1
+        max_row = max(row_inds) + 1 if row_inds else 1
+        print("MaxCol:",max_col," MaxRow:", max_row)
+        # Get drop position
+        x_pos = drop_pos.x() if hasattr(drop_pos, 'x') else drop_pos[0]
+        y_pos = drop_pos.y() if hasattr(drop_pos, 'y') else drop_pos[1]
+
+        layout_width = graphics_layout.width()
+        layout_height = graphics_layout.height()
+
+        cell_width = layout_width / max_col
+        cell_height = layout_height / max_row
+
+        drop_col = min(int(x_pos / cell_width), max_col)
+        drop_row = min(int(y_pos / cell_height), max_row)
+
+        cell_x = x_pos - (drop_col * cell_width)
+        cell_y = y_pos - (drop_row * cell_height)
+
+        norm_x = cell_x / cell_width
+        norm_y = cell_y / cell_height
+
+        print("NormX:",norm_x," NormY:", norm_y,  " CellX", drop_col, " CellY:", drop_row,)
+        # split cell into zones in an x
+        angle = np.arctan2(norm_y - 0.5, norm_x - 0.5)  # -pi to pi
+
+        if angle >= -3*np.pi/4 and angle < -np.pi/4:
+            zone = 'top'
+        elif angle >= -np.pi/4 and angle < np.pi/4:
+            zone = 'right'
+        elif angle >= np.pi/4 and angle < 3*np.pi/4:
+            zone = 'bottom'
+        else:
+            zone = 'left'
+
+        # Calculate target position
+        new_pos = None
+        if zone == 'top' or zone =="left":
+            new_pos = (drop_col, drop_row )
+        elif zone == 'bottom':
+            new_pos = (drop_col, drop_row+1)
+        else: # zone == 'right':
+            new_pos = (drop_col+ 1, drop_row)
+        print("zone:", zone, " new pos:", new_pos)
+        return new_pos, zone
+
+    def _build_new_layout(self,
+                          drop_pos:QtCore.QPointF,
+                          plot_to_add: "Plot",
+                          ):
+        """ Build a new layout with the new plot added at the drop position. """
+        new_pos, zone = self._arrange_graphics_layout_preview(self.previous_subplots_pos,
+                                                             self.previous_graphics_layout_widget,
+                                                             drop_pos)
+
+        # build a new layout based on previous layout and the new position
+        # new_layout_dictionary = active_plot.previous_subplots_pos.copy()
+        new_layout_dictionary = {}
+        if new_pos is not None:
+            # reset to the previous layout
+            col, row = new_pos
+
+            # cycle though all the items and shift them if needed
+
+            # old: [0,0]  pos[0], pos[1]
+            # new: [1,0] col, row
+
+            for plot, position in self.previous_subplots_pos.items():
+                # Columns should add to the right.
+                prev_pos = position[0]  # this is a list of (col, row) positions
+                # rows should shift that column down
+                if col == prev_pos[1] and row <= prev_pos[0] and zone in ('top', 'bottom'):
+                    new_layout_dictionary[plot] = (prev_pos[0] + 1, prev_pos[1])
+                # columns to the right should shift right
+                elif col <= prev_pos[1] and zone in ('left', 'right'):
+                    new_layout_dictionary[plot] = (prev_pos[0], prev_pos[1] + 1)
+                # columns to the right/bottom should stay the same
+                else:
+                    new_layout_dictionary[plot] = (prev_pos[0], prev_pos[1])
+            # add the placeholder at the new position
+            new_layout_dictionary[plot_to_add] = (new_pos[1], new_pos[0])
+
+            self.set_graphics_layout_widget(new_layout_dictionary)
+
+
+    def insert_new_plot(self,
+                        drop_pos:QtCore.QPointF,
+                        ) -> "Plot":
+        """ Inserts and returns a new (empty) Plot at the drop position.
+
+        If this Plot window has a MultiplotManager and it is a navigation plot then the plots have to
+        be all the same size... That is handled when the plot states are added though.....
+
+        """
+
+        new_plot = Plot(signal_tree=self.signal_tree,
+                        multiplot_manager=self.multiplot_manager,
+                        is_navigator=self.is_navigator,
+                        plot_window=self,
+                        )
+        self._build_new_layout(drop_pos, new_plot)
+        return new_plot
 
     def add_item(self, item: GraphicsItem, row: int=0, col: int=0):
         """Add a GraphicsItem to the graphics layout at the specified row and column."""
@@ -216,6 +343,38 @@ class PlotWindow(FramelessSubWindow):
         super().resizeEvent(ev)
         self.reposition_toolbars()
 
+    def close_window(self):
+        """Close the plot window and clean up toolbars and selectors."""
+        for plot in self.plots:
+            plot.close_plot()
+
+        # if part of a nav plot manager close everything and clean up the signal
+        if self.multiplot_manager is not None:
+            logger.info("Closing all plots in the multiplot manager... This closes associated Signal + Navigation"
+                        "plots all at once...")
+            for plot_window in self.multiplot_manager.plot_windows:
+                try:
+                    plot_window.close()
+                except Exception:
+                    pass
+            self.main_window.signal_trees.remove(self.signal_tree)
+            self.signal_tree.close()
+            logger.info("Removed signal tree from main window.")
+
+        # Remove from main window tracking
+        if hasattr(self.main_window, "plot_subwindows"):
+            try:
+                self.main_window.plot_subwindows.remove(self)
+                logger.info("MultiPlot: Removed plot from main window tracking.")
+            except ValueError:
+                pass
+
+    def closeEvent(self, ev: QtGui.QCloseEvent) -> None:
+        self.close_window()
+        super().closeEvent(ev)
+
+        
+
 class Plot(PlotItem):
     """
     A Plot within a QMdi sub-window. This can be either a 2D image or a 1D line plot.
@@ -237,7 +396,7 @@ class Plot(PlotItem):
         self,
         signal_tree: "BaseSignalTree",
         is_navigator : bool = False,
-        nav_plot_manager: Union["NavigationPlotManager", None] = None,
+        multiplot_manager: Union["MultiplotManager", None] = None,
         plot_window: Union["PlotWindow", None] = None,
         *args,
         **kwargs,
@@ -272,7 +431,7 @@ class Plot(PlotItem):
         # the current data being displayed in the plot
         self.current_data = None  # type: Union[np.ndarray, da.Array, Future, None]
 
-        self.nav_plot_manager = nav_plot_manager  # type: NavigationPlotManager | None
+        self.multiplot_manager = multiplot_manager  # type: MultiplotManager | None
 
 
         # Either an image item (2D) or line item (1D)
@@ -437,6 +596,8 @@ class Plot(PlotItem):
         print(self.image_item)
         print("Showing toolbars for plot state:", self.plot_state)
         self.plot_state.show_toolbars()
+        self.setTitle(signal.metadata.General.title)
+
 
     def add_plot_state(self,
                            signal: BaseSignal,
@@ -482,7 +643,7 @@ class Plot(PlotItem):
                 selectors += getattr(self.plot_state, "signal_tree_selectors", [])
             if getattr(self, "nav_plot_manager", None) is not None:
                 selectors += list(
-                    getattr(self.nav_plot_manager, "navigation_selectors", [])
+                    getattr(self.multiplot_manager, "navigation_selectors", [])
                 )
 
             print("Updating selectors for new image transform:", selectors)
@@ -557,8 +718,8 @@ class Plot(PlotItem):
         visible_selectors = (
             self.plot_state.plot_selectors + self.plot_state.signal_tree_selectors
         )
-        if self.nav_plot_manager is not None:
-            visible_selectors += self.nav_plot_manager.navigation_selectors
+        if self.multiplot_manager is not None:
+            visible_selectors += self.multiplot_manager.navigation_selectors
         # Hide selectors from other plots. Faster than deleting and recreating them (also renders nicer).
         for selector in self.main_window.navigation_selectors:
             if selector not in visible_selectors:
@@ -572,8 +733,8 @@ class Plot(PlotItem):
         visible_selectors = (
             self.plot_state.plot_selectors + self.plot_state.signal_tree_selectors
         )
-        if self.nav_plot_manager is not None:
-            visible_selectors += self.nav_plot_manager.navigation_selectors
+        if self.multiplot_manager is not None:
+            visible_selectors += self.multiplot_manager.navigation_selectors
         for selector in visible_selectors:
             selector.widget.hide()
             self.main_window.selectors_layout.removeWidget(selector.widget)
@@ -718,6 +879,9 @@ class Plot(PlotItem):
         for plot_state in self.plot_states:
             self.plot_states[plot_state].close()
 
+        logger.info("Plot: Removing selector control widgets for this plot")
+        # Remove the selectors for this plot
+        self.remove_selector_control_widgets()
 
         logger.info("Deleting current plot selectors and child plots")
         # need to delete the current selectors and child plots
@@ -730,58 +894,14 @@ class Plot(PlotItem):
             except Exception:
                 pass
 
-    def closeEvent(self, event):
-        """Cleanup toolbar, hide selector widgets, and close attached plots when needed."""
-        self._update_main_cursor(None, None, None, None, None)
-        self._mouse_proxy = None
-
-        # delete all the plot states associated with the plot
-        for plot_state in self.plot_states:
-            self.plot_states[plot_state].close()
-
-
-
         logger.info("Closing parent selector if exists")
         if self.parent_selector is not None:
             logger.info("Closing parent selector")
-            self.parent_selector.parent.nav_plot_manager.navigation_selectors.remove(
+            self.parent_selector.parent.multiplot_manager.navigation_selectors.remove(
                 self.parent_selector
             )
             self.parent_selector.widget.hide()
             self.parent_selector.close()
-
-        # if part of a nav plot manager close everything and clean up the signal
-        if self.nav_plot_manager is not None:
-            logger.info("Closing nav plot manager plots")
-            for plot in self.nav_plot_manager.plots:
-                try:
-                    plot.close()
-                except Exception:
-                    pass
-            for plot in self.signal_tree.signal_plots:
-                try:
-                    plot.close()
-                except Exception:
-                    pass
-            self.main_window.signal_trees.remove(self.signal_tree)
-            self.signal_tree.close()
-            logger.info("Removed signal tree from main window.")
-
-        # Remove from main window tracking
-        if hasattr(self.main_window, "plot_subwindows"):
-            try:
-                self.main_window.plot_subwindows.remove(self)
-                logger.info("MultiPlot: Removed plot from main window tracking.")
-                self.main_window.mdi_area
-            except ValueError:
-                pass
-        logger.info("MultiPlot: Removing selector control widgets for this plot")
-
-        # Remove the selectors for this plot
-        self.remove_selector_control_widgets()
-        logger.info("Plot: Calling CloseEvent of super class")
-        super().closeEvent(event)
-        logger.info("Plot: Plot closed.")
 
     def _apply_pending_navigator_assignment(self) -> bool:
         """Replace this plot with the queued navigator signal, if any."""
@@ -799,7 +919,7 @@ class Plot(PlotItem):
         return True
 
 
-class NavigationPlotManager:
+class MultiplotManager:
     """
     A class to manage multiple `Plot` instances for navigation plots.
 
@@ -816,6 +936,7 @@ class NavigationPlotManager:
     def __init__(self, main_window: "MainWindow", signal_tree: "BaseSignalTree"):
         self.main_window = main_window  # type: MainWindow
         self.plots = []  # type: List[Plot]
+        self.plot_windows = []  # type: List[PlotWindow]
 
         self.navigation_selectors = []  # type: List[BaseSelector]
         self.signal_tree = signal_tree  # type: BaseSignalTree
@@ -834,7 +955,8 @@ class NavigationPlotManager:
                                                                plot_manager=self,
                                                                signal_tree=self.signal_tree
                                                                )
-            nav_plot = nav_plot_window.add_new_plot(nav_plot_manager=self)
+            nav_plot = nav_plot_window.add_new_plot(multiplot_manager=self)
+            self.plot_windows.append(nav_plot_window)
             self.plots.append(nav_plot)
             # create plot states for the nav plot
         for signal in self.signal_tree.navigator_signals.values():
@@ -930,6 +1052,7 @@ class NavigationPlotManager:
                 plot_manager=None,
                 signal_tree=self.signal_tree,
             )
+            self.plot_windows.append(window)
             child = window.add_new_plot()
             # create plot states for the child plot
             self.signal_tree.create_plot_states(plot=child)

@@ -1,7 +1,6 @@
 from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor, QIcon
-from pathlib import Path
 from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
 
 # New imports for painting/tinting

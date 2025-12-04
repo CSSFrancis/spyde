@@ -24,8 +24,7 @@ class TestActions:
                 center_button = action
             elif action.text() == "Rebin":
                 rebin = action
-
-        center_zero_beam_roi =  toolbar_bottom.action_widgets["Center Zero Beam"]["plot_items"][0]
+        center_zero_beam_roi =  toolbar_bottom.action_widgets["Center Zero Beam"]["plot_items"]["item_0"]
         caret_params = toolbar_bottom.action_widgets["Center Zero Beam"]["widget"]
 
         # Start hidden
@@ -39,16 +38,16 @@ class TestActions:
         # make sure that the caret box was created
         # action widget: "plot_items", "widget", "layout", "tracker", "position_fn"
         caret_params = toolbar_bottom.action_widgets["Center Zero Beam"]["widget"]
-        center_zero_beam_roi =  toolbar_bottom.action_widgets["Center Zero Beam"]["plot_items"][0]
+        center_zero_beam_roi =  toolbar_bottom.action_widgets["Center Zero Beam"]["plot_items"]["item_0"]
         assert isinstance(caret_params, CaretParams)
         assert caret_params.isVisible()
         assert center_zero_beam_roi.isVisible()
 
         roi_z_value = center_zero_beam_roi.zValue()
-        plot_z = sig.plot_item.zValue()
+        plot_z = sig.zValue()
         assert roi_z_value > plot_z  # ROI should be above the plot
         # assert roi is on the plot
-        assert sig.plot_item.items.__contains__(center_zero_beam_roi)
+        assert sig.items.__contains__(center_zero_beam_roi)
 
         # untoggle the action and make sure that the caret box is hidden and the ROI is removed
         center_button.trigger()
@@ -84,7 +83,7 @@ class TestActions:
             elif action.text() == "Rebin":
                 rebin_new = action
 
-        center_zero_beam_roi_new =  toolbar_bottom_new.action_widgets["Center Zero Beam"]["plot_items"][0]
+        center_zero_beam_roi_new =  toolbar_bottom_new.action_widgets["Center Zero Beam"]["plot_items"]["item_0"]
         caret_params_new = toolbar_bottom_new.action_widgets["Center Zero Beam"]["widget"]
         # make sure that the caret box was created
         assert isinstance(caret_params_new, CaretParams)
@@ -97,7 +96,7 @@ class TestActions:
         # make sure that the caret box was created
 
         # the plot needs to be updated before the toolbars are updated
-        assert sig.plot_item.items.__contains__(center_zero_beam_roi_new)
+        assert sig.items.__contains__(center_zero_beam_roi_new)
 
     def test_rebin(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
@@ -125,7 +124,7 @@ class TestActions:
 
         # submit the rebin
         rebin_widget.submit_button.click()
-        qtbot.wait(2000)  # wait for the action to take effect
+        qtbot.wait(4000)  # wait for the action to take effect
 
         # check that the data has been rebinned
         current_data = sig.current_data
@@ -184,11 +183,11 @@ class TestActions:
         assert roi.isVisible()
         # check to make sure the roi is on the right plot?
 
-        plot_z = sig.plot_item.zValue()
+        plot_z = sig.zValue()
         roi_z = roi.zValue()
         assert roi_z > plot_z  # ROI should be above the plot
 
-        assert sig.plot_item.items.__contains__(roi)
+        assert sig.items.__contains__(roi)
 
         # untoggle the virtual detector
         virtual_imaging.trigger()

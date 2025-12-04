@@ -60,7 +60,7 @@ def add_selector(toolbar: "RoundedToolBar", toggled=None, *args, **kwargs):
     toolbar : RoundedToolBar
         The plot to add the selector.
     """
-    toolbar.plot.nav_plot_manager.add_navigation_selector_and_signal_plot()
+    toolbar.plot.multiplot_manager.add_navigation_selector_and_signal_plot()
 
 
 def add_fft_selector(toolbar: "RoundedToolBar", *args, **kwargs):
@@ -126,7 +126,7 @@ class NavigatorButton(RoundedButton):
                 return
             mw.set_pending_navigator_assignment(
                 self.signal,
-                self.toolbar.plot.nav_plot_manager,
+                self.toolbar.plot.multiplot_manager,
                 target_plot=active_plot,
             )
         super().mouseReleaseEvent(event)
@@ -134,7 +134,7 @@ class NavigatorButton(RoundedButton):
     def _start_drag(self) -> None:
         mw = self.toolbar.plot.main_window
         token = mw.register_navigator_drag_payload(
-            self.signal, self.toolbar.plot.nav_plot_manager
+            self.signal, self.toolbar.plot.multiplot_manager
         )
         drag = QtGui.QDrag(self)
         mime = QtCore.QMimeData()
@@ -156,10 +156,10 @@ def toggle_navigation_plots(
     toolbar : RoundedToolBar
         The plot to toggle navigation plots.
     """
-    if toolbar.plot.nav_plot_manager is None:
+    if toolbar.plot.multiplot_manager is None:
         raise RuntimeError("Plot does not have a navigation plot manager.")
 
-    signal_options = toolbar.plot.nav_plot_manager.navigation_signals
+    signal_options = toolbar.plot.multiplot_manager.navigation_signals
 
     first_init = (action_name not in toolbar.action_widgets or
                   toolbar.action_widgets[action_name].get("widget", None) is None)

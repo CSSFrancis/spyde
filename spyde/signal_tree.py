@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from spyde.__main__ import MainWindow
 
 from spyde.drawing.plot import Plot, PlotWindow
-from spyde.drawing.plot import NavigationPlotManager
+from spyde.drawing.plot import MultiplotManager
 from spyde.external.qt.labels import EditableLabel
 from spyde import METADATA_WIDGET_CONFIG
 
@@ -103,7 +103,7 @@ class BaseSignalTree:
         self.client = distributed_client
         self.signal_plots = []  # type: Union[List[Plot], None]
 
-        self.navigator_plot_manager = None  # type: Union[NavigationPlotManager, None]
+        self.navigator_plot_manager = None  # type: Union[MultiplotManager, None]
         # setting up plots
 
         self._initialize_initial_plots()
@@ -117,7 +117,7 @@ class BaseSignalTree:
         if (
             self.root.axes_manager.navigation_dimension > 0
         ):  # pass to NavigationPlotManager
-            self.navigator_plot_manager = NavigationPlotManager(
+            self.navigator_plot_manager = MultiplotManager(
                 main_window=self.main_window, signal_tree=self
             )
         else:
@@ -128,13 +128,14 @@ class BaseSignalTree:
         """
         Add a new signal plot for the root signal.
         """
-        pw = PlotWindow(is_navigator=False,
-                   plot_manager=None,
-                   signal_tree=self,
-                   main_window=self.main_window)
+        pw = self.main_window.add_plot_window(is_navigator=False,
+                                              signal_tree=self,
+                                              plot_manager=None)
+
 
         plot = pw.add_new_plot()
         self.create_plot_states(plot=plot)
+        plot.set_plot_state(list(plot.plot_states.keys())[0])
         self.signal_plots.append(plot)
         plot.update()
 
@@ -431,7 +432,7 @@ class BaseSignalTree:
         """
         Create navigator plots based on the root signal.
         """
-        self.navigator_plot_manager = NavigationPlotManager(
+        self.navigator_plot_manager = MultiplotManager(
             main_window=self.main_window, signal_tree=self
         )
 

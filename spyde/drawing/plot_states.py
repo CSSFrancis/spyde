@@ -8,7 +8,7 @@ from spyde.drawing.toolbars.plot_control_toolbar import get_toolbar_actions_for_
 from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
 
 if TYPE_CHECKING:
-    from spyde.drawing.plot import NavigationPlotManager, Plot
+    from spyde.drawing.plot import MultiplotManager, Plot
 
 
 class PlotState:
@@ -232,13 +232,9 @@ class PlotState:
         for attr in ("toolbar_right", "toolbar_left", "toolbar_top", "toolbar_bottom"):
             tb = getattr(self, attr, None)
             if tb is not None:
-                try:
-                    tb.plot = None
-                    tb.close()
-                    setattr(self, attr, None)
-                except Exception:
-                    pass
-
+                tb.plot = None
+                tb.close()
+                setattr(self, attr, None)
 
 class MultiImageManager:
     """The MultiImageManager manages multiple images within a single plotting context.
@@ -316,7 +312,7 @@ class NavigationManagerState:
     def __init__(
         self,
         signal: BaseSignal,
-        plot_manager: "NavigationPlotManager",
+        plot_manager: "MultiplotManager",
     ):
         # only up to 4 navigation dimensions supported for now...
         dimensions = (
@@ -336,7 +332,7 @@ class NavigationManagerState:
             signal = signal.transpose(2)
 
         self.current_signal: BaseSignal = signal
-        self.plot_manager: "NavigationPlotManager" = plot_manager
+        self.plot_manager: "MultiplotManager" = plot_manager
 
         self.dimensions: List[int] = [
             signal.axes_manager.signal_dimension,

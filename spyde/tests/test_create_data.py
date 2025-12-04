@@ -99,8 +99,8 @@ class TestOpenExampleData:
         subwindows = win.plots
         assert len(subwindows) == 2
 
-        nav, sig = stem_4d_dataset["subwindows"]  # type: Plot
-        nav_manager = nav.nav_plot_manager
+        nav, sig = subwindows  # type: Plot
+        nav_manager = nav.multiplot_manager
         assert len(nav_manager.navigation_selectors) == 1
         selector = nav_manager.navigation_selectors[0]
         current = sig.current_data
@@ -108,7 +108,7 @@ class TestOpenExampleData:
         print("Old data captured:", current)
 
         # make sure that the selector is in the navigation plot
-        assert selector.selector in nav.plot_item.items
+        assert selector.selector in nav.items
 
         # Simulate moving the selector in the navigation plot
         original_pos = selector.selector.pos()  # Mock original position
