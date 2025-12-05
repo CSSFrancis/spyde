@@ -75,10 +75,7 @@ class PlotState:
         self.signal_tree_selectors_children: List["Plot"] = []
 
         # for navigation plots make sure we transpose to get the plot dimensions correct...
-        if dimensions is not None:
-            self.dimensions = dimensions
-        else:
-            self.dimensions = self.current_signal.axes_manager.signal_dimension
+        self.dimensions = self.current_signal.axes_manager.signal_dimension
 
         # Initialize toolbars for this plot state so that we can add actions to them
         self._initialize_toolbars()

@@ -94,6 +94,12 @@ class TestOpenExampleData:
         assert len(subwindows) == 2
         win.close()
 
+    def test_create_test_5d_data(self, qtbot, stem_5d_dataset):
+        win = stem_5d_dataset["window"]
+        subwindows = win.plots
+        assert len(subwindows) == 3
+        win.close()
+
     def test_navigator_moving(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
         subwindows = win.plots

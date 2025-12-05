@@ -60,7 +60,7 @@ def add_selector(toolbar: "RoundedToolBar", toggled=None, *args, **kwargs):
     toolbar : RoundedToolBar
         The plot to add the selector.
     """
-    toolbar.plot.multiplot_manager.add_navigation_selector_and_signal_plot()
+    toolbar.plot.multiplot_manager.add_navigation_selector_and_signal_plot(toolbar.plot_window)
 
 
 def add_fft_selector(toolbar: "RoundedToolBar", *args, **kwargs):

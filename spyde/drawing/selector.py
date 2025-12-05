@@ -1,5 +1,6 @@
 import logging
 
+from pandas.core.indexes.api import all_indexes_same
 from pyqtgraph import LinearRegionItem, RectROI, CircleROI, LineROI
 
 from PySide6 import QtCore, QtWidgets, QtGui
@@ -15,6 +16,42 @@ if TYPE_CHECKING:
 
 Logger = logging.getLogger(__name__)
 
+def broadcast_rows_cartesian(*arrays: np.ndarray) -> np.ndarray:
+    """
+    Cartesian product over *rows* of multiple index arrays, keeping
+    the columns of each array together.
+
+    Each input is treated as shape (Ni, Ci): Ni rows, Ci columns.
+    The output has shape (N_total, sum(Ci)), where N_total is the
+    product of all Ni.
+
+    Example:
+    time_axs    : (3, 1) -> [[0],[1],[2]]
+    spatial_axs : (3, 2) -> [[3,4],[4,5],[5,6]]
+
+    broadcast_rows_cartesian(time_axs, spatial_axs) ->
+        shape (9, 3), rows like [t, x, y].
+    """
+    if len(arrays) == 0:
+        return np.empty((0, 0), dtype=int)
+
+    # Normalize to 2D: (N_rows, N_cols)
+    mats = [np.atleast_2d(a) for a in arrays]
+    n_rows = [m.shape[0] for m in mats]
+
+    # Meshgrid over row indices only
+    grids = np.meshgrid(*[np.arange(n) for n in n_rows], indexing="ij")
+
+    # For each array, select rows according to its index grid and reshape
+    parts = []
+    for m, g in zip(mats, grids):
+        # g.ravel() gives the chosen row index per combination
+        chosen_rows = m[g.ravel()]          # shape: (n_comb, Ci)
+        parts.append(chosen_rows)
+
+    # Concatenate columns from all arrays
+    combined = np.concatenate(parts, axis=1)
+    return combined
 
 class BaseSelector:
     """
@@ -50,6 +87,7 @@ class BaseSelector:
         hover_color: str = "red",
         live_delay: int = 20,
         resize_on_move: bool = False,
+        multi_selector: bool = False,
     ):
 
         # the parent plot (data source) and the child plot (where the data is plotted)
@@ -92,6 +130,7 @@ class BaseSelector:
         self.update_function = update_function
         self._last_size_sig = None
         self.selector = None  # to be defined in subclasses # type: pg.ROI | None
+        self.multi_selector = multi_selector
 
     def apply_transform_to_selector(self, transform: QtGui.QTransform):
         """
@@ -101,13 +140,46 @@ class BaseSelector:
             self.selector.resetTransform()
             self.selector.setTransform(transform)
 
+    def _get_selected_indices_from_upstream(self):
+        """
+        Get the selected indices from upstream selectors.
+        """
+        indices_list = []
+        for parent_selector in self.upstream_selectors():
+            indices = parent_selector._get_selected_indices()
+            indices_list.append(indices)
+        return indices_list
+
     def get_selected_indices(self):
         """
         Get the currently selected indices from the selector.
         """
-        raise NotImplementedError(
-            "get_selected_indices must be implemented in subclasses"
-        )
+        if self.multi_selector:
+            upstream_indices = self._get_selected_indices_from_upstream()
+            current_indices = self._get_selected_indices()
+            combo = upstream_indices + [current_indices,]
+            combined_indices = broadcast_rows_cartesian(*combo)
+            return combined_indices
+        else:
+            print("single selector", self._get_selected_indices())
+            return self._get_selected_indices()
+
+    def _get_selected_indices(self):
+        """
+        Placeholder method to be implemented in subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement _get_selected_indices method.")
+
+    def upstream_selectors(self):
+        """
+        Get a list of upstream selectors.
+        """
+        selectors = []
+        current = self.parent
+        while hasattr(current, "parent_selector") and current.parent_selector is not None:
+            selectors.append(current.parent_selector)
+            current = current.parent_selector.parent
+        return selectors
 
     def update_data(self, ev=None):
         """
@@ -123,7 +195,6 @@ class BaseSelector:
         """
         Perform the actual update if the indices have not changed.
         """
-        print("updating the data:", self.children)
         indices = self.get_selected_indices()
         if not np.array_equal(indices, self.current_indices) or force:
             for child in self.children:
@@ -134,6 +205,10 @@ class BaseSelector:
                 )  # update the child plot data. If this is a future then
                 if update_contrast:
                     child.needs_auto_level = True
+                # update all plots downstream of the child
+                if child.multiplot_manager is not None:
+                    for child_selector in child.multiplot_manager.navigation_selectors[child.plot_window]:
+                        child_selector.delayed_update_data()
             # the plot will update when the future completes
             self.current_indices = indices
 
@@ -193,11 +268,12 @@ class RectangleSelector(BaseSelector):
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         live_delay: int = 20,
+        multi_selector: bool = False,
         *args,
         **kwargs,
     ):
         super().__init__(
-            parent, children, update_function, live_delay=live_delay, *args, **kwargs
+            parent, children, update_function, live_delay=live_delay, multi_selector=multi_selector, *args, **kwargs
         )
         print("Creating Rectangle Selector")
         print(args, kwargs)
@@ -217,10 +293,13 @@ class RectangleSelector(BaseSelector):
         parent.addItem(self.selector)
         self.selector.sigRegionChanged.connect(self.update_data)
 
-    def get_selected_indices(self):
+    def _get_selected_indices(self):
         """
         Get the currently selected indices from the selector.
         """
+        if self.multi_selector:
+            [parent_selector.get_selected_indices() for parent_selector in self.upstream_selectors()]
+
         lower_left = self.selector.pos()
         size = self.selector.size()
 
@@ -323,11 +402,12 @@ class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         live_delay: int = 20,
+        multi_selector: bool = False,
         *args,
         **kwargs,
     ):
         super().__init__(
-            parent, children, update_function, live_delay=live_delay, *args, **kwargs
+            parent, children, update_function, live_delay=live_delay, multi_selector=multi_selector, *args, **kwargs
         )
 
 
@@ -342,10 +422,11 @@ class LinearRegionSelector(BaseSelector):
         parent: Union["Plot", "MultiplotManager"],
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
+        multi_selector: bool = False,
         *args,
         **kwargs,
     ):
-        super().__init__(parent, children, update_function, *args, **kwargs)
+        super().__init__(parent, children, update_function, multi_selector=multi_selector, *args, **kwargs)
         self.selector = LinearRegionItem(
             pen=self.roi_pen, hoverPen=self.hoverPen, *args, **kwargs
         )
@@ -354,7 +435,7 @@ class LinearRegionSelector(BaseSelector):
         parent.addItem(self.selector)
         self.selector.sigRegionChanged.connect(self.update_data)
 
-    def get_selected_indices(self):
+    def _get_selected_indices(self):
         """
         Get the currently selected indices from the selector.
         """
@@ -409,7 +490,7 @@ class LineSelector(BaseSelector):
         parent.plot_item.addItem(self.selector)
         self.selector.sigRegionChanged.connect(self.update_data)
 
-    def get_selected_indices(self):
+    def _get_selected_indices(self):
         """
         Get the currently selected indices from the selector.
         """

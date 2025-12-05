@@ -139,9 +139,11 @@ class BaseSignalTree:
         self.signal_plots.append(plot)
         plot.update()
 
-    def _preprocess_navigator(self, signal: BaseSignal) -> BaseSignal:
+    def _preprocess_navigator(self, signal: BaseSignal) -> List[BaseSignal]:
         """
         Preprocess the navigator signal before adding it to the navigator plot manager.
+
+        If the signal has a navigator then it will be split into two!
         """
         if (
             signal.axes_manager.navigation_shape + signal.axes_manager.signal_shape
@@ -154,7 +156,25 @@ class BaseSignalTree:
             signal = signal.T
         if signal._lazy:
             signal.compute()
-        return signal
+
+        if signal.axes_manager.signal_dimension > 0 and signal.axes_manager.navigation_dimension > 0:
+            navigator = signal.sum(signal.axes_manager.signal_axes).T
+            if navigator._lazy:
+                navigator.compute()
+            print("Preprocessing navigator: ", navigator, signal)
+            return [navigator, signal]
+
+        elif signal.axes_manager.signal_dimension > 2:
+            signal = signal.transpose(2)
+            navigator = signal.sum(signal.axes_manager.signal_axes).T
+            if navigator._lazy:
+                navigator.compute()
+            print("Preprocessing navigator: ", navigator, signal)
+
+            return [navigator, signal]
+
+
+        return [signal]
 
     def _on_axis_field_edit(
         self,
@@ -342,7 +362,7 @@ class BaseSignalTree:
         """
         signal = self._preprocess_navigator(signal)
         self.navigator_signals[name] = signal
-        self.navigator_plot_manager.add_state(signal)
+        self.navigator_plot_manager.add_plot_states_for_navigation_signals(signal)
 
     def _initialize_navigator(self, signal: BaseSignal):
         """

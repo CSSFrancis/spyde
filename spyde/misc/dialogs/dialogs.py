@@ -218,7 +218,7 @@ class CreateDataDialog(QDialog):
         # Tab 4: Insitu 4D STEM (t, x, y, kx, ky)
         random_tab = QtWidgets.QWidget()
         random_layout = QtWidgets.QVBoxLayout(random_tab)
-        self.r_t_input = add_spin_row(random_layout, "Time Size:", 0, 10000, 0)
+        self.r_t_input = add_spin_row(random_layout, "Time Size:", 1, 10000, 10)
         self.r_x_input = add_spin_row(random_layout, "X Size:", 1, 10000, 128)
         self.r_y_input = add_spin_row(random_layout, "Y Size:", 1, 10000, 128)
         self.r_kx_input = add_spin_row(random_layout, "KX Size:", 1, 10000, 64)
@@ -234,6 +234,11 @@ class CreateDataDialog(QDialog):
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
 
+        # Resize dialog to fit the tabs content and enforce a sensible minimum
+        self.adjustSize()
+        min_w, min_h = 400, 300
+        self.resize(max(self.sizeHint().width(), min_w), max(self.sizeHint().height(), min_h))
+        self.setMinimumSize(min_w, min_h)
     @staticmethod
     def _auto_chunks(ndim: int) -> tuple:
         """

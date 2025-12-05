@@ -7,7 +7,6 @@ import webbrowser
 from time import perf_counter
 from uuid import uuid4
 
-import numpy as np
 from PySide6.QtGui import QAction, QIcon, QBrush
 from PySide6.QtCore import Qt, QEvent
 from PySide6.QtWidgets import (
@@ -25,7 +24,6 @@ from dask.distributed import Client, Future, LocalCluster
 import pyqtgraph as pg
 import hyperspy.api as hs
 import pyxem.data
-from pyqtgraph import GraphicsLayoutWidget
 
 from spyde.misc.dialogs import DatasetSizeDialog, CreateDataDialog, MovieExportDialog
 from spyde.drawing.plot import Plot, PlotWindow
@@ -310,7 +308,7 @@ class MainWindow(QMainWindow):
         selectors = []
         for s in self.signal_trees:
             if s.navigator_plot_manager is not None:
-                selectors.extend(s.navigator_plot_manager.navigation_selectors)
+                selectors.extend(s.navigator_plot_manager.all_navigation_selectors)
         return selectors
 
     def update_plots_loop(self) -> None:
