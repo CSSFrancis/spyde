@@ -69,7 +69,7 @@ def stem_4d_dataset(qtbot) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, Lis
 def stem_5d_dataset(qtbot) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
     win = _open_window()
     _create_data(win, "5D STEM")
-    qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 2, timeout=10000)
+    qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 3, timeout=10000)
     try:
         yield {
             "window": win,

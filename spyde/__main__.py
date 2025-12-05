@@ -550,7 +550,7 @@ class MainWindow(QMainWindow):
                        )
         #pw.setWidget(pw.container)
 
-        pw.resize(self.screen_size.height() // 2, self.screen_size.height() // 2)
+        pw.resize(self.screen_size.height() // 3, self.screen_size.height() // 3)
 
         # Add to MDI and make the subwindow frameless
         self.mdi_area.addSubWindow(pw)
@@ -1097,15 +1097,17 @@ class MainWindow(QMainWindow):
             return
 
         signal = payload['signal'] # type: hs.signals.BaseSignal
+        print("Adding navigator signal to plot:", signal)
+        for navigation_signal in nav_plot.signal_tree.navigator_signals.values():
+            nav_plot.multiplot_manager.add_plot_states_for_navigation_signals(navigation_signal)
 
-        nav_plot.add_plot_state(signal=signal,
-                                )
-        nav_plot.set_plot_state(signal=signal,)
+        nav_plot.set_plot_state(signal=signal[0])
         # Clean up
         self._original_layout_state = {}
         active_plot_window.previous_subplots_pos = {}
         active_plot_window.previous_subplot_added = None
         self._original_layout = None
+        # TODO: reset view to fit data
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         # 1) shutdown Dask to stop its background threads and logging

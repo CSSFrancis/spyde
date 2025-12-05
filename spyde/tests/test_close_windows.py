@@ -18,7 +18,7 @@ class TestCloseWindows:
         nav_plot, sig_plot = nav.current_plot_item, sig.current_plot_item
         nav_manager = nav.multiplot_manager
         assert len(nav_manager.navigation_selectors) == 1
-        selector = nav_manager.navigation_selectors[0]
+        selector = nav_manager.navigation_selectors[nav][0]
 
         # make sure that the selector is in the navigation plot
         assert selector.selector in nav_plot.items
@@ -28,7 +28,8 @@ class TestCloseWindows:
         assert nav in win.plot_subwindows
 
         # assert that the selector was removed from the navigation plot
-        assert len(nav_manager.navigation_selectors) == 0
+        print(nav_manager.navigation_selectors)
+        assert len(nav_manager.navigation_selectors[nav]) == 0
 
         # make sure that the selector is removed from the navigation plot
         assert selector.selector not in nav_plot.items
@@ -45,7 +46,7 @@ class TestCloseWindows:
 
         nav_manager = nav.multiplot_manager
         assert len(nav_manager.navigation_selectors) == 1
-        selector = nav_manager.navigation_selectors[0]
+        selector = nav_manager.navigation_selectors[nav][0]
 
         # make sure that the selector is in the navigation plot
         assert selector.selector in nav_plot.items
@@ -53,7 +54,7 @@ class TestCloseWindows:
 
         # Both windows should be closed now
         assert len(win.plot_subwindows) == 0
-        assert len(nav_manager.navigation_selectors) == 0
+        assert len(nav_manager.navigation_selectors[nav]) == 0
 
         # assert the signalTree is removed from the main window
         assert len(win.signal_trees) == 0

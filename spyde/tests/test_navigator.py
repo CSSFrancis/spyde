@@ -9,6 +9,51 @@ from spyde.actions.base import NavigatorButton
 
 class TestNavigatorMultiplex:
 
+    def multiplex_4d_dataset(self, qtbot, stem_4d_dataset, monkeypatch):
+        win = stem_4d_dataset["window"]
+        nav, sig  = win.plots
+        nav_subwindow = win.plot_subwindows[0]
+        sig_subwindow = win.plot_subwindows[1]
+
+        toolbar = nav.plot_state.toolbar_right
+        win.mdi_area.activatePreviousSubWindow()
+        qtbot.wait(200)
+
+        navigator_action = next(
+            action for action in toolbar.actions() if action.text() == "Select Navigator"
+        )
+        navigator_action.trigger()
+        qtbot.wait(200)
+
+        button_widget = toolbar.action_widgets["Select Navigator"]["widget"]
+        first_button = next(
+            child for child in button_widget.children() if isinstance(child, NavigatorButton)
+        )
+
+        drop_pos = nav.mapToScene(nav.boundingRect().center())
+        initial_item_count = len(nav_subwindow.plot_widget.ci.items)
+
+        def fake_start_drag(btn: NavigatorButton):
+            mw = btn.toolbar.plot.main_window
+            token = mw.register_navigator_drag_payload(
+                btn.signal, btn.toolbar.plot.multiplot_manager
+            )
+            mime = QtCore.QMimeData()
+            mime.setData(NAVIGATOR_DRAG_MIME, token.encode("utf-8"))
+            mw.navigator_drop(drop_pos, mime)
+
+        monkeypatch.setattr(NavigatorButton, "_start_drag", fake_start_drag)
+
+        center = first_button.rect().center()
+        qtbot.mousePress(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
+        qtbot.mouseMove(first_button, QtCore.QPoint(center.x() + 50, center.y()))
+        qtbot.mouseRelease(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
+        # there should be two plots now stacked in one column
+
+        assert len(nav_subwindow.plot_widget.ci.items)  == 2
+
+        return win, nav_subwindow, sig_subwindow, nav, sig
+
     def test_navigator_drop(self, qtbot, stem_4d_dataset, monkeypatch):
         win = stem_4d_dataset["window"]
         nav, sig  = win.plots
@@ -70,6 +115,11 @@ class TestNavigatorMultiplex:
         qtbot.wait(2000)
         # there should be three plots now stacked in one column (the last one should be in the middle)
         #assert len(nav.plot_widget.ci.items)  == 3
+
+
+    def test_synced_selectors(self, qtbot, stem_4d_dataset, monkeypatch):
+        win, nav_subwindow, sig_subwindow, nav, sig  = self.multiplex_4d_dataset(qtbot, stem_4d_dataset, monkeypatch)
+
 
     def test_navigator_preview(self, qtbot, stem_4d_dataset, monkeypatch):
         win = stem_4d_dataset["window"]

@@ -9,10 +9,10 @@ import numpy as np
 import pyqtgraph as pg
 import logging
 
-from typing import TYPE_CHECKING, Union, List
+from typing import TYPE_CHECKING, Union, List, Type, Iterable
 
 if TYPE_CHECKING:
-    from spyde.drawing.plot import Plot, MultiplotManager
+    from spyde.drawing.plot import Plot, PlotWindow
 
 Logger = logging.getLogger(__name__)
 
@@ -53,6 +53,115 @@ def broadcast_rows_cartesian(*arrays: np.ndarray) -> np.ndarray:
     combined = np.concatenate(parts, axis=1)
     return combined
 
+def no_return_update_function(selector: "BaseSelector", child_plot: "Plot", indices: np.ndarray):
+    """
+    An update function that does nothing and returns None.
+    Useful as a placeholder when no update is needed.
+    """
+    return None
+
+def create_linked_selectors(
+    selector_cls: Type["BaseSelector"],
+    initial_selector: "BaseSelector",
+    parent_plots: Iterable["Plot"],
+) -> List["BaseSelector"]:
+    """
+    Create new selectors on `parent_plots` that stay linked with `initial_selector`.
+
+    * Each plot gets its own selector instance.
+    * Any change to one selector's ROI is propagated to all others.
+    """
+    parent_plots = list(parent_plots)
+    if not parent_plots:
+        return []
+
+    # Collect all selectors that will participate in the linkage
+    selectors: List["BaseSelector"] = [initial_selector]
+
+    # Build a selector on each plot except the one that already has initial_selector
+    for plot in parent_plots:
+        if plot is initial_selector.parent:
+            continue
+
+        sel = selector_cls(
+            parent=initial_selector.parent,
+            children=[],
+            update_function=[no_return_update_function,],
+            multi_selector=initial_selector.multi_selector,
+        )
+        # Force an initial geometry sync from the master
+        _copy_selector_geometry(src=initial_selector, dst=sel)
+        selectors.append(sel)
+
+    # Link all selectors together
+    _wire_selector_group(selectors)
+    return selectors
+
+
+def _copy_selector_geometry(src: "BaseSelector", dst: "BaseSelector") -> None:
+    """
+    Copy ROI/region geometry from `src` to `dst`.
+
+    This assumes your `BaseSelector` exposes a uniform API, e.g.
+    * `get_geometry()` / `set_geometry()`
+    or at least `getRegion()` / `setRegion()` for linear/rectangular ROIs.
+    Adjust this function to match your actual selector API.
+    """
+    selector_src = src.selector
+    selector_dst = dst.selector
+
+    # LinearRegionItem / similar
+    if hasattr(selector_src, "getRegion") and hasattr(selector_dst, "setRegion"):
+        region = selector_src.getRegion()
+        selector_dst.setRegion(region)
+        return
+
+    # Rectangular ROI / general ROI
+    if hasattr(selector_src, "pos") and hasattr(selector_src, "size"):
+        selector_dst.setPos(selector_src.pos())
+        if hasattr(selector_dst, "setSize"):
+            selector_dst.setSize(selector_src.size())
+        return
+
+    # Fallback: extend as needed (elliptical, annular, etc.)
+    # raise NotImplementedError or just ignore
+
+
+def _wire_selector_group(selectors: List["BaseSelector"]) -> None:
+    """
+    Wire a list of selectors so that any change to one updates all the others.
+    """
+    if not selectors:
+        return
+
+    updating = {"flag": False}  # simple reentrancy guard
+
+    def make_handler(src_sel: BaseSelector):
+        def _on_region_changed(*_args, **_kwargs):
+            if updating["flag"]:
+                return
+            updating["flag"] = True
+            try:
+                for other in selectors:
+                    if other is src_sel:
+                        continue
+                    _copy_selector_geometry(src_sel, other)
+                    # Trigger their own update without refiring the change signal
+                    other.delayed_update_data(force=True)
+            finally:
+                updating["flag"] = False
+
+        return _on_region_changed
+
+    # Connect both continuous and finished signals if present
+    for sel in selectors:
+        roi = sel.selector
+        handler = make_handler(sel)
+
+        if hasattr(roi, "sigRegionChanged"):
+            roi.sigRegionChanged.connect(handler)
+        if hasattr(roi, "sigRegionChangeFinished"):
+            roi.sigRegionChangeFinished.connect(handler)
 class BaseSelector:
     """
     Base class for selectors.
@@ -79,7 +188,7 @@ class BaseSelector:
 
     def __init__(
         self,
-        parent: Union["Plot", "MultiplotManager"],
+        parent: "PlotWindow",
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         width: int = 3,
@@ -92,13 +201,14 @@ class BaseSelector:
 
         # the parent plot (data source) and the child plot (where the data is plotted)
         # a selector can have multiple children.
-        self.parent = parent  # type: Plot | MultiplotManager
+        self.parent = parent  # type: PlotWindow
         if not isinstance(children, list):
             self.children = {children: update_function}  # type: dict[Plot, callable]
             self.active_children = [
                 children,
             ]  # type: list[Plot]
-            children.parent_selector = self
+            children.plot_window.parent_selector = self
+            #children.parent_selector = self
 
         else:
             self.children = {}  # type: dict[Plot, callable]
@@ -259,15 +369,17 @@ class BaseSelector:
         Clean up the selector.
         """
         if self.selector is not None:
-            self.parent.removeItem(self.selector)
-            self.parent.update()
+            for plot in self.parent.plots:
+                if self.selector in plot.items:
+                    plot.removeItem(self.selector)
+                    plot.update()
         self.selector = None
 
 
 class RectangleSelector(BaseSelector):
     def __init__(
         self,
-        parent: Union["Plot", "MultiplotManager"],
+        parent: "PlotWindow",
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         live_delay: int = 20,
@@ -293,7 +405,9 @@ class RectangleSelector(BaseSelector):
         self._last_size_sig = (0, 0)
         self.selector.sigRegionChangeFinished.connect(self._on_region_change_finished)
 
-        parent.addItem(self.selector)
+        for plot in parent.plots:
+            print("Adding selector to plot:", plot)
+            plot.addItem(self.selector)
         self.selector.sigRegionChanged.connect(self.update_data)
 
     def _get_selected_indices(self):
@@ -309,7 +423,7 @@ class RectangleSelector(BaseSelector):
         # pyqtgraph only knows one coordinate system.  We need to map to scene
         # to pixels.
 
-        inverted_transform, is_inversion = self.parent.image_item.transform().inverted()
+        inverted_transform, is_inversion = self.parent.current_plot_item.image_item.transform().inverted()
 
         lower_left_pixel = inverted_transform.map(lower_left)
 
@@ -401,7 +515,7 @@ class IntegratingSelectorMixin:
 class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
     def __init__(
         self,
-        parent: Union["Plot", "MultiplotManager"],
+        parent: "PlotWindow",
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         live_delay: int = 20,
@@ -422,7 +536,7 @@ class LinearRegionSelector(BaseSelector):
 
     def __init__(
         self,
-        parent: Union["Plot", "MultiplotManager"],
+        parent: "PlotWindow",
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         multi_selector: bool = False,
@@ -435,7 +549,8 @@ class LinearRegionSelector(BaseSelector):
         )
         self._last_size_sig = self._size_signature()
         self.selector.sigRegionChangeFinished.connect(self._on_region_change_finished)
-        parent.addItem(self.selector)
+        for plot in parent.plots:
+            plot.addItem(self.selector)
         self.selector.sigRegionChanged.connect(self.update_data)
 
     def _get_selected_indices(self):
@@ -458,7 +573,7 @@ class LinearRegionSelector(BaseSelector):
 class IntegratingLinearRegionSelector(IntegratingSelectorMixin, LinearRegionSelector):
     def __init__(
         self,
-        parent: Union["Plot", "MultiplotManager"],
+        parent: "PlotWindow",
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         *args,
@@ -475,7 +590,7 @@ class LineSelector(BaseSelector):
 
     def __init__(
         self,
-        parent: Union["Plot", "MultiplotManager"],
+        parent: "PlotWindow",
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         *args,
@@ -490,7 +605,8 @@ class LineSelector(BaseSelector):
             *args,
             **kwargs,
         )
-        parent.plot_item.addItem(self.selector)
+        for plot in parent.plots:
+            plot.addItem(self.selector)
         self.selector.sigRegionChanged.connect(self.update_data)
 
     def _get_selected_indices(self):
@@ -498,7 +614,7 @@ class LineSelector(BaseSelector):
         Get the currently selected indices from the selector.
         """
         pos = self.selector.getArraySlice(
-            np.arange(self.parent.data.shape[0]), self.parent.data.shape
+            np.arange(self.parent.current_plot_item.data.shape[0]), self.parent.data.shape
         )[0]
         indices = np.array(
             [[np.round(pos[0][i]).astype(int)] for i in range(len(pos[0]))]
