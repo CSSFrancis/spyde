@@ -206,7 +206,10 @@ class BaseSelector:
                 if update_contrast:
                     child.needs_auto_level = True
                 # update all plots downstream of the child
-                if child.multiplot_manager is not None:
+                print("Child plot updated.", child)
+                print("Child.multiplot_manager:", child.multiplot_manager)
+                if child.multiplot_manager is not None and child.plot_window in child.multiplot_manager.navigation_selectors:
+                    print("Updating Downstream Plots...")
                     for child_selector in child.multiplot_manager.navigation_selectors[child.plot_window]:
                         child_selector.delayed_update_data()
             # the plot will update when the future completes

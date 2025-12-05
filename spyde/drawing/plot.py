@@ -156,7 +156,7 @@ class PlotWindow(FramelessSubWindow):
         plot =  Plot(signal_tree=self.signal_tree,
                      is_navigator=self.is_navigator,
                      plot_window=self,
-                     multiplot_manager=multiplot_manager
+                     multiplot_manager=self.multiplot_manager
                      )
         self.add_item(plot, row, col)
         if self.current_plot_item is None:
@@ -769,7 +769,10 @@ class Plot(PlotItem):
             self.plot_state.plot_selectors + self.plot_state.signal_tree_selectors
         )
         if self.multiplot_manager is not None:
-            visible_selectors += self.multiplot_manager.navigation_selectors[self.plot_window]
+            if self.plot_window not in self.multiplot_manager.navigation_selectors:
+                print("No navigation selectors for this plot window.")
+            else:
+                visible_selectors += self.multiplot_manager.navigation_selectors[self.plot_window]
             print("visible selectors:", visible_selectors)
         # Hide selectors from other plots. Faster than deleting and recreating them (also renders nicer).
         for selector in self.main_window.navigation_selectors:
@@ -785,7 +788,10 @@ class Plot(PlotItem):
             self.plot_state.plot_selectors + self.plot_state.signal_tree_selectors
         )
         if self.multiplot_manager is not None:
-            visible_selectors += self.multiplot_manager.navigation_selectors[self.plot_window]
+            if self.plot_window not in self.multiplot_manager.navigation_selectors:
+                print("No navigation selectors for this plot window.")
+            else:
+                visible_selectors += self.multiplot_manager.navigation_selectors[self.plot_window]
         for selector in visible_selectors:
             selector.widget.hide()
             self.main_window.selectors_layout.removeWidget(selector.widget)
@@ -1153,6 +1159,9 @@ class MultiplotManager:
         else:
             is_navigator = False
 
+        if plot_window not in self.navigation_selectors:
+            self.navigation_selectors[plot_window] = []
+
         window = self.main_window.add_plot_window(
                 is_navigator=is_navigator,
                 plot_manager=self,
@@ -1166,10 +1175,6 @@ class MultiplotManager:
 
         child = window.add_new_plot()
         # create plot states for the child plot
-
-
-        if plot_window not in self.navigation_selectors:
-            self.navigation_selectors[plot_window] = []
         if window not in self.plots:
             self.plots[window] = []
         self.plots[window].append(child)
@@ -1184,6 +1189,8 @@ class MultiplotManager:
             multi_selector=True,
             update_function=update_from_navigation_selection,
         )
+
+        self.navigation_selectors[plot_window].append(selector)
 
         if is_navigator:
             print("Adding navigation plot states for child plot")
