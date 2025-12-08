@@ -77,6 +77,7 @@ def virtual_imaging(*args, **kwargs):
     print("Virtual imaging action triggered.")
     pass
 
+
 def add_virtual_image(
     toolbar: RoundedToolBar, action_name: str = "Add Virtual Image", *args, **kwargs
 ):
@@ -117,7 +118,10 @@ def add_virtual_image(
     painter.fillRect(colored_pixmap.rect(), QColor(color))
     painter.end()
 
-    pen = mkPen(color=color, width=6, )  # type: pg.mkPen
+    pen = mkPen(
+        color=color,
+        width=6,
+    )  # type: pg.mkPen
 
     icon = QIcon()
     icon.addPixmap(colored_pixmap)
@@ -171,34 +175,39 @@ def add_virtual_image(
 
     if params_caret_box.kwargs["type"].currentText() == "annular":
         # make an annular roi
-        roi = RingROI(center,
-                      inner_radius=inner_rad,
-                      outer_radius=outer_rad,
-                      pen=pen)
+        roi = RingROI(center, inner_radius=inner_rad, outer_radius=outer_rad, pen=pen)
     elif params_caret_box.kwargs["type"].currentText() == "disk":
-        roi = CircleROI(center,inner_rad, pen=pen)
-    else: # params_caret_box.kwargs["type"].currentText() == "rectangle":
+        roi = CircleROI(center, inner_rad, pen=pen)
+    else:  # params_caret_box.kwargs["type"].currentText() == "rectangle":
         roi = RectROI(center, inner_rad, pen=pen)
 
     # add to the parent toolbar so that all the rois are shown on the same plot
-    toolbar.parent_toolbar.register_action_plot_item(action_name="Virtual Imaging",
-                                      item=roi, key=action_name)
+    toolbar.parent_toolbar.register_action_plot_item(
+        action_name="Virtual Imaging", item=roi, key=action_name
+    )
+
     # arrange the z values of the rois based on their size
     def arrange_widgets_on_move():
-        rois = list(toolbar.parent_toolbar.action_widgets["Virtual Imaging"]["plot_items"].values())
+        rois = list(
+            toolbar.parent_toolbar.action_widgets["Virtual Imaging"][
+                "plot_items"
+            ].values()
+        )
         sizes = [r.size().x() for r in rois]
         sorted_index = np.argsort(sizes)
         for i, idx in enumerate(sorted_index[::-1]):
             r = rois[idx]
             r.setZValue(10 + i)
+
     roi.sigRegionChangeFinished.connect(arrange_widgets_on_move)
 
     def on_type_change(new_type: str) -> None:
         print("Type changed to:", new_type)
         # Remove existing ROI
         # Create new ROI based on selected type
-        old_roi = toolbar.parent_toolbar.unregister_action_plot_item(action_name="Virtual Imaging",
-                                                           key=action_name)
+        old_roi = toolbar.parent_toolbar.unregister_action_plot_item(
+            action_name="Virtual Imaging", key=action_name
+        )
         pos = old_roi.pos()
         size = old_roi.size()
         inner_r = min(size) / 2.0
@@ -213,14 +222,12 @@ def add_virtual_image(
             roi = RectROI(pos=pos, size=size, pen=pen)
         # Add new ROI to the toolbar
 
-        toolbar.parent_toolbar.register_action_plot_item(action_name="Virtual Imaging",
-                                                         item=roi,
-                                                         key=action_name)
-
+        toolbar.parent_toolbar.register_action_plot_item(
+            action_name="Virtual Imaging", item=roi, key=action_name
+        )
 
     if hasattr(type_widget, "currentTextChanged"):
         type_widget.currentTextChanged.connect(on_type_change)
-
 
 
 def compute_virtual_image(

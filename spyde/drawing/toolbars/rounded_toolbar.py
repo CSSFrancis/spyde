@@ -37,14 +37,14 @@ class RoundedToolBar(QtWidgets.QToolBar):
     """
 
     def __init__(
-            self,
-            title: str,
-            plot_state: "PlotState" = None,
-            parent: Optional[QtWidgets.QWidget] = None,
-            radius: int = 8,
-            moveable: bool = False,
-            position: str = "top",
-            exclusive_checkable_actions: bool = True,
+        self,
+        title: str,
+        plot_state: "PlotState" = None,
+        parent: Optional[QtWidgets.QWidget] = None,
+        radius: int = 8,
+        moveable: bool = False,
+        position: str = "top",
+        exclusive_checkable_actions: bool = True,
     ):
         # Ensure we never parent directly to QMainWindow; prefer content area
         parent = self._resolve_container_parent(parent)
@@ -78,7 +78,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
             self.plot_window = None
             self.plot: Optional[Plot] = None
         else:
-            self.plot : Plot = self.plot_state.plot
+            self.plot: Plot = self.plot_state.plot
             self.plot_window = self.plot.plot_window
 
         self._radius = float(radius)
@@ -195,7 +195,9 @@ class RoundedToolBar(QtWidgets.QToolBar):
             # NEW: connect exclusivity handler
             if self.exclusive_checkable_actions:
                 action.toggled.connect(
-                    lambda checked, a=action: self._enforce_exclusive_checked(a, checked)
+                    lambda checked, a=action: self._enforce_exclusive_checked(
+                        a, checked
+                    )
                 )
             self.add_action_widget(name, popout, None)
             action.toggled.connect(
@@ -235,7 +237,9 @@ class RoundedToolBar(QtWidgets.QToolBar):
             # NEW: connect exclusivity handler
             if self.exclusive_checkable_actions:
                 action.toggled.connect(
-                    lambda checked, a=action: self._enforce_exclusive_checked(a, checked)
+                    lambda checked, a=action: self._enforce_exclusive_checked(
+                        a, checked
+                    )
                 )
             action_widget = popout_menu
         else:
@@ -244,7 +248,9 @@ class RoundedToolBar(QtWidgets.QToolBar):
                 action.setCheckable(True)
                 if self.exclusive_checkable_actions:
                     action.toggled.connect(
-                        lambda checked, a=action: self._enforce_exclusive_checked(a, checked)
+                        lambda checked, a=action: self._enforce_exclusive_checked(
+                            a, checked
+                        )
                     )
             action.triggered.connect(
                 lambda _, f=function, n=name: f(self, action_name=n)
@@ -280,7 +286,6 @@ class RoundedToolBar(QtWidgets.QToolBar):
             if other.isCheckable() and other.isChecked():
                 # Uncheck it by triggering (to ensure signals are emitted to properly hide popouts and plot items)
                 other.trigger()
-
 
     def num_actions(self) -> int:
         """Return the number of actions currently in the toolbar."""
@@ -344,7 +349,6 @@ class RoundedToolBar(QtWidgets.QToolBar):
             return cw or parent
         return parent
 
-
     def add_action_widget(
         self,
         action_name: str,
@@ -358,7 +362,7 @@ class RoundedToolBar(QtWidgets.QToolBar):
         # Re-parent to a safe content container (not QMainWindow)
         parent = self._resolve_container_parent(self.parentWidget())
 
-        #parent = self.plot_window
+        # parent = self.plot_window
         if parent is None:
             return
 
@@ -529,19 +533,22 @@ class RoundedToolBar(QtWidgets.QToolBar):
         # Initial placement (single, clean)
         QtCore.QTimer.singleShot(0, position_widget)
 
-    def unregister_action_plot_item(self, action_name: str, key:str) -> None:
+    def unregister_action_plot_item(self, action_name: str, key: str) -> None:
         """Deregister all QGraphicsItems associated with an action."""
-        if (action_name in self.action_widgets and
-                "plot_items" in self.action_widgets[action_name] and
-                key in list(self.action_widgets[action_name]["plot_items"])):
-            item =  self.action_widgets[action_name]["plot_items"].pop(key)
+        if (
+            action_name in self.action_widgets
+            and "plot_items" in self.action_widgets[action_name]
+            and key in list(self.action_widgets[action_name]["plot_items"])
+        ):
+            item = self.action_widgets[action_name]["plot_items"].pop(key)
             try:
-                if self.plot_window is not None and hasattr(self.plot_state, "plot_item"):
+                if self.plot_window is not None and hasattr(
+                    self.plot_state, "plot_item"
+                ):
                     self.plot.removeItem(item)
             except Exception:
                 pass
             return item
-
 
     def register_action_plot_item(
         self, action_name: str, item: QtWidgets.QGraphicsItem, key: Optional[str] = None

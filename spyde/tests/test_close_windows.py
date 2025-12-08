@@ -8,7 +8,7 @@ class TestCloseWindows:
     def test_close_signal_window(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
         subplots = win.plots
-        subwindows =  win.plot_subwindows
+        subwindows = win.plot_subwindows
         assert len(subwindows) == 2
         assert len(subplots) == 2
 
@@ -35,7 +35,7 @@ class TestCloseWindows:
     def test_close_navigation_window(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
         subplots = win.plots
-        subwindows =  win.plot_subwindows
+        subwindows = win.plot_subwindows
         assert len(subwindows) == 2
         assert len(subplots) == 2
 

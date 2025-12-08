@@ -7,11 +7,12 @@ from pyqtgraph.examples.MultiDataPlot import pltItem
 from spyde.actions.base import NAVIGATOR_DRAG_MIME
 from spyde.actions.base import NavigatorButton
 
+
 class TestNavigatorMultiplex:
 
     def multiplex_4d_dataset(self, qtbot, stem_4d_dataset, monkeypatch):
         win = stem_4d_dataset["window"]
-        nav, sig  = win.plots
+        nav, sig = win.plots
         nav_subwindow = win.plot_subwindows[0]
         sig_subwindow = win.plot_subwindows[1]
 
@@ -20,14 +21,18 @@ class TestNavigatorMultiplex:
         qtbot.wait(200)
 
         navigator_action = next(
-            action for action in toolbar.actions() if action.text() == "Select Navigator"
+            action
+            for action in toolbar.actions()
+            if action.text() == "Select Navigator"
         )
         navigator_action.trigger()
         qtbot.wait(200)
 
         button_widget = toolbar.action_widgets["Select Navigator"]["widget"]
         first_button = next(
-            child for child in button_widget.children() if isinstance(child, NavigatorButton)
+            child
+            for child in button_widget.children()
+            if isinstance(child, NavigatorButton)
         )
 
         drop_pos = nav.mapToScene(nav.boundingRect().center())
@@ -50,13 +55,13 @@ class TestNavigatorMultiplex:
         qtbot.mouseRelease(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
         # there should be two plots now stacked in one column
 
-        assert len(nav_subwindow.plot_widget.ci.items)  == 2
+        assert len(nav_subwindow.plot_widget.ci.items) == 2
 
         return win, nav_subwindow, sig_subwindow, nav, sig
 
     def test_navigator_drop(self, qtbot, stem_4d_dataset, monkeypatch):
         win = stem_4d_dataset["window"]
-        nav, sig  = win.plots
+        nav, sig = win.plots
         nav_subwindow = win.plot_subwindows[0]
         sig_subwindow = win.plot_subwindows[1]
 
@@ -65,14 +70,18 @@ class TestNavigatorMultiplex:
         qtbot.wait(200)
 
         navigator_action = next(
-            action for action in toolbar.actions() if action.text() == "Select Navigator"
+            action
+            for action in toolbar.actions()
+            if action.text() == "Select Navigator"
         )
         navigator_action.trigger()
         qtbot.wait(200)
 
         button_widget = toolbar.action_widgets["Select Navigator"]["widget"]
         first_button = next(
-            child for child in button_widget.children() if isinstance(child, NavigatorButton)
+            child
+            for child in button_widget.children()
+            if isinstance(child, NavigatorButton)
         )
 
         drop_pos = nav.mapToScene(nav.boundingRect().center())
@@ -98,7 +107,7 @@ class TestNavigatorMultiplex:
         qtbot.mouseRelease(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
         # there should be two plots now stacked in one column
 
-        assert len(nav_subwindow.plot_widget.ci.items)  == 2
+        assert len(nav_subwindow.plot_widget.ci.items) == 2
 
         qtbot.wait(2000)
         # Try adding another navigator
@@ -114,16 +123,16 @@ class TestNavigatorMultiplex:
         qtbot.mouseRelease(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
         qtbot.wait(2000)
         # there should be three plots now stacked in one column (the last one should be in the middle)
-        #assert len(nav.plot_widget.ci.items)  == 3
-
+        # assert len(nav.plot_widget.ci.items)  == 3
 
     def test_synced_selectors(self, qtbot, stem_4d_dataset, monkeypatch):
-        win, nav_subwindow, sig_subwindow, nav, sig  = self.multiplex_4d_dataset(qtbot, stem_4d_dataset, monkeypatch)
-
+        win, nav_subwindow, sig_subwindow, nav, sig = self.multiplex_4d_dataset(
+            qtbot, stem_4d_dataset, monkeypatch
+        )
 
     def test_navigator_preview(self, qtbot, stem_4d_dataset, monkeypatch):
         win = stem_4d_dataset["window"]
-        nav, sig  = win.plots
+        nav, sig = win.plots
         nav_subwindow = win.plot_subwindows[0]
         sig_subwindow = win.plot_subwindows[1]
 
@@ -133,14 +142,18 @@ class TestNavigatorMultiplex:
         qtbot.wait(200)
 
         navigator_action = next(
-            action for action in toolbar.actions() if action.text() == "Select Navigator"
+            action
+            for action in toolbar.actions()
+            if action.text() == "Select Navigator"
         )
         navigator_action.trigger()
         qtbot.wait(200)
 
         button_widget = toolbar.action_widgets["Select Navigator"]["widget"]
         first_button = next(
-            child for child in button_widget.children() if isinstance(child, NavigatorButton)
+            child
+            for child in button_widget.children()
+            if isinstance(child, NavigatorButton)
         )
 
         drop_pos = nav.mapToScene(nav.boundingRect().center())
@@ -162,8 +175,9 @@ class TestNavigatorMultiplex:
             mw.navigator_leave()
             mw._navigator_drag_over_active = False
 
-
-        monkeypatch.setattr(NavigatorButton, "_start_drag", fake_drag_move,raising=True)
+        monkeypatch.setattr(
+            NavigatorButton, "_start_drag", fake_drag_move, raising=True
+        )
 
         center = first_button.rect().center()
         qtbot.mousePress(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
@@ -171,18 +185,20 @@ class TestNavigatorMultiplex:
         qtbot.mouseRelease(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
         # there should be two plots now stacked in one column
 
-        assert len(nav_subwindow.plot_widget.ci.items)  == 2
+        assert len(nav_subwindow.plot_widget.ci.items) == 2
 
         qtbot.wait(2000)
 
         fake_leave(first_button)
         qtbot.wait(2000)
         # after leaving, the preview should be removed
-        assert len(nav_subwindow.plot_widget.ci.items)  == 1
+        assert len(nav_subwindow.plot_widget.ci.items) == 1
 
         # re-enter
 
-        monkeypatch.setattr(NavigatorButton, "_start_drag", fake_drag_move,raising=True)
+        monkeypatch.setattr(
+            NavigatorButton, "_start_drag", fake_drag_move, raising=True
+        )
 
         center = first_button.rect().center()
         qtbot.mousePress(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
@@ -190,16 +206,15 @@ class TestNavigatorMultiplex:
         qtbot.mouseRelease(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
         # there should be two plots now stacked in one column
 
-        assert len(nav_subwindow.plot_widget.ci.items)  == 2
-
+        assert len(nav_subwindow.plot_widget.ci.items) == 2
 
     def test_navigator_preview_left(self, qtbot, stem_4d_dataset, monkeypatch):
         win = stem_4d_dataset["window"]
-        nav, sig  = win.plots
+        nav, sig = win.plots
         nav_subwindow = win.plot_subwindows[0]
         sig_subwindow = win.plot_subwindows[1]
 
-        rows =nav_subwindow.plot_widget.ci.layout.rowCount()
+        rows = nav_subwindow.plot_widget.ci.layout.rowCount()
         cols = nav_subwindow.plot_widget.ci.layout.columnCount()
         assert cols == 1
         assert rows == 1
@@ -210,17 +225,21 @@ class TestNavigatorMultiplex:
         qtbot.wait(200)
 
         navigator_action = next(
-            action for action in toolbar.actions() if action.text() == "Select Navigator"
+            action
+            for action in toolbar.actions()
+            if action.text() == "Select Navigator"
         )
         navigator_action.trigger()
         qtbot.wait(200)
 
         button_widget = toolbar.action_widgets["Select Navigator"]["widget"]
         first_button = next(
-            child for child in button_widget.children() if isinstance(child, NavigatorButton)
+            child
+            for child in button_widget.children()
+            if isinstance(child, NavigatorButton)
         )
 
-        drop_pos = nav.boundingRect().center()- QtCore.QPointF(200,0)
+        drop_pos = nav.boundingRect().center() - QtCore.QPointF(200, 0)
         initial_item_count = len(nav_subwindow.plot_widget.ci.items)
 
         def fake_drag_move(self, pos=drop_pos):
@@ -239,8 +258,9 @@ class TestNavigatorMultiplex:
             mw.navigator_leave()
             mw._navigator_drag_over_active = False
 
-
-        monkeypatch.setattr(NavigatorButton, "_start_drag", fake_drag_move,raising=True)
+        monkeypatch.setattr(
+            NavigatorButton, "_start_drag", fake_drag_move, raising=True
+        )
 
         center = first_button.rect().center()
         qtbot.mousePress(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
@@ -248,27 +268,27 @@ class TestNavigatorMultiplex:
         qtbot.mouseRelease(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
         # there should be two plots now stacked in one column
 
-        assert len(nav_subwindow.plot_widget.ci.items)  == 2
+        assert len(nav_subwindow.plot_widget.ci.items) == 2
 
         qtbot.wait(2000)
 
         fake_leave(first_button)
         qtbot.wait(2000)
         # after leaving, the preview should be removed
-        assert len(nav_subwindow.plot_widget.ci.items)  == 1
+        assert len(nav_subwindow.plot_widget.ci.items) == 1
 
         rows = nav_subwindow.previous_graphics_layout_widget.ci.layout.rowCount()
         cols = nav_subwindow.previous_graphics_layout_widget.ci.layout.columnCount()
 
-        rows =nav_subwindow.plot_widget.ci.layout.rowCount()
+        rows = nav_subwindow.plot_widget.ci.layout.rowCount()
         cols = nav_subwindow.plot_widget.ci.layout.columnCount()
 
-        #assert cols == 1
-        #assert rows == 1
-
+        # assert cols == 1
+        # assert rows == 1
 
         # re-enter on bottom
         drop_pos = nav.boundingRect().center()
+
         def fake_drag_move(self, pos=drop_pos):
             mw = self.toolbar.plot.main_window
             mime = QtCore.QMimeData()
@@ -280,7 +300,9 @@ class TestNavigatorMultiplex:
             mw.navigator_enter()
             mw.navigator_move(pos)
 
-        monkeypatch.setattr(NavigatorButton, "_start_drag", fake_drag_move,raising=True)
+        monkeypatch.setattr(
+            NavigatorButton, "_start_drag", fake_drag_move, raising=True
+        )
 
         center = first_button.rect().center()
         qtbot.mousePress(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
@@ -288,34 +310,37 @@ class TestNavigatorMultiplex:
         qtbot.mouseRelease(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
         # there should be two plots now stacked in one column
 
-        assert len(nav_subwindow.plot_widget.ci.items)  == 2
+        assert len(nav_subwindow.plot_widget.ci.items) == 2
 
         qtbot.wait(2000)
         fake_leave(first_button)
         qtbot.wait(2000)
         # after leaving, the preview should be removed
-        assert len(nav_subwindow .plot_widget.ci.items)  == 1
+        assert len(nav_subwindow.plot_widget.ci.items) == 1
 
-    def test_navigator_drop_3d(self, qtbot, insitu_tem_2d_dataset,monkeypatch):
+    def test_navigator_drop_3d(self, qtbot, insitu_tem_2d_dataset, monkeypatch):
         win = insitu_tem_2d_dataset["window"]
-        nav, sig  = win.plots
+        nav, sig = win.plots
         nav_subwindow = win.plot_subwindows[0]
         sig_subwindow = win.plot_subwindows[1]
-
 
         toolbar = nav.plot_state.toolbar_right
         win.mdi_area.activatePreviousSubWindow()
         qtbot.wait(200)
 
         navigator_action = next(
-            action for action in toolbar.actions() if action.text() == "Select Navigator"
+            action
+            for action in toolbar.actions()
+            if action.text() == "Select Navigator"
         )
         navigator_action.trigger()
         qtbot.wait(200)
 
         button_widget = toolbar.action_widgets["Select Navigator"]["widget"]
         first_button = next(
-            child for child in button_widget.children() if isinstance(child, NavigatorButton)
+            child
+            for child in button_widget.children()
+            if isinstance(child, NavigatorButton)
         )
 
         drop_pos = nav.mapToScene(nav.boundingRect().center())
@@ -341,7 +366,7 @@ class TestNavigatorMultiplex:
         qtbot.mouseRelease(first_button, QtCore.Qt.MouseButton.LeftButton, pos=center)
         # there should be two plots now stacked in one column
 
-        assert len(nav_subwindow.plot_widget.ci.items)  == 2
+        assert len(nav_subwindow.plot_widget.ci.items) == 2
 
         # assert only one toolbar visible
         num = 0
@@ -350,7 +375,3 @@ class TestNavigatorMultiplex:
                 num += tb.isVisible()
 
         assert num == 1
-
-
-
-

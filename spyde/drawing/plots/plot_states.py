@@ -44,7 +44,7 @@ class PlotState:
 
         self.current_signal: BaseSignal = signal
         self.plot: "Plot" = plot
-        #self.plot_window: "PlotWindow" = plot.
+        # self.plot_window: "PlotWindow" = plot.
 
         # Visualization parameters. The min/max percentile are used to determine the contrast/brightness
         self.min_percentile = 100
@@ -222,7 +222,9 @@ class PlotState:
                     if "plot_items" in tb.action_widgets[action]:
                         print("Restoring plot items for action:", action)
                         for key in tb.action_widgets[action]["plot_items"]:
-                            self.plot.removeItem(tb.action_widgets[action]["plot_items"][key])
+                            self.plot.removeItem(
+                                tb.action_widgets[action]["plot_items"][key]
+                            )
 
     def close(self) -> None:
         self.hide_toolbars()
@@ -232,6 +234,7 @@ class PlotState:
                 tb.plot = None
                 tb.close()
                 setattr(self, attr, None)
+
 
 class MultiImageManager:
     """The MultiImageManager manages multiple images within a single plotting context.
@@ -257,18 +260,18 @@ class MultiImageManager:
         The Plot instance associated with this MultiImageManager.
 
     """
-    def __init__(self,
-                 plot_states: List[PlotState],
-                 plot: "Plot",
-                 ):
+
+    def __init__(
+        self,
+        plot_states: List[PlotState],
+        plot: "Plot",
+    ):
 
         # initialize the MultiImageManager with the provided plot states and plot
         self.plot_states: List[PlotState] = plot_states
         self.plot: "Plot" = plot
 
-
-    def add_plot_state(self,
-                       plot_state: PlotState):
+    def add_plot_state(self, plot_state: PlotState):
         """
         Add a new PlotState to the MultiImageManager.
 
@@ -283,8 +286,7 @@ class MultiImageManager:
         """
         self.plot_states.append(plot_state)
 
-    def remove_plot_state(self,
-                            plot_state: PlotState):
+    def remove_plot_state(self, plot_state: PlotState):
         """
         Remove a PlotState from the MultiImageManager.
 

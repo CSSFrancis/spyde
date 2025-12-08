@@ -19,6 +19,7 @@ class RingROI(QtWidgets.QGraphicsObject):
     \**args        All extra keyword arguments are passed to ROI()
     ============== =============================================================
     """
+
     sigRegionChangeFinished = QtCore.Signal(object)
     sigRegionChangeStarted = QtCore.Signal(object)
     sigRegionChanged = QtCore.Signal(object)
@@ -39,7 +40,6 @@ class RingROI(QtWidgets.QGraphicsObject):
         first_roi.sigRegionChangeStarted.connect(self.roiChangeStartedEvent)
         first_roi.sigRegionChangeFinished.connect(self.roiChangeFinishedEvent)
         self.roiChangedEvent()
-
 
     def paint(self, *args):
         pass
@@ -67,17 +67,18 @@ class RingROI(QtWidgets.QGraphicsObject):
         inner_size = inner_roi.size()
         outer_size = outer_roi.size()
         # center the inner roi within the outer roi
-        inner_roi.setPos(outer_roi.pos() + QtCore.QPointF(
-            (outer_size.x() - inner_size.x()) / 2,
-            (outer_size.y() - inner_size.y()) / 2
-        ))
+        inner_roi.setPos(
+            outer_roi.pos()
+            + QtCore.QPointF(
+                (outer_size.x() - inner_size.x()) / 2,
+                (outer_size.y() - inner_size.y()) / 2,
+            )
+        )
 
         inner_roi.blockSignals(False)
         outer_roi.blockSignals(False)
 
         self.sigRegionChanged.emit(self)
-
-
 
     def roiChangeStartedEvent(self):
         self.sigRegionChangeStarted.emit(self)
@@ -110,7 +111,7 @@ class RingROI(QtWidgets.QGraphicsObject):
             rgns.append(rgn)
 
         ## make sure orthogonal axis is the same size
-        if img.axisOrder == 'row-major':
+        if img.axisOrder == "row-major":
             axes = axes[::-1]
         ms = min([r.shape[axes[1]] for r in rgns])
         sl = [slice(None)] * rgns[0].ndim
@@ -126,7 +127,9 @@ class RingROI(QtWidgets.QGraphicsObject):
         """
 
         ## create new ROI
-        newRoi = CircleROI(pos, [radius, radius], parent=self, pen=self.pen, **self.roiArgs)
+        newRoi = CircleROI(
+            pos, [radius, radius], parent=self, pen=self.pen, **self.roiArgs
+        )
         newRoi.sigRegionChanged.connect(self.roiChangedEvent)
         newRoi.sigRegionChangeStarted.connect(self.roiChangeStartedEvent)
         newRoi.sigRegionChangeFinished.connect(self.roiChangeFinishedEvent)
@@ -139,10 +142,10 @@ class RingROI(QtWidgets.QGraphicsObject):
             return self.rois[1].pos()
         else:
             return QtCore.QPointF(0, 0)
+
     def size(self):
         """Return the size of the outermost ROI as the size of the RingROI."""
         if self.rois:
             return self.rois[-1].size()
         else:
             return QtCore.QSizeF(0, 0)
-

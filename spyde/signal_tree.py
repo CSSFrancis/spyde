@@ -109,7 +109,6 @@ class BaseSignalTree:
         self._initialize_initial_plots()
         print("Created Signal Tree with root signal: ", self.root)
 
-
     def _initialize_initial_plots(self):
         """
         Initialize the initial plots based on the root signal.
@@ -128,10 +127,9 @@ class BaseSignalTree:
         """
         Add a new signal plot for the root signal.
         """
-        pw = self.main_window.add_plot_window(is_navigator=False,
-                                              signal_tree=self,
-                                              plot_manager=None)
-
+        pw = self.main_window.add_plot_window(
+            is_navigator=False, signal_tree=self, plot_manager=None
+        )
 
         plot = pw.add_new_plot()
         self.create_plot_states(plot=plot)
@@ -156,9 +154,12 @@ class BaseSignalTree:
             signal = signal.T
         if signal._lazy:
             signal.data = self.client.compute(signal.data)
-            #signal.compute()
+            # signal.compute()
 
-        if signal.axes_manager.signal_dimension > 0 and signal.axes_manager.navigation_dimension > 0:
+        if (
+            signal.axes_manager.signal_dimension > 0
+            and signal.axes_manager.navigation_dimension > 0
+        ):
             navigator = signal.sum(signal.axes_manager.signal_axes).T
             if navigator._lazy:
                 navigator.data = self.client.compute(navigator.data)
@@ -173,7 +174,6 @@ class BaseSignalTree:
             print("Preprocessing navigator: ", navigator, signal)
 
             return [navigator, signal]
-
 
         return [signal]
 
@@ -415,13 +415,17 @@ class BaseSignalTree:
         plot_states = {}
         for signal in self.signals():
             if signal.axes_manager.navigation_dimension == 0:
-                plot.add_plot_state(signal=signal,
-                                    dynamic=False,
-                                    dimensions=signal.axes_manager.signal_dimension)
+                plot.add_plot_state(
+                    signal=signal,
+                    dynamic=False,
+                    dimensions=signal.axes_manager.signal_dimension,
+                )
             else:
-                plot.add_plot_state(signal=signal,
-                                    dynamic=True,
-                                    dimensions=signal.axes_manager.signal_dimension)
+                plot.add_plot_state(
+                    signal=signal,
+                    dynamic=True,
+                    dimensions=signal.axes_manager.signal_dimension,
+                )
         return plot_states
 
     def update_plot_states(self, new_signal: BaseSignal):

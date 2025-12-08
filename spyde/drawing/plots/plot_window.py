@@ -17,7 +17,9 @@ if TYPE_CHECKING:
     from spyde.drawing.selector import BaseSelector
 
 import logging
+
 logger = logging.getLogger(__name__)
+
 
 class PlotWindow(FramelessSubWindow):
     """
@@ -45,8 +47,9 @@ class PlotWindow(FramelessSubWindow):
     `Plot` within the `PlotWindow` is shown by a small highlight around the plot area.
     """
 
-    def __init__(self,
-        is_navigator: bool = False, # if navigator then it will share the navigation selectors
+    def __init__(
+        self,
+        is_navigator: bool = False,  # if navigator then it will share the navigation selectors
         plot_manager: Union["MultiplotManager", None] = None,
         signal_tree: Union["BaseSignalTree", None] = None,
         main_window: Union["MainWindow", None] = None,
@@ -59,14 +62,18 @@ class PlotWindow(FramelessSubWindow):
         self.is_navigator = is_navigator  # type: bool
         # the plot manager for managing multiple plot windows.  Different from Multiplexed Plots as
         # this is for managing multiple Plot windows.
-        self.multiplot_manager = plot_manager # type: MultiplotManager | None
+        self.multiplot_manager = plot_manager  # type: MultiplotManager | None
 
         # Instance state: track the currently active Plot (or None)
         self._current_plot_item = None  # type: Plot | None
 
         # Previous layout state: used when restoring saved multiplexed layouts
-        self.previous_subplots_pos = dict()  # type: Dict[pg.PlotItem, Tuple[int, int]] | Dict
-        self.previous_graphics_layout_widget = None  # type: pg.GraphicsLayoutWidget | None
+        self.previous_subplots_pos = (
+            dict()
+        )  # type: Dict[pg.PlotItem, Tuple[int, int]] | Dict
+        self.previous_graphics_layout_widget = (
+            None
+        )  # type: pg.GraphicsLayoutWidget | None
         self.parent_selector = parent_selector  # type: BaseSelector | None
 
         # UI: container widget + layout that will host the GraphicsLayoutWidget.
@@ -75,9 +82,7 @@ class PlotWindow(FramelessSubWindow):
         self.container.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         # make it opaque so the border contrast is obvious
         # light grey color
-        self.container.setStyleSheet(
-            "background-color: rgba(211, 211, 211, 170);"
-        )
+        self.container.setStyleSheet("background-color: rgba(211, 211, 211, 170);")
         container_layout = QtWidgets.QVBoxLayout(self.container)
         container_layout.setContentsMargins(1, 0, 1, 1)
         container_layout.setSpacing(0)
@@ -105,8 +110,7 @@ class PlotWindow(FramelessSubWindow):
             # Notify the main window that this subwindow is active
             self.main_window.on_subwindow_activated(self)
         else:
-            raise ValueError("Plot is not in this PlotWindow."
-                             )
+            raise ValueError("Plot is not in this PlotWindow.")
 
     @property
     def current_plot_state(self) -> Union["PlotState", None]:
@@ -143,25 +147,30 @@ class PlotWindow(FramelessSubWindow):
             return self.multiplot_manager.navigation_selectors.get(self, [])
         return []
 
-    def add_new_plot(self,
-                     row: int=0,
-                     col: int=0,
-                     multiplot_manager:Optional["MultiplotManager"]=None) -> "Plot":
-        """ Creates and returns a new (empty) Plot."""
-        plot =  Plot(signal_tree=self.signal_tree,
-                     is_navigator=self.is_navigator,
-                     plot_window=self,
-                     multiplot_manager=self.multiplot_manager
-                     )
+    def add_new_plot(
+        self,
+        row: int = 0,
+        col: int = 0,
+        multiplot_manager: Optional["MultiplotManager"] = None,
+    ) -> "Plot":
+        """Creates and returns a new (empty) Plot."""
+        plot = Plot(
+            signal_tree=self.signal_tree,
+            is_navigator=self.is_navigator,
+            plot_window=self,
+            multiplot_manager=self.multiplot_manager,
+        )
         self.add_item(plot, row, col)
         if self.current_plot_item is None:
             self.current_plot_item = plot
         return plot
 
-    def _arrange_graphics_layout_preview(self,
-                                        graphics_layout_dict: dict,
-                                        graphics_layout: GraphicsLayoutWidget,
-                                        drop_pos: QtCore.QPointF):
+    def _arrange_graphics_layout_preview(
+        self,
+        graphics_layout_dict: dict,
+        graphics_layout: GraphicsLayoutWidget,
+        drop_pos: QtCore.QPointF,
+    ):
         """
         Calculate where to place a new plot without modifying the layout.
         Returns (row, col) tuple.
@@ -185,10 +194,10 @@ class PlotWindow(FramelessSubWindow):
             row_inds.append(position[0])
         max_col = max(col_inds) + 1 if col_inds else 1
         max_row = max(row_inds) + 1 if row_inds else 1
-        print("MaxCol:",max_col," MaxRow:", max_row)
+        print("MaxCol:", max_col, " MaxRow:", max_row)
         # Get drop position
-        x_pos = drop_pos.x() if hasattr(drop_pos, 'x') else drop_pos[0]
-        y_pos = drop_pos.y() if hasattr(drop_pos, 'y') else drop_pos[1]
+        x_pos = drop_pos.x() if hasattr(drop_pos, "x") else drop_pos[0]
+        y_pos = drop_pos.y() if hasattr(drop_pos, "y") else drop_pos[1]
 
         layout_width = graphics_layout.width()
         layout_height = graphics_layout.height()
@@ -205,38 +214,48 @@ class PlotWindow(FramelessSubWindow):
         norm_x = cell_x / cell_width
         norm_y = cell_y / cell_height
 
-        print("NormX:",norm_x," NormY:", norm_y,  " CellX", drop_col, " CellY:", drop_row,)
+        print(
+            "NormX:",
+            norm_x,
+            " NormY:",
+            norm_y,
+            " CellX",
+            drop_col,
+            " CellY:",
+            drop_row,
+        )
         # split cell into zones in an x
         angle = np.arctan2(norm_y - 0.5, norm_x - 0.5)  # -pi to pi
 
-        if angle >= -3*np.pi/4 and angle < -np.pi/4:
-            zone = 'top'
-        elif angle >= -np.pi/4 and angle < np.pi/4:
-            zone = 'right'
-        elif angle >= np.pi/4 and angle < 3*np.pi/4:
-            zone = 'bottom'
+        if angle >= -3 * np.pi / 4 and angle < -np.pi / 4:
+            zone = "top"
+        elif angle >= -np.pi / 4 and angle < np.pi / 4:
+            zone = "right"
+        elif angle >= np.pi / 4 and angle < 3 * np.pi / 4:
+            zone = "bottom"
         else:
-            zone = 'left'
+            zone = "left"
 
         # Calculate target position
         new_pos = None
-        if zone == 'top' or zone =="left":
-            new_pos = (drop_col, drop_row )
-        elif zone == 'bottom':
-            new_pos = (drop_col, drop_row+1)
-        else: # zone == 'right':
-            new_pos = (drop_col+ 1, drop_row)
+        if zone == "top" or zone == "left":
+            new_pos = (drop_col, drop_row)
+        elif zone == "bottom":
+            new_pos = (drop_col, drop_row + 1)
+        else:  # zone == 'right':
+            new_pos = (drop_col + 1, drop_row)
         print("zone:", zone, " new pos:", new_pos)
         return new_pos, zone
 
-    def _build_new_layout(self,
-                          drop_pos:QtCore.QPointF,
-                          plot_to_add: "Plot",
-                          ):
-        """ Build a new layout with the new plot added at the drop position. """
-        new_pos, zone = self._arrange_graphics_layout_preview(self.previous_subplots_pos,
-                                                             self.previous_graphics_layout_widget,
-                                                             drop_pos)
+    def _build_new_layout(
+        self,
+        drop_pos: QtCore.QPointF,
+        plot_to_add: "Plot",
+    ):
+        """Build a new layout with the new plot added at the drop position."""
+        new_pos, zone = self._arrange_graphics_layout_preview(
+            self.previous_subplots_pos, self.previous_graphics_layout_widget, drop_pos
+        )
 
         # build a new layout based on previous layout and the new position
         # new_layout_dictionary = active_plot.previous_subplots_pos.copy()
@@ -254,10 +273,14 @@ class PlotWindow(FramelessSubWindow):
                 # Columns should add to the right.
                 prev_pos = position[0]  # this is a list of (col, row) positions
                 # rows should shift that column down
-                if col == prev_pos[1] and row <= prev_pos[0] and zone in ('top', 'bottom'):
+                if (
+                    col == prev_pos[1]
+                    and row <= prev_pos[0]
+                    and zone in ("top", "bottom")
+                ):
                     new_layout_dictionary[plot] = (prev_pos[0] + 1, prev_pos[1])
                 # columns to the right should shift right
-                elif col <= prev_pos[1] and zone in ('left', 'right'):
+                elif col <= prev_pos[1] and zone in ("left", "right"):
                     new_layout_dictionary[plot] = (prev_pos[0], prev_pos[1] + 1)
                 # columns to the right/bottom should stay the same
                 else:
@@ -267,31 +290,37 @@ class PlotWindow(FramelessSubWindow):
 
             self.set_graphics_layout_widget(new_layout_dictionary)
 
-
-    def insert_new_plot(self,
-                        drop_pos:QtCore.QPointF,
-                        ) -> "Plot":
-        """ Inserts and returns a new (empty) Plot at the drop position.
+    def insert_new_plot(
+        self,
+        drop_pos: QtCore.QPointF,
+    ) -> "Plot":
+        """Inserts and returns a new (empty) Plot at the drop position.
 
         If this Plot window has a MultiplotManager and it is a navigation plot then the plots have to
         be all the same size... That is handled when the plot states are added though.....
 
         """
 
-        new_plot = Plot(signal_tree=self.signal_tree,
-                        multiplot_manager=self.multiplot_manager,
-                        is_navigator=self.is_navigator,
-                        plot_window=self,
-                        )
+        new_plot = Plot(
+            signal_tree=self.signal_tree,
+            multiplot_manager=self.multiplot_manager,
+            is_navigator=self.is_navigator,
+            plot_window=self,
+        )
         self._build_new_layout(drop_pos, new_plot)
         self.multiplot_manager.plots[self].append(new_plot)
         # add all active selectors
         for selector in self.navigation_selectors:
-            create_linked_selectors(selector.__class__,
-                                    selector, parent_plots=[new_plot,])
+            create_linked_selectors(
+                selector.__class__,
+                selector,
+                parent_plots=[
+                    new_plot,
+                ],
+            )
         return new_plot
 
-    def add_item(self, item: GraphicsItem, row: int=0, col: int=0):
+    def add_item(self, item: GraphicsItem, row: int = 0, col: int = 0):
         """Add a GraphicsItem to the graphics layout at the specified row and column."""
         self.plot_widget.addItem(item, row, col)
 
@@ -301,9 +330,10 @@ class PlotWindow(FramelessSubWindow):
             item.plot_window = self
             self._current_plot_item = item
 
-    def set_graphics_layout_widget(self,
-                                   layout_dictionary:Dict[GraphicsItem, List[Tuple[int, int]]],
-                                   ):
+    def set_graphics_layout_widget(
+        self,
+        layout_dictionary: Dict[GraphicsItem, List[Tuple[int, int]]],
+    ):
         """
         Set the graphics layout widget based on a layout dictionary. This will compare the current
         layout with the layout dictionary and rearrange the subplots accordingly.
@@ -318,14 +348,19 @@ class PlotWindow(FramelessSubWindow):
         """
         # first remove any subplots that are not in the layout dictionary or are in the wrong position
 
-        print("The items", self.plot_widget.ci.items, " layout dict:", layout_dictionary)
+        print(
+            "The items", self.plot_widget.ci.items, " layout dict:", layout_dictionary
+        )
 
         # only clear if there are changes
         needs_update = False
         for plot_item, pos in self.plot_widget.ci.items.items():
             if isinstance(pos, list):
                 pos = pos[0]
-            if plot_item not in layout_dictionary or layout_dictionary[plot_item] != pos:
+            if (
+                plot_item not in layout_dictionary
+                or layout_dictionary[plot_item] != pos
+            ):
                 needs_update = True
 
         for plot_item in layout_dictionary:
@@ -333,9 +368,14 @@ class PlotWindow(FramelessSubWindow):
                 needs_update = True
 
         if needs_update:
-            print("Old layout:", self.plot_widget.ci.items, "New layout:", layout_dictionary)
+            print(
+                "Old layout:",
+                self.plot_widget.ci.items,
+                "New layout:",
+                layout_dictionary,
+            )
             try:
-                self.plot_widget.clear() # clear all items first
+                self.plot_widget.clear()  # clear all items first
             except ValueError as e:
                 print("Error clearing plot widget:", e)
                 print("Continuing...")
@@ -343,7 +383,6 @@ class PlotWindow(FramelessSubWindow):
                 if isinstance(pos, list):
                     pos = pos[0]
                 self.add_item(plot_item, pos[0], pos[1])
-
 
     def reposition_toolbars(self):
         """Reposition the floating toolbars around the subwindow."""
@@ -378,17 +417,21 @@ class PlotWindow(FramelessSubWindow):
 
         # if part of a nav plot manager close everything below it in the plot_windows tree
         if self.multiplot_manager is not None:
-            logger.info("Closing all plots in the multiplot manager... This closes associated Signal + Navigation"
-                        "plots all at once...")
+            logger.info(
+                "Closing all plots in the multiplot manager... This closes associated Signal + Navigation"
+                "plots all at once..."
+            )
             print(self.multiplot_manager.plot_windows)
-            level, children = self.multiplot_manager.get_plot_window_level(plot_window=self)
+            level, children = self.multiplot_manager.get_plot_window_level(
+                plot_window=self
+            )
             # close all plots in the children recursively
             print("closing the children:", children, "level:", level)
             print("current plot windows:", self)
 
             for child in children:
                 child.close()
-            if level == 1: # close out thi signal as well...
+            if level == 1:  # close out thi signal as well...
                 self.main_window.signal_trees.remove(self.signal_tree)
                 self.signal_tree.close()
             logger.info("Removed signal tree from main window.")
@@ -397,7 +440,9 @@ class PlotWindow(FramelessSubWindow):
         if self.parent_selector is not None:
             logger.info("Closing parent selector")
             print("Removing parent selector:", self.parent_selector)
-            nav_selectors = self.multiplot_manager.navigation_selectors.get(self.parent_selector.parent, [])
+            nav_selectors = self.multiplot_manager.navigation_selectors.get(
+                self.parent_selector.parent, []
+            )
             if self.parent_selector in nav_selectors:
                 nav_selectors.remove(self.parent_selector)
             self.parent_selector.widget.hide()
@@ -410,7 +455,6 @@ class PlotWindow(FramelessSubWindow):
                 logger.info("MultiPlot: Removed plot from main window tracking.")
             except ValueError:
                 pass
-
 
     def closeEvent(self, ev: QtGui.QCloseEvent) -> None:
         self.close_window()

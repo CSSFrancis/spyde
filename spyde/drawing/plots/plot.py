@@ -33,9 +33,6 @@ COLORMAPS = {
 }
 
 
-
-
-
 class Plot(PlotItem):
     """
     A Plot within a QMdi sub-window. This can be either a 2D image or a 1D line plot.
@@ -56,7 +53,7 @@ class Plot(PlotItem):
     def __init__(
         self,
         signal_tree: "BaseSignalTree",
-        is_navigator : bool = False,
+        is_navigator: bool = False,
         multiplot_manager: Union["MultiplotManager", None] = None,
         plot_window: Union["PlotWindow", None] = None,
         *args,
@@ -66,12 +63,18 @@ class Plot(PlotItem):
 
         self.is_navigator = is_navigator
         # update flags
-        self.needs_update_range = None  # type: bool | None # whether the range needs to be updated
-        self.needs_auto_level = True # type: bool # whether the plot needs to be auto-leveled
+        self.needs_update_range = (
+            None
+        )  # type: bool | None # whether the range needs to be updated
+        self.needs_auto_level = (
+            True
+        )  # type: bool # whether the plot needs to be auto-leveled
 
         # Scale bar for image plots
-        self._scale_bar = None # type: ScaleBar | None # the scale bar item
-        self._scale_bar_vb = None # type: pg.ViewBox | None # the viewbox the scale bar is attached to
+        self._scale_bar = None  # type: ScaleBar | None # the scale bar item
+        self._scale_bar_vb = (
+            None
+        )  # type: pg.ViewBox | None # the viewbox the scale bar is attached to
 
         # For mouse move events and cursor readout
         self._mouse_proxy = None
@@ -94,14 +97,11 @@ class Plot(PlotItem):
 
         self.multiplot_manager = multiplot_manager  # type: MultiplotManager | None
 
-
         # Either an image item (2D) or line item (1D)
         self.image_item = pg.ImageItem()  # type: pg.ImageItem
         self.line_item = pg.PlotDataItem()  # type: pg.PlotDataItem
 
-        self.getViewBox().setAspectLocked(
-            True, ratio=1
-        )  # locked aspect ratio
+        self.getViewBox().setAspectLocked(True, ratio=1)  # locked aspect ratio
 
         self._move_sync = True
 
@@ -110,8 +110,12 @@ class Plot(PlotItem):
 
     @property
     def toolbars(self):
-        return [self.plot_state.toolbar_top, self.plot_state.toolbar_bottom,
-                self.plot_state.toolbar_left, self.plot_state.toolbar_right]
+        return [
+            self.plot_state.toolbar_top,
+            self.plot_state.toolbar_bottom,
+            self.plot_state.toolbar_left,
+            self.plot_state.toolbar_right,
+        ]
 
     def set_colormap(self, colormap: str):
         """Set the colormap for the image item."""
@@ -122,8 +126,7 @@ class Plot(PlotItem):
     def enable_scale_bar(self, enabled: bool = True):
         """Enable or disable an auto-updating horizontal scale bar."""
         vb = (
-            getattr(self, "vb", None)
-            or getattr(self, "getViewBox", lambda: None)()
+            getattr(self, "vb", None) or getattr(self, "getViewBox", lambda: None)()
         )  # type: pg.ViewBox | None
         if self.plot_state.dimensions != 2:
             self._scale_bar = None
@@ -132,7 +135,6 @@ class Plot(PlotItem):
 
             # length in data units
             if self.is_navigator:
-
 
                 axes = self.signal_tree.root.axes_manager.navigation_axes
             else:
@@ -247,7 +249,10 @@ class Plot(PlotItem):
             print("updating data for dynamic plot state...", self.current_data)
             self.update_data(self.current_data, force=False)
         else:
-            print("updating data for static plot state...", self.plot_state.current_signal.data)
+            print(
+                "updating data for static plot state...",
+                self.plot_state.current_signal.data,
+            )
             self.update_data(self.plot_state.current_signal.data)
         self.getViewBox().autoRange()
 
@@ -272,20 +277,20 @@ class Plot(PlotItem):
         self.plot_state.show_toolbars()
         self.setTitle(signal.metadata.General.title)
 
-
-    def add_plot_state(self,
-                           signal: BaseSignal,
-                           dimensions: int= None,
-                           dynamic: bool = False,
-                           overwrite: bool = False
-                           ) -> Optional[PlotState]:
+    def add_plot_state(
+        self,
+        signal: BaseSignal,
+        dimensions: int = None,
+        dynamic: bool = False,
+        overwrite: bool = False,
+    ) -> Optional[PlotState]:
         """Create and add a new PlotState for some signal."""
         print("Plot states", self.plot_states)
         if signal not in self.plot_states or overwrite:
             ps = PlotState(
                 signal=signal,
                 dimensions=dimensions,
-                dynamic= dynamic,
+                dynamic=dynamic,
                 plot=self,
             )
             self.plot_states[signal] = ps
@@ -294,7 +299,6 @@ class Plot(PlotItem):
             return ps
         else:
             return None
-
 
     def update_image_rectangle(self):
         """Set the x and y range of the plot.
@@ -348,8 +352,8 @@ class Plot(PlotItem):
         """Ensure clicking a plot marks it as the active plot."""
         super().mousePressEvent(ev)
         if (
-                ev.button() == QtCore.Qt.MouseButton.LeftButton
-                and self.plot_window is not None
+            ev.button() == QtCore.Qt.MouseButton.LeftButton
+            and self.plot_window is not None
         ):
             self.plot_window.current_plot_item = self
 
@@ -389,7 +393,8 @@ class Plot(PlotItem):
         fft_plot.add_plot_state(
             signal=self.plot_state.current_signal,
             dimensions=2,
-            dynamic=True,)
+            dynamic=True,
+        )
         fft_plot.set_plot_state(self.plot_state.current_signal)
         fft_selector = RectangleSelector(
             parent=self,
@@ -416,7 +421,9 @@ class Plot(PlotItem):
             if self.plot_window not in self.multiplot_manager.navigation_selectors:
                 print("No navigation selectors for this plot window.")
             else:
-                visible_selectors += self.multiplot_manager.navigation_selectors[self.plot_window]
+                visible_selectors += self.multiplot_manager.navigation_selectors[
+                    self.plot_window
+                ]
             print("visible selectors:", visible_selectors)
         # Hide selectors from other plots. Faster than deleting and recreating them (also renders nicer).
         for selector in self.main_window.navigation_selectors:
@@ -435,7 +442,9 @@ class Plot(PlotItem):
             if self.plot_window not in self.multiplot_manager.navigation_selectors:
                 print("No navigation selectors for this plot window.")
             else:
-                visible_selectors += self.multiplot_manager.navigation_selectors[self.plot_window]
+                visible_selectors += self.multiplot_manager.navigation_selectors[
+                    self.plot_window
+                ]
         for selector in visible_selectors:
             selector.widget.hide()
             self.main_window.selectors_layout.removeWidget(selector.widget)
@@ -589,15 +598,13 @@ class Plot(PlotItem):
         logger.info("Deleting current plot selectors and child plots")
         # need to delete the current selectors and child plots
         for child_plot in (
-                self.plot_state.plot_selectors_children
-                + self.plot_state.signal_tree_selectors_children
+            self.plot_state.plot_selectors_children
+            + self.plot_state.signal_tree_selectors_children
         ):
             try:
                 child_plot.close()
             except Exception:
                 pass
-
-
 
     def _apply_pending_navigator_assignment(self) -> bool:
         """Replace this plot with the queued navigator signal, if any."""
@@ -613,4 +620,3 @@ class Plot(PlotItem):
         self.set_plot_state(signal)
         mw.statusBar().showMessage("Plot replaced", 2500)
         return True
-

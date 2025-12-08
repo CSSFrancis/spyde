@@ -237,8 +237,11 @@ class CreateDataDialog(QDialog):
         # Resize dialog to fit the tabs content and enforce a sensible minimum
         self.adjustSize()
         min_w, min_h = 400, 300
-        self.resize(max(self.sizeHint().width(), min_w), max(self.sizeHint().height(), min_h))
+        self.resize(
+            max(self.sizeHint().width(), min_w), max(self.sizeHint().height(), min_h)
+        )
         self.setMinimumSize(min_w, min_h)
+
     @staticmethod
     def _auto_chunks(ndim: int) -> tuple:
         """

@@ -46,6 +46,7 @@ COLORMAPS = {
 
 SUPPORTED_EXTS = (".hspy", ".mrc")  # extend as needed
 
+
 class DaskClusterWorker(QtCore.QObject):
     finished = QtCore.Signal(object, object)  # cluster_or_none, client_or_none
     error = QtCore.Signal(Exception)
@@ -73,6 +74,7 @@ class DaskClusterWorker(QtCore.QObject):
     @QtCore.Slot()
     def stop(self):
         self._stopped = True
+
 
 class StartupTimer:
     """Context manager that prints how long a startup step took."""
@@ -159,7 +161,8 @@ class MainWindow(QMainWindow):
         # Start background worker thread to poll plot Futures
         self._update_thread = QtCore.QThread(self)
         self._plot_update_worker = PlotUpdateWorker(
-            lambda: [p for plots in self.plot_subwindows for p in plots.plots], interval_ms=5
+            lambda: [p for plots in self.plot_subwindows for p in plots.plots],
+            interval_ms=5,
         )
         self._plot_update_worker.moveToThread(self._update_thread)
         self._update_thread.started.connect(self._plot_update_worker.start)
@@ -270,7 +273,6 @@ class MainWindow(QMainWindow):
         self.app.aboutToQuit.connect(self._shutdown_dask)
         self.app.aboutToQuit.connect(self._shutdown_update_thread)
 
-
     @QtCore.Slot(object, object)
     def _on_dask_ready(self, cluster, client):
         # store both client and cluster so we can close cleanly
@@ -290,8 +292,7 @@ class MainWindow(QMainWindow):
     def init_dask_cluster(self):
         with log_startup_time("Dask LocalCluster + Client setup"):
             cluster = LocalCluster(
-                n_workers=self.n_workers,
-                threads_per_worker=self.threads_per_worker
+                n_workers=self.n_workers, threads_per_worker=self.threads_per_worker
             )
             self.client = Client(cluster)
         print(f"Starting Dashboard at: {self.client.dashboard_link}")
@@ -399,9 +400,7 @@ class MainWindow(QMainWindow):
         if not isinstance(self._active_plot(), Plot):
             QMessageBox.warning(self, "Error", "No active plot window to export from.")
             return
-        export_dialog = MovieExportDialog(
-            plot=self._active_plot(), parent=self
-        ).exec()
+        export_dialog = MovieExportDialog(plot=self._active_plot(), parent=self).exec()
 
     def open_dask_dashboard(self) -> None:
         """
@@ -518,13 +517,14 @@ class MainWindow(QMainWindow):
         self.add_signal(signal)
         print("Example data loaded:", name)
 
-    def add_plot_window(self,
-                        is_navigator: bool = False,  # if navigator then it will share the navigation selectors
-                        plot_manager: Union["MultiplotManager", None] = None,
-                        signal_tree: Union["BaseSignalTree", None] = None,
-                        *args,
-                        **kwargs,
-                        ) -> PlotWindow:
+    def add_plot_window(
+        self,
+        is_navigator: bool = False,  # if navigator then it will share the navigation selectors
+        plot_manager: Union["MultiplotManager", None] = None,
+        signal_tree: Union["BaseSignalTree", None] = None,
+        *args,
+        **kwargs,
+    ) -> PlotWindow:
         """
         Plot window construction:
         Create a new PlotWindow instance, add it to the MDI area, and set it up.
@@ -543,14 +543,14 @@ class MainWindow(QMainWindow):
             The created PlotWindow instance.
         """
         pw = PlotWindow(
-                is_navigator=is_navigator,
-                main_window=self,
-                signal_tree=signal_tree,
-                plot_manager=plot_manager,
-                *args,
-                **kwargs,
-                       )
-        #pw.setWidget(pw.container)
+            is_navigator=is_navigator,
+            main_window=self,
+            signal_tree=signal_tree,
+            plot_manager=plot_manager,
+            *args,
+            **kwargs,
+        )
+        # pw.setWidget(pw.container)
 
         pw.resize(self.screen_size.height() // 3, self.screen_size.height() // 3)
 
@@ -717,17 +717,15 @@ class MainWindow(QMainWindow):
         # Histogram binding: use the image_item on the inner widget / plot
         img_item = plot.image_item
         if (
-                self.histogram is not None
-                and img_item is not None
-                and img_item is not self._histogram_image_item
+            self.histogram is not None
+            and img_item is not None
+            and img_item is not self._histogram_image_item
         ):
             try:
                 self.histogram.setImageItem(img_item)
                 self._histogram_image_item = img_item
                 if plot_state is not None:
-                    self.histogram.setLevels(
-                        plot_state.min_level, plot_state.max_level
-                    )
+                    self.histogram.setLevels(plot_state.min_level, plot_state.max_level)
             except Exception:
                 pass
 
@@ -1003,7 +1001,8 @@ class MainWindow(QMainWindow):
                         except Exception:
                             pos = event.pos()
                         contains = (
-                            active_sub is not None and active_sub.geometry().contains(pos)
+                            active_sub is not None
+                            and active_sub.geometry().contains(pos)
                         )
                         if contains:
                             local_x = pos.x() - active_sub.geometry().x()
@@ -1043,9 +1042,9 @@ class MainWindow(QMainWindow):
         """
         # Create placeholder
         placeholder = pg.PlotItem()
-        placeholder.setTitle("Drop Navigator Here", color='#888888')
-        placeholder.hideAxis('left')
-        placeholder.hideAxis('bottom')
+        placeholder.setTitle("Drop Navigator Here", color="#888888")
+        placeholder.hideAxis("left")
+        placeholder.hideAxis("bottom")
 
         rect = pg.QtWidgets.QGraphicsRectItem()
         rect.setBrush(pg.mkBrush((100, 100, 255, 100)))
@@ -1063,13 +1062,15 @@ class MainWindow(QMainWindow):
         This is more efficient than recreating the layout each time but more complicated...
         """
         active_plot_window = self._active_plot_window()
-        if active_plot_window is None or not hasattr(self, '_navigator_placeholder'):
+        if active_plot_window is None or not hasattr(self, "_navigator_placeholder"):
             return
         # Calculate new position
-        active_plot_window._build_new_layout(drop_pos=pos, plot_to_add=self._navigator_placeholder)
-        #self.build_new_layout(active_plot_window, drop_pos=pos, plot_to_add=self._navigator_placeholder)
+        active_plot_window._build_new_layout(
+            drop_pos=pos, plot_to_add=self._navigator_placeholder
+        )
+        # self.build_new_layout(active_plot_window, drop_pos=pos, plot_to_add=self._navigator_placeholder)
 
-        if hasattr(self, '_navigator_placeholder_rect'):
+        if hasattr(self, "_navigator_placeholder_rect"):
             vb = self._navigator_placeholder.getViewBox()
             self._navigator_placeholder_rect.setRect(vb.rect())
 
@@ -1080,7 +1081,9 @@ class MainWindow(QMainWindow):
         """
         active_plot_window = self._active_plot_window()
         print("Setting back original layout:", active_plot_window.previous_subplots_pos)
-        active_plot_window.set_graphics_layout_widget(active_plot_window.previous_subplots_pos)
+        active_plot_window.set_graphics_layout_widget(
+            active_plot_window.previous_subplots_pos
+        )
 
     def navigator_drop(self, pos: QtCore.QPointF, mime_data):
         """
@@ -1090,18 +1093,22 @@ class MainWindow(QMainWindow):
         active_plot_window = self._active_plot_window()
         if active_plot_window is None:
             return
-        nav_plot = active_plot_window.insert_new_plot(drop_pos=pos,)
+        nav_plot = active_plot_window.insert_new_plot(
+            drop_pos=pos,
+        )
 
         # Extract navigator data from mime
-        token = mime_data.data(NAVIGATOR_DRAG_MIME).data().decode('utf-8')
+        token = mime_data.data(NAVIGATOR_DRAG_MIME).data().decode("utf-8")
         payload = self._navigator_drag_payloads.pop(token, None)
         if payload is None:
             return
 
-        signal = payload['signal'] # type: hs.signals.BaseSignal
+        signal = payload["signal"]  # type: hs.signals.BaseSignal
         print("Adding navigator signal to plot:", signal)
         for navigation_signal in nav_plot.signal_tree.navigator_signals.values():
-            nav_plot.multiplot_manager.add_plot_states_for_navigation_signals(navigation_signal)
+            nav_plot.multiplot_manager.add_plot_states_for_navigation_signals(
+                navigation_signal
+            )
 
         nav_plot.set_plot_state(signal=signal[0])
         # Clean up
@@ -1285,5 +1292,5 @@ def main() -> MainWindow:
 
 
 if __name__ == "__main__":
-    #multiprocessing.freeze_support()
+    # multiprocessing.freeze_support()
     sys.exit(main())

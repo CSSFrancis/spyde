@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from spyde.drawing.selector import BaseSelector
     from spyde.drawing.plots.plot import Plot
 
+
 def update_from_navigation_selection(
     selector: "BaseSelector", child: "Plot", indices, get_result: bool = False
 ):

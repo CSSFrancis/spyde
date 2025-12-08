@@ -13,7 +13,7 @@ class TestActions:
 
         nav, sig = subwindows
 
-        toolbar_bottom = sig.plot_state.toolbar_bottom # type: RoundedToolBar
+        toolbar_bottom = sig.plot_state.toolbar_bottom  # type: RoundedToolBar
 
         actions = toolbar_bottom.actions()
         print("Actions:", actions)
@@ -24,7 +24,9 @@ class TestActions:
                 center_button = action
             elif action.text() == "Rebin":
                 rebin = action
-        center_zero_beam_roi =  toolbar_bottom.action_widgets["Center Zero Beam"]["plot_items"]["item_0"]
+        center_zero_beam_roi = toolbar_bottom.action_widgets["Center Zero Beam"][
+            "plot_items"
+        ]["item_0"]
         caret_params = toolbar_bottom.action_widgets["Center Zero Beam"]["widget"]
 
         # Start hidden
@@ -38,7 +40,9 @@ class TestActions:
         # make sure that the caret box was created
         # action widget: "plot_items", "widget", "layout", "tracker", "position_fn"
         caret_params = toolbar_bottom.action_widgets["Center Zero Beam"]["widget"]
-        center_zero_beam_roi =  toolbar_bottom.action_widgets["Center Zero Beam"]["plot_items"]["item_0"]
+        center_zero_beam_roi = toolbar_bottom.action_widgets["Center Zero Beam"][
+            "plot_items"
+        ]["item_0"]
         assert isinstance(caret_params, CaretParams)
         assert caret_params.isVisible()
         assert center_zero_beam_roi.isVisible()
@@ -74,7 +78,7 @@ class TestActions:
         # rebin the dataset to get another plot state
         rebin_widget.submit_button.click()
         qtbot.wait(500)
-        toolbar_bottom_new = sig.plot_state.toolbar_bottom # type: RoundedToolBar
+        toolbar_bottom_new = sig.plot_state.toolbar_bottom  # type: RoundedToolBar
 
         for action in actions:
             print("Action text:", action.text())
@@ -83,8 +87,12 @@ class TestActions:
             elif action.text() == "Rebin":
                 rebin_new = action
 
-        center_zero_beam_roi_new =  toolbar_bottom_new.action_widgets["Center Zero Beam"]["plot_items"]["item_0"]
-        caret_params_new = toolbar_bottom_new.action_widgets["Center Zero Beam"]["widget"]
+        center_zero_beam_roi_new = toolbar_bottom_new.action_widgets[
+            "Center Zero Beam"
+        ]["plot_items"]["item_0"]
+        caret_params_new = toolbar_bottom_new.action_widgets["Center Zero Beam"][
+            "widget"
+        ]
         # make sure that the caret box was created
         assert isinstance(caret_params_new, CaretParams)
         assert not center_zero_beam_roi_new.isVisible()
@@ -105,7 +113,7 @@ class TestActions:
 
         nav, sig = subwindows
 
-        toolbar_bottom = sig.plot_state.toolbar_bottom # type: RoundedToolBar
+        toolbar_bottom = sig.plot_state.toolbar_bottom  # type: RoundedToolBar
 
         actions = toolbar_bottom.actions()
         print("Actions:", actions)
@@ -139,7 +147,7 @@ class TestActions:
 
         nav, sig = subwindows
 
-        toolbar_bottom = sig.plot_state.toolbar_bottom # type: RoundedToolBar
+        toolbar_bottom = sig.plot_state.toolbar_bottom  # type: RoundedToolBar
 
         actions = toolbar_bottom.actions()
         print("Actions:", actions)
@@ -149,7 +157,9 @@ class TestActions:
             if action.text() == "Virtual Imaging":
                 virtual_imaging = action
 
-        virtual_imaging_widget = toolbar_bottom.action_widgets["Virtual Imaging"]["widget"]
+        virtual_imaging_widget = toolbar_bottom.action_widgets["Virtual Imaging"][
+            "widget"
+        ]
         # Simulate clicking the "Virtual Imaging" action
         virtual_imaging.trigger()
         qtbot.wait(500)  # wait for the action to take effect
@@ -178,7 +188,9 @@ class TestActions:
         virtual_mask_action.trigger()
         qtbot.wait(500)
 
-        roi = list(toolbar_bottom.action_widgets["Virtual Imaging"]["plot_items"].values())[0]
+        roi = list(
+            toolbar_bottom.action_widgets["Virtual Imaging"]["plot_items"].values()
+        )[0]
         assert isinstance(roi, CircleROI)
         assert roi.isVisible()
         # check to make sure the roi is on the right plot?
@@ -197,13 +209,10 @@ class TestActions:
         # Change the type of the virtual detector
         virtual_imaging.trigger()
         assert "Virtual Image (green)" in virtual_imaging_widget.action_widgets
-        box =  virtual_imaging_widget.action_widgets["Virtual Image (green)"]["widget"]
+        box = virtual_imaging_widget.action_widgets["Virtual Image (green)"]["widget"]
         box.get_parameter_widget("type").setCurrentText("rectangle")
-        roi = list(toolbar_bottom.action_widgets["Virtual Imaging"]["plot_items"].values())[0]
+        roi = list(
+            toolbar_bottom.action_widgets["Virtual Imaging"]["plot_items"].values()
+        )[0]
         assert isinstance(roi, RectROI)
         qtbot.wait(500)
-
-
-
-
-

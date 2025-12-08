@@ -34,7 +34,9 @@ def tem_2d_dataset(
 
 
 @pytest.fixture
-def insitu_tem_2d_dataset(qtbot) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
+def insitu_tem_2d_dataset(
+    qtbot,
+) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
     win = _open_window()
     _create_data(win, "Insitu TEM")
     qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 2, timeout=5000)
@@ -50,7 +52,9 @@ def insitu_tem_2d_dataset(qtbot) -> Iterator[Dict[str, Union[MainWindow, QMdiAre
 
 
 @pytest.fixture
-def stem_4d_dataset(qtbot) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
+def stem_4d_dataset(
+    qtbot,
+) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
     win = _open_window()
     _create_data(win, "4D STEM")
     qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 2, timeout=5000)
@@ -66,7 +70,9 @@ def stem_4d_dataset(qtbot) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, Lis
 
 
 @pytest.fixture
-def stem_5d_dataset(qtbot) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
+def stem_5d_dataset(
+    qtbot,
+) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
     win = _open_window()
     _create_data(win, "5D STEM")
     qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 3, timeout=10000)
@@ -79,4 +85,3 @@ def stem_5d_dataset(qtbot) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, Lis
         }
     finally:
         _close_window(qtbot, win)
-

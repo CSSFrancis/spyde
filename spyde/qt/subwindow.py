@@ -88,11 +88,11 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self.title_bar_layout.addWidget(self.minimize_button)
         self.title_bar_layout.addWidget(self.maximize_button)
         self.title_bar_layout.addWidget(self.close_button)
-        self.title_bar_layout.setContentsMargins(5, 5, 5,5)
+        self.title_bar_layout.setContentsMargins(5, 5, 5, 5)
 
         self.setLayout(QtWidgets.QVBoxLayout())
 
-        self.layout().setContentsMargins(3,3, 3,3)
+        self.layout().setContentsMargins(3, 3, 3, 3)
         self.layout().addWidget(self.title_bar)
         self.layout().setSpacing(0)
         self.old_size = self.size()
@@ -110,7 +110,6 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self._resizing_bottom = False
         self._resizing_left = False
         self._resizing_right = False
-
 
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.Type.MouseMove:
