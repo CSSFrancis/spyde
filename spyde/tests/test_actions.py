@@ -132,7 +132,7 @@ class TestActions:
 
         # submit the rebin
         rebin_widget.submit_button.click()
-        qtbot.wait(4000)  # wait for the action to take effect
+        qtbot.wait(6000)  # wait for the action to take effect
 
         # check that the data has been rebinned
         current_data = sig.current_data

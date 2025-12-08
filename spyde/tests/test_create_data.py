@@ -59,16 +59,32 @@ class TestOpenExampleData:
             assert len(win.signal_trees) == 1
             assert len(win.signal_trees[0].signal_plots) == 1
             assert len(win.signal_trees[0].navigator_plot_manager.plots) == 2
-            assert len(win.signal_trees[0].navigator_plot_manager.navigation_selectors[nav_window]) == 1
+            assert (
+                len(
+                    win.signal_trees[0].navigator_plot_manager.navigation_selectors[
+                        nav_window
+                    ]
+                )
+                == 1
+            )
 
             win.signal_trees[
                 0
             ].navigator_plot_manager.add_navigation_selector_and_signal_plot(nav_window)
-            assert len(win.signal_trees[0].navigator_plot_manager.navigation_selectors[nav_window]) == 2
+            assert (
+                len(
+                    win.signal_trees[0].navigator_plot_manager.navigation_selectors[
+                        nav_window
+                    ]
+                )
+                == 2
+            )
             assert len(win.signal_trees[0].signal_plots) == 2
 
             # resize all  the subwindows to not overlap. Make 2 columns
-            subwindows = win.mdi_area.subWindowList()[::-1]  # reverse to have nav on left
+            subwindows = win.mdi_area.subWindowList()[
+                ::-1
+            ]  # reverse to have nav on left
             win.mdi_area.tileSubWindows()
 
             qtbot.wait(500)
@@ -80,7 +96,6 @@ class TestOpenExampleData:
         finally:
             win.close()
             qtbot.waitUntil(lambda: not win.isVisible(), timeout=2000)
-
 
     def test_create_test_2d_data(self, qtbot, tem_2d_dataset):
         win = tem_2d_dataset["window"]
@@ -106,7 +121,6 @@ class TestOpenExampleData:
         assert len(subwindows) == 3
         win.close()
 
-
     def test_navigator_moving_5d(self, qtbot, stem_5d_dataset):
         win = stem_5d_dataset["window"]
         subplots = win.plots
@@ -129,12 +143,11 @@ class TestOpenExampleData:
         # Simulate moving the selector in the navigation plot
         original_pos = selector.selector.pos()  # Mock original position
 
-        selector.selector.setRegion((original_pos.x()+2, original_pos.x()+4))
-
+        selector.selector.setRegion((original_pos.x() + 2, original_pos.x() + 4))
 
         # Verify that the position has been updated
         new_pos = selector.selector.getRegion()
-        assert new_pos[0] == original_pos.x()+2
+        assert new_pos[0] == original_pos.x() + 2
 
         # wait and make sure that the signal plot updated accordingly
         qtbot.wait(5000)

@@ -1,7 +1,7 @@
 # Test Closing the windows and making sure that the
 # appropriate resources are released.
 
-from spyde.drawing.plots.plot import PlotWindow
+from spyde.drawing.plots.plot_window import PlotWindow
 
 
 class TestCloseWindows:
