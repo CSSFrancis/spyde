@@ -412,9 +412,9 @@ class PlotWindow(FramelessSubWindow):
         if self.parent_selector is not None:
             logger.info("Closing parent selector")
             print("Removing parent selector:", self.parent_selector)
-            self.parent_selector.parent.multiplot_manager.navigation_selectors[self.parent_selector.parent].remove(
-                self.parent_selector
-            )
+            nav_selectors = self.multiplot_manager.navigation_selectors.get(self.parent_selector.parent, [])
+            if self.parent_selector in nav_selectors:
+                nav_selectors.remove(self.parent_selector)
             self.parent_selector.widget.hide()
             self.parent_selector.close()
 

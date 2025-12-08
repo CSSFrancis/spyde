@@ -392,9 +392,17 @@ class RectangleSelector(BaseSelector):
         )
         print("Creating Rectangle Selector")
         print(args, kwargs)
+
+
+        # auto position and size
+        # 10 % of the image size and bottom left corner
+        transform  = parent.current_plot_item.image_item.transform()
+        pos  = transform.map(QtCore.QPointF(0, 0))
+        width = parent.current_plot_item.image_item.width()//10
+
         self.selector = RectROI(
-            pos=(0, 0),
-            size=(10, 10),
+            pos=pos,
+            size=(width, width),
             pen=self.roi_pen,
             handlePen=self.handlePen,
             hoverPen=self.hoverPen,
@@ -557,16 +565,25 @@ class LinearRegionSelector(BaseSelector):
         """
         Get the currently selected indices from the selector.
         """
+
+        axs = self.parent.current_plot_state.current_signal.axes_manager.signal_axes[0]
+
+        scale  = axs.scale
+        offset = axs.offset
+
         region = self.selector.getRegion()
-        if region[0] > region[1]:
-            region = (region[1], region[0])
-        indices = np.array(
-            [
-                np.arange(
-                    np.floor(region[0]).astype(int), np.ceil(region[1]).astype(int)
-                ),
-            ]
-        ).T
+        start, end = region
+        if start > end:
+            start, end = end, start
+
+        start = (start - offset) / scale
+        end = (end - offset) / scale
+
+
+        indices = np.arange(
+            np.floor(start).astype(int), np.ceil(end).astype(int)
+        ).reshape(-1, 1)
+
         return indices
 
 
