@@ -155,12 +155,13 @@ class BaseSignalTree:
         if signal.axes_manager.signal_dimension == 0:
             signal = signal.T
         if signal._lazy:
-            signal.compute()
+            signal.data = self.client.compute(signal.data)
+            #signal.compute()
 
         if signal.axes_manager.signal_dimension > 0 and signal.axes_manager.navigation_dimension > 0:
             navigator = signal.sum(signal.axes_manager.signal_axes).T
             if navigator._lazy:
-                navigator.compute()
+                navigator.data = self.client.compute(navigator.data)
             print("Preprocessing navigator: ", navigator, signal)
             return [navigator, signal]
 
@@ -168,7 +169,7 @@ class BaseSignalTree:
             signal = signal.transpose(2)
             navigator = signal.sum(signal.axes_manager.signal_axes).T
             if navigator._lazy:
-                navigator.compute()
+                navigator.data = self.client.compute(navigator.data)
             print("Preprocessing navigator: ", navigator, signal)
 
             return [navigator, signal]

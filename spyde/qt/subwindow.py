@@ -10,9 +10,6 @@ from PySide6 import QtGui
 class FramelessSubWindow(QtWidgets.QMdiSubWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         # small rounded gradient border params
         self._border_radius = 8
         self._border_width = 2
@@ -26,19 +23,33 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self.title_bar.setMinimumHeight(30)
         self.title_bar.setMinimumWidth(200)
         self.title_bar.setStyleSheet(
-            "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 #3a3a3a, stop:1 #2b2b2b); "
-            "border-top-left-radius: 6px; "
-            "border-top-right-radius: 6px; "
-            "QPushButton { background-color: transparent; border: none; border-radius: 4px; } "
-            "QPushButton:hover { background-color: rgba(255,255,255,18); } "
-            "QPushButton:pressed { background-color: rgba(255,255,255,28); }"
+            "QWidget {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            "    stop:0 #3a3a3a, stop:1 #2b2b2b);"
+            "  border-top-left-radius: 6px;"
+            "  border-top-right-radius: 6px;"
+            "  border-left: 1px solid rgba(211, 211, 211, 170);"
+            "  border-right: 1px solid rgba(211, 211, 211, 170);"
+            "  border-top: 1px solid rgba(211, 211, 211, 170);"
+            "}"
+            "QPushButton {"
+            "  background-color: transparent;"
+            "  border: none;"
+            "  border-radius: 4px;"
+            "}"
+            "QPushButton:hover {"
+            "  background-color: rgba(255,255,255,18);"
+            "}"
+            "QPushButton:pressed {"
+            "  background-color: rgba(255,255,255,28);"
+            "}"
+            "QLabel {"
+            "  border: none;"
+            "}"
         )
         self.title_bar_layout = QtWidgets.QHBoxLayout(self.title_bar)
-        self.title_bar_layout.setContentsMargins(0, 0, 0, 0)
-        self.layout().setContentsMargins(0, 0, 0, 0)
 
-        self.title_label = QtWidgets.QLabel("Custom Window", self.title_bar)
+        self.title_label = QtWidgets.QLabel("", self.title_bar)
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_label.setStyleSheet("color: #ffffff;")
         self.title_bar_layout.addWidget(self.title_label)
@@ -51,24 +62,24 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         print("resolved icons", resolve_icon_path("qt/assets/icons/minimize.svg"))
         print(self._icon_minimize.isNull())
 
-        self.minimize_button.setFixedSize(25, 25)
+        self.minimize_button.setFixedSize(20, 20)
         self.minimize_button.clicked.connect(self.toggle_minimize)
         self.minimize_button.setIcon(self._icon_minimize)
-        self.minimize_button.setIconSize(QtCore.QSize(16, 16))
+        self.minimize_button.setIconSize(QtCore.QSize(12, 12))
 
         self.maximize_button = QtWidgets.QPushButton(self.title_bar)
         self.maximize_button.setIcon(self._icon_maximize)
         self.maximize_button.setCheckable(True)
         self.maximize_button.setChecked(False)
-        self.maximize_button.setFixedSize(25, 25)
+        self.maximize_button.setFixedSize(20, 20)
         self.maximize_button.clicked.connect(self.toggle_maximize)
-        self.maximize_button.setIconSize(QtCore.QSize(16, 16))
+        self.maximize_button.setIconSize(QtCore.QSize(12, 12))
 
         self.close_button = QtWidgets.QPushButton(self.title_bar)
         self.close_button.setIcon(self._icon_close)
-        self.close_button.setFixedSize(25, 25)
+        self.close_button.setFixedSize(20, 20)
         self.close_button.clicked.connect(self.close)
-        self.close_button.setIconSize(QtCore.QSize(16, 16))
+        self.close_button.setIconSize(QtCore.QSize(12, 12))
 
         self.title_bar.mousePressEvent = self.start_move
         self.title_bar.mouseMoveEvent = self.move_window
@@ -77,10 +88,11 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self.title_bar_layout.addWidget(self.minimize_button)
         self.title_bar_layout.addWidget(self.maximize_button)
         self.title_bar_layout.addWidget(self.close_button)
-        self.title_bar_layout.setContentsMargins(0, 0, 5, 0)
+        self.title_bar_layout.setContentsMargins(5, 5, 5,5)
 
         self.setLayout(QtWidgets.QVBoxLayout())
-        self.layout().setContentsMargins(0, 0, 0, 0)
+
+        self.layout().setContentsMargins(3,3, 3,3)
         self.layout().addWidget(self.title_bar)
         self.layout().setSpacing(0)
         self.old_size = self.size()
@@ -99,6 +111,7 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self._resizing_left = False
         self._resizing_right = False
 
+
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.Type.MouseMove:
             self.mouseMoveEvent(event)
@@ -116,7 +129,7 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         else:
             self.is_minimized = True
             self.old_size = self.size()
-            self.resize(QtCore.QSize(300, 30))
+            self.resize(QtCore.QSize(220, 75))
 
     def toggle_maximize(self):
         # Toggle between maximized and normal window states
@@ -230,7 +243,9 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
                 new_width = init_geo.width() + dx
 
             # Enforce minimum size with proper anchoring
-            min_w, min_h = 50, 30
+
+            # Min w is
+            min_w, min_h = 220, 75
             if new_width < min_w:
                 if self._resizing_left:
                     new_x = init_geo.x() + (init_geo.width() - min_w)
@@ -301,18 +316,3 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
             self._resizing_bottom = False
             self._resizing_left = False
             self._resizing_right = False
-
-    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
-        # Draw subtle rounded background and a small gradient border around entire subwindow
-        p = QtGui.QPainter(self)
-        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
-        rect = self.rect().adjusted(1, 1, -1, -1)
-
-        # Background fill (semi-transparent dark)
-        bg_path = QtGui.QPainterPath()
-        bg_path.addRoundedRect(
-            QtCore.QRectF(rect), self._border_radius, self._border_radius
-        )
-        p.fillPath(bg_path, QtGui.QColor(35, 35, 35, 245))
-
-        # Gradient border that goes around the full widget (vertical gradient)

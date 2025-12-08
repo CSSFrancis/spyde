@@ -488,6 +488,7 @@ class MainWindow(QMainWindow):
             The hyperspy signal to add.
 
         """
+        print("Creating Signal Tree for signal")
         signal_tree = BaseSignalTree(
             root_signal=signal, main_window=self, distributed_client=self.client
         )

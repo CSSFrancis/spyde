@@ -93,9 +93,15 @@ class PlotWindow(FramelessSubWindow):
 
         # UI: container widget + layout that will host the GraphicsLayoutWidget.
         # Use a QVBoxLayout with zero margins/spacing so the plot fills the subwindow.
-        self.container = QtWidgets.QWidget()  # type: QtWidgets.QWidget
+        self.container = QtWidgets.QWidget()
+        self.container.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        # make it opaque so the border contrast is obvious
+        # light grey color
+        self.container.setStyleSheet(
+            "background-color: rgba(211, 211, 211, 170);"
+        )
         container_layout = QtWidgets.QVBoxLayout(self.container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setContentsMargins(1, 0, 1, 1)
         container_layout.setSpacing(0)
 
         # The central plot widget: a pyqtgraph GraphicsLayoutWidget parented to our container.
@@ -121,7 +127,8 @@ class PlotWindow(FramelessSubWindow):
             # Notify the main window that this subwindow is active
             self.main_window.on_subwindow_activated(self)
         else:
-            raise ValueError("Plot is not in this PlotWindow.")
+            raise ValueError("Plot is not in this PlotWindow."
+                             )
 
     @property
     def current_plot_state(self) -> Union["PlotState", None]:
@@ -639,10 +646,11 @@ class Plot(PlotItem):
         # fire the selector update to get the correct data displayed...
         if self.plot_state.dynamic:
             if self.current_data is None:
-                self.parent_selector.delayed_update_data(force=True)
+                self.parent_selector.delayed_update_data(force=False)
             print("updating data for dynamic plot state...", self.current_data)
-            self.update_data(self.current_data, force=True)
+            self.update_data(self.current_data, force=False)
         else:
+            print("updating data for static plot state...", self.plot_state.current_signal.data)
             self.update_data(self.plot_state.current_signal.data)
         self.getViewBox().autoRange()
 
@@ -656,7 +664,7 @@ class Plot(PlotItem):
         self.main_window.on_subwindow_activated(self.plot_window)
         # update the plot
         if self.parent_selector is not None:
-            self.parent_selector.delayed_update_data(force=True)
+            self.parent_selector.delayed_update_data(force=False)
             self.needs_update_range = True
             # update the plot range
             self.update_range()
@@ -756,7 +764,7 @@ class Plot(PlotItem):
         If the new_data is a Future, the update will be deferred until the Future is complete, the update
         will be handled by the event loop instead.
         """
-        print("Updating plot data", new_data)
+        print("Updating plot data", new_data, " force=", force)
         self.current_data = new_data
         if isinstance(new_data, Future) and not force:
             pass
@@ -1229,7 +1237,7 @@ class MultiplotManager:
         logger.info("Added Child plot states: ", child.plot_states)
         # Auto range...
         selector.update_data()
-        child.update_data(child.current_data, force=True)
+        child.update_data(child.current_data, force=False)
         logger.info("Auto-ranging child plot")
         child.getViewBox().autoRange()
         self.signal_tree.signal_plots.append(child)
