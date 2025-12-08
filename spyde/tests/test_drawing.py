@@ -1,6 +1,6 @@
 # Test UI elements and make sure that they are rendering as intended to reduce clipping etc.
 from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
-from spyde.drawing.plot import Plot
+from spyde.drawing.plots.plot import Plot
 
 class TestDrawing:
     def test_toolbar_drawing(self, qtbot, stem_4d_dataset):

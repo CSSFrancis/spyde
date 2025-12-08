@@ -7,15 +7,14 @@ called on the move or change events of a selector.
 """
 
 import numpy as np
-from hyperspy.misc.array_tools import weighted_mean_round_from_sums
 
 from scipy import fft
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from spyde.drawing.selector import BaseSelector
-    from spyde.drawing.plot import Plot
+    from spyde.drawing.plots.plot import Plot
 
 def update_from_navigation_selection(
     selector: "BaseSelector", child: "Plot", indices, get_result: bool = False

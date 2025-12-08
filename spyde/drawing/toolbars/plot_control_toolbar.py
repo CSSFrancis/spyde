@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from pathlib import Path
 
 if TYPE_CHECKING:
-    from spyde.drawing.plot_states import PlotState
+    from spyde.drawing.plots.plot_states import PlotState
 
 from spyde import TOOLBAR_ACTIONS
 

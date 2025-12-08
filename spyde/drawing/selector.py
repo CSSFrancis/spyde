@@ -1,7 +1,4 @@
-import logging
-
-from pandas.core.indexes.api import all_indexes_same
-from pyqtgraph import LinearRegionItem, RectROI, CircleROI, LineROI
+from pyqtgraph import LinearRegionItem, RectROI, LineROI
 
 from PySide6 import QtCore, QtWidgets, QtGui
 import numpy as np
@@ -12,7 +9,7 @@ import logging
 from typing import TYPE_CHECKING, Union, List, Type, Iterable
 
 if TYPE_CHECKING:
-    from spyde.drawing.plot import Plot, PlotWindow
+    from spyde.drawing.plots.plot import Plot, PlotWindow
 
 Logger = logging.getLogger(__name__)
 

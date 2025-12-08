@@ -1,9 +1,7 @@
 # Test Closing the windows and making sure that the
 # appropriate resources are released.
-import pytest
 
-from spyde.drawing.plot import Plot, PlotWindow
-from typing import Tuple
+from spyde.drawing.plots.plot import PlotWindow
 
 
 class TestCloseWindows:

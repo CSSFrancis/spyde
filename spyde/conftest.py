@@ -1,10 +1,10 @@
 import pytest
-from typing import Dict, Any, Union, List, Iterator
+from typing import Dict, Union, List, Iterator
 
 from spyde.qt.shared import open_window as _open_window
 from spyde.qt.shared import create_data as _create_data
 from spyde.__main__ import MainWindow
-from spyde.drawing.plot import Plot
+from spyde.drawing.plots.plot import Plot
 from spyde.signal_tree import BaseSignalTree
 from PySide6.QtWidgets import QMdiArea
 

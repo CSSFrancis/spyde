@@ -26,7 +26,8 @@ import hyperspy.api as hs
 import pyxem.data
 
 from spyde.misc.dialogs import DatasetSizeDialog, CreateDataDialog, MovieExportDialog
-from spyde.drawing.plot import Plot, PlotWindow
+from spyde.drawing.plots.plot import Plot
+from spyde.drawing.plots.plot_window import PlotWindow
 from spyde.signal_tree import BaseSignalTree
 from spyde.external.pyqtgraph.histogram_widget import (
     HistogramLUTWidget,

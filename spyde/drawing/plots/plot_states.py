@@ -8,7 +8,7 @@ from spyde.drawing.toolbars.plot_control_toolbar import get_toolbar_actions_for_
 from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
 
 if TYPE_CHECKING:
-    from spyde.drawing.plot import MultiplotManager, Plot
+    from spyde.drawing.plots.plot import MultiplotManager, Plot
 
 
 class PlotState:

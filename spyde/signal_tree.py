@@ -7,11 +7,11 @@ from hyperspy.signal import BaseSignal
 from typing import TYPE_CHECKING, Union, List
 
 if TYPE_CHECKING:
-    from spyde.drawing.plot_states import PlotState
+    from spyde.drawing.plots.plot_states import PlotState
     from spyde.__main__ import MainWindow
 
-from spyde.drawing.plot import Plot, PlotWindow
-from spyde.drawing.plot import MultiplotManager
+from spyde.drawing.plots.plot import Plot
+from spyde.drawing.plots.multiplot_manager import MultiplotManager
 from spyde.external.qt.labels import EditableLabel
 from spyde import METADATA_WIDGET_CONFIG
 
@@ -411,7 +411,6 @@ class BaseSignalTree:
         """
         Create plot states for each signal plot in the tree.
         """
-        from spyde.drawing.plot_states import PlotState
 
         plot_states = {}
         for signal in self.signals():
@@ -429,7 +428,7 @@ class BaseSignalTree:
         """
         Update all plot states in the signal tree.
         """
-        from spyde.drawing.plot_states import PlotState
+        from spyde.drawing.plots.plot_states import PlotState
 
         for plot in self.signal_plots:
             if new_signal not in plot.plot_states:
