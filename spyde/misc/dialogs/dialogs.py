@@ -89,12 +89,6 @@ class DatasetSizeDialog(QDialog):
         # Display for image size in pixels
         self.image_size_label = QLabel(f"Image Size (Pixels):( {kx}, {ky})")
         layout.addWidget(self.image_size_label)
-        # Add a button to enable/disable the time input
-        self.toggle_time_button = QPushButton("Enable Time Input")
-        self.toggle_time_button.setCheckable(True)
-        self.toggle_time_button.toggled.connect(self.toggle_time_input)
-        layout.addWidget(self.toggle_time_button)
-        self.time_input.setEnabled(False)  # Initially disable the time input
         # OK and Cancel buttons
         button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -114,7 +108,7 @@ class DatasetSizeDialog(QDialog):
             return QDialog.DialogCode.Accepted
         return super().exec()
 
-    def update_image_size(self, index=None):
+    def update_image_size(self, index=None, value=None):
         """Update the image size in pixels based on x and y inputs."""
         if self.time_input.isEnabled():
             x = self.x_input.value()
@@ -131,9 +125,6 @@ class DatasetSizeDialog(QDialog):
                 y_size = self.y_input.value()
                 self.x_input.setValue(self.total_frames // y_size)
 
-    def toggle_time_input(self, checked):
-        """Enable or disable the time input box."""
-        self.time_input.setEnabled(checked)
 
 
 class CreateDataDialog(QDialog):

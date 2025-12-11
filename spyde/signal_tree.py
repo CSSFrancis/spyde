@@ -1,5 +1,6 @@
 from functools import partial
 
+import numpy as np
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 from hyperspy.signal import BaseSignal
@@ -95,12 +96,14 @@ class BaseSignalTree:
                 "children": {},
             }
         }  # type: dict
+        self.client = distributed_client
 
         # set up the navigator plots:
+        print("Initializing navigator for root signal: ", root_signal)
         navigator = self._initialize_navigator(root_signal)
+        print("Navigator initialized: ", navigator)
         self.navigator_signals["base"] = navigator
 
-        self.client = distributed_client
         self.signal_plots = []  # type: Union[List[Plot], None]
 
         self.navigator_plot_manager = None  # type: Union[MultiplotManager, None]
@@ -150,19 +153,23 @@ class BaseSignalTree:
                 "Navigator signal must have the same total number of dimensions as the root signal."
                 "and the same shape"
             )
+
         if signal.axes_manager.signal_dimension == 0:
             signal = signal.T
-        if signal._lazy:
-            signal.data = self.client.compute(signal.data)
-            # signal.compute()
-
         if (
             signal.axes_manager.signal_dimension > 0
             and signal.axes_manager.navigation_dimension > 0
         ):
             navigator = signal.sum(signal.axes_manager.signal_axes).T
             if navigator._lazy:
-                navigator.data = self.client.compute(navigator.data)
+                navigator.data = self.client.compute(navigator.data,
+                                                     priority=-10,
+                                                     workers=self.main_window._heavy_compute_workers)  # creates a ndarray from setting...
+            if signal._lazy:
+                signal.data = self.client.compute(signal.data,
+                                                  priority=-10,
+                                                  workers=self.main_window._heavy_compute_workers
+                                                  )
             print("Preprocessing navigator: ", navigator, signal)
             return [navigator, signal]
 
@@ -170,11 +177,20 @@ class BaseSignalTree:
             signal = signal.transpose(2)
             navigator = signal.sum(signal.axes_manager.signal_axes).T
             if navigator._lazy:
-                navigator.data = self.client.compute(navigator.data)
+                navigator.data = self.client.compute(navigator.data,
+                                                     priority=-10,
+                                                     workers=self.main_window._heavy_compute_workers)
+            if signal._lazy:
+                signal.data = self.client.compute(signal.data, priority=-10,
+                                                  workers=self.main_window._heavy_compute_workers)
             print("Preprocessing navigator: ", navigator, signal)
 
             return [navigator, signal]
 
+        if signal._lazy:
+            signal.data = self.client.compute(signal.data,
+                                                     priority=-10,
+                                                     workers=self.main_window._heavy_compute_workers)
         return [signal]
 
     def _on_axis_field_edit(
@@ -383,13 +399,14 @@ class BaseSignalTree:
         else:  # root_signal.axes_manager.navigation_dimension >= 1:
             if signal._lazy and signal.navigator is not None:
                 navigation_signal = signal.navigator
-            else:  # sum over signal axes to compute the navigation signal
-                navigation_signal = signal.sum(signal.axes_manager.signal_axes)
                 if navigation_signal._lazy:
                     navigation_signal.compute()
+            else:  # sum over signal axes to compute the navigation signal
+                navigation_signal = signal.sum(signal.axes_manager.signal_axes)
             if not isinstance(navigation_signal, BaseSignal):  # if numpy array
                 navigation_signal = BaseSignal(navigation_signal)
 
+        # handle lazy computation and setting up the axes properly...
         navigation_signal = self._preprocess_navigator(navigation_signal)
         return navigation_signal
 

@@ -24,6 +24,7 @@ from dask.distributed import Client, Future, LocalCluster
 import pyqtgraph as pg
 import hyperspy.api as hs
 import pyxem.data
+from hyperspy.signal import BaseSignal
 
 from spyde.misc.dialogs import DatasetSizeDialog, CreateDataDialog, MovieExportDialog
 from spyde.drawing.plots.plot import Plot
@@ -65,8 +66,10 @@ class DaskClusterWorker(QtCore.QObject):
             cluster = LocalCluster(
                 n_workers=self.n_workers,
                 threads_per_worker=self.threads_per_worker,
+
             )
             client = Client(cluster)
+
             self.finished.emit(cluster, client)
         except Exception as e:
             self.error.emit(e)
@@ -167,6 +170,8 @@ class MainWindow(QMainWindow):
         self._plot_update_worker.moveToThread(self._update_thread)
         self._update_thread.started.connect(self._plot_update_worker.start)
         self._plot_update_worker.plot_ready.connect(self.on_plot_future_ready)
+        self._plot_update_worker.signal_ready.connect(self.on_signal_future_ready)
+
         with log_startup_time("Plot update worker thread start"):
             self._update_thread.start()
 
@@ -279,6 +284,9 @@ class MainWindow(QMainWindow):
         self.cluster = cluster
         self.client = client
         print(f"Dask cluster ready. Dashboard: {client.dashboard_link}")
+
+        self._worker_keys = list(self.client.scheduler_info()['workers'].keys())
+        self._heavy_compute_workers = self._worker_keys[1:]  # leave one worker free for GUI tasks
         # stop the bootstrap thread
         self._dask_thread.quit()
         self._dask_thread.wait(2000)
@@ -343,6 +351,36 @@ class MainWindow(QMainWindow):
             plot.update()
         except Exception as e:
             print(f"Failed to update plot: {e}")
+
+    @QtCore.Slot(object, object, object)
+    def on_signal_future_ready(self,
+                               signal: BaseSignal,
+                               result: object,
+                               plot: Plot) -> None:
+        """
+        Receive finished compute results from the worker and apply them on the GUI thread.
+
+        Parameters:
+
+
+        Parameters
+        ----------
+        signal: Signal to update.
+        result: Either the computed data or an Exception.
+        plot:
+            The targeted plot to update
+        """
+        if isinstance(result, Exception):
+            print(f"signal update failed: {result}")
+            return
+        try:
+            signal.data = result
+            signal._lazy = False
+            signal._assign_subclass()
+            plot.parent_selector.delayed_update_data(update_contrast=True, force=True)
+        except Exception as e:
+            print(f"Failed to update signal: {e}")
+
 
     def create_menu(self):
         """
@@ -470,7 +508,9 @@ class MainWindow(QMainWindow):
     def open_file(self):
         self.file_dialog = QFileDialog()
         self.file_dialog.setFileMode(QtWidgets.QFileDialog.FileMode.ExistingFiles)
-        self.file_dialog.setNameFilter("Hyperspy Files (*.hspy);; mrc Files (*.mrc)")
+        self.file_dialog.setNameFilter("Supported Files (*.hspy *.mrc);;"
+                                       "Hyperspy Files (*.hspy);;"
+                                       "mrc Files (*.mrc)")
 
         if self.file_dialog.exec():
             file_paths = self.file_dialog.selectedFiles()

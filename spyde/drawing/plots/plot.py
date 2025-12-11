@@ -108,6 +108,9 @@ class Plot(PlotItem):
         self.plot_window = plot_window  # type: PlotWindow | None
         # Register with the main window for needs update
 
+        self._updating_text = None  # type: pg.TextItem | None
+        self._needs_hide_updating_text = False
+
     @property
     def toolbars(self):
         return [
@@ -188,8 +191,6 @@ class Plot(PlotItem):
     def set_plot_state(self, signal: BaseSignal):
         """Set the plot state to the state for some signal."""
         # first save the current plot state selectors and child plots
-        print("Setting plot state for signal:", signal)
-        print("Current plot states:", self.plot_states)
         old_plot_state = self.plot_state
         self.needs_auto_level = True
         if old_plot_state is not None:
@@ -357,8 +358,32 @@ class Plot(PlotItem):
         ):
             self.plot_window.current_plot_item = self
 
+    def add_updating_plot_text(self):
+        """Add a text item to the plot that indicates when the plot is updating.
+
+        This should always be in the center of the plot
+        """
+        self._updating_text = pg.TextItem(
+            text=f"Updating Plot...\nVisit {self.main_window.client.dashboard_link} for progress",
+            color=(255, 0, 0), anchor=(-.1, -0.5)
+        )
+        self._updating_text.setZValue(1000)
+        self.addItem(self._updating_text)
+        self._updating_text.setParentItem(self.getViewBox())
+
+        # Center the text in the current view
+        vb = self.getViewBox()
+        view_range = vb.viewRange()
+
+        print("The view range:", view_range)
+        center_x = (view_range[0][0] + view_range[0][1]) / 2
+        center_y = (view_range[1][0] + view_range[1][1]) / 2
+        self._updating_text.setPos(center_x, center_y)
+
+
+
     def update_data(
-        self, new_data: Union[np.ndarray, da.Array, Future], force: bool = False
+        self, new_data: Union[np.ndarray, da.Array, Future, List[Future]], force: bool = False
     ):
         """Update the current data being displayed in the plot.
 
@@ -366,6 +391,27 @@ class Plot(PlotItem):
         will be handled by the event loop instead.
         """
         print("Updating plot data", new_data, " force=", force)
+
+
+        #  This is just a workaround as hyperspy doesn't currently handle Future arrays.
+        # TODO: Remove this when hyperspy supports Future arrays.
+        if isinstance(new_data, np.ndarray) and isinstance(new_data[0], Future):
+            new_data =  new_data[0]
+
+        # When first initialized we can set up the data as np.ones...
+        if self.current_data is None and isinstance(new_data, Future):
+            place_holder = np.ones(self.plot_state.current_signal.axes_manager.signal_shape)
+            if place_holder.ndim == 2:
+                #make checkerboard pattern to indicate loading
+                place_holder[::2, ::2] = 0
+            self.current_data = place_holder
+
+            self.add_updating_plot_text()
+            # This will then get overwritten below when the Future completes.
+            self.needs_update_range = True
+            self.needs_auto_level = True
+            self._needs_hide_updating_text = True
+        print("Setting current data to:", new_data)
         self.current_data = new_data
         if isinstance(new_data, Future) and not force:
             pass
@@ -557,6 +603,17 @@ class Plot(PlotItem):
             logger.info("Updating 1D plot with axis:", axis)
             logger.info("Data shape:", current_data)
             self.line_item.setData(axis, current_data)
+
+            if self._needs_hide_updating_text and self._updating_text is not None:
+                self.removeItem(self._updating_text)
+                self._updating_text.hide()
+                self._updating_text = None
+                self._needs_hide_updating_text = False
+
+            if self.needs_update_range:
+                self.update_range()
+                self.needs_update_range = False
+
         elif self.plot_state.dimensions == 2:
             img = (
                 np.asarray(self.current_data)
@@ -564,7 +621,7 @@ class Plot(PlotItem):
                 else self.current_data
             )
 
-            print("Setting image data with img", img.shape)
+            print("Setting image data with img", img)
 
             self.image_item.setImage(
                 img, levels=(self.plot_state.min_level, self.plot_state.max_level)
@@ -578,9 +635,15 @@ class Plot(PlotItem):
                 self.plot_state.max_percentile = 100.0
                 self.plot_state.min_percentile = 0.0
                 self.needs_auto_level = False
+            if self._needs_hide_updating_text and self._updating_text is not None:
+                self.removeItem(self._updating_text)
+                self._updating_text.hide()
+                self._updating_text = None
+                self._needs_hide_updating_text = False
             if self.needs_update_range:
                 self.update_range()
                 self.needs_update_range = False
+
 
     def close_plot(self):
         logger.info("Plot: Closing plot:", self)

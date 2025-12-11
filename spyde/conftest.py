@@ -85,3 +85,20 @@ def stem_5d_dataset(
         }
     finally:
         _close_window(qtbot, win)
+
+
+@pytest.fixture
+def window(
+    qtbot,
+) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
+    win = _open_window()
+    qtbot.waitUntil(lambda: win.isVisible(), timeout=2000)
+    try:
+        yield {
+            "window": win,
+            "mdi_area": win.mdi_area,
+            "subwindows": win.mdi_area.subWindowList(),
+            "signal_trees": getattr(win, "signal_trees", []),
+        }
+    finally:
+        _close_window(qtbot, win)

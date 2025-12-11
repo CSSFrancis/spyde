@@ -7,6 +7,7 @@ called on the move or change events of a selector.
 """
 
 import numpy as np
+from distributed import Future
 
 from scipy import fft
 
@@ -47,10 +48,16 @@ def update_from_navigation_selection(
     print("Current signal shape", current_signal.data.shape)
 
     if current_signal._lazy:
-        # Always return the future...
-        current_img = current_signal._get_cache_dask_chunk(
-            indices, get_result=get_result, return_future=True
-        )
+        if isinstance(current_signal.data[0], Future):
+            current_img = np.ones(current_signal.axes_manager.signal_shape, dtype=np.int8)
+            if current_img.ndim == 2:
+                #make checkerboard pattern to indicate loading
+                current_img[::2, ::2] = 0
+        else:
+            # Always return the future...
+            current_img = current_signal._get_cache_dask_chunk(
+                indices, get_result=get_result, return_future=True,
+            )
     else:
 
         tuple_inds = tuple([indices[ind] for ind in np.arange(len(indices))])
