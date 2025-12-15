@@ -9,7 +9,6 @@ from spyde.drawing.plots.multiplot_manager import MultiplotManager
 from spyde.drawing.plots.plot import Plot
 from spyde.drawing.plots.plot_states import PlotState
 from spyde.qt.subwindow import FramelessSubWindow
-from spyde.drawing.selector import create_linked_selectors
 
 if TYPE_CHECKING:
     from spyde.signal_tree import BaseSignalTree
@@ -151,7 +150,6 @@ class PlotWindow(FramelessSubWindow):
         self,
         row: int = 0,
         col: int = 0,
-        multiplot_manager: Optional["MultiplotManager"] = None,
     ) -> "Plot":
         """Creates and returns a new (empty) Plot."""
         plot = Plot(
@@ -310,14 +308,12 @@ class PlotWindow(FramelessSubWindow):
         self._build_new_layout(drop_pos, new_plot)
         self.multiplot_manager.plots[self].append(new_plot)
         # add all active selectors
+        print("Adding linked selectors to new plot:", new_plot)
+        print("Current selectors:", self.navigation_selectors)
         for selector in self.navigation_selectors:
-            create_linked_selectors(
-                selector.__class__,
-                selector,
-                parent_plots=[
-                    new_plot,
-                ],
-            )
+            selector.add_linked_selector(plot=new_plot)
+            print("Newplot items:", new_plot.items)
+            print(new_plot.items[0].isVisible())
         return new_plot
 
     def add_item(self, item: GraphicsItem, row: int = 0, col: int = 0):

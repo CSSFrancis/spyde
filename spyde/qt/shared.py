@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from time import sleep
 from typing import Callable, Iterable, List, Optional
 import os
 from PySide6 import QtWidgets, QtCore
@@ -33,6 +35,8 @@ def open_window() -> MainWindow:
     win = MainWindow(app=app)
     win.show()
     QTest.qWaitForWindowExposed(win)
+    # wait until win.client is not None
+
     return win
 
 

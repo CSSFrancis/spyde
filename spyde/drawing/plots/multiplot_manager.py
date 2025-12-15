@@ -65,7 +65,7 @@ class MultiplotManager:
             nav_plot_window = self.main_window.add_plot_window(
                 is_navigator=True, plot_manager=self, signal_tree=self.signal_tree
             )
-            nav_plot = nav_plot_window.add_new_plot(multiplot_manager=self)
+            nav_plot = nav_plot_window.add_new_plot()
             self.plot_windows[nav_plot_window] = (
                 {}
             )  # single plot window with no children...
@@ -85,7 +85,7 @@ class MultiplotManager:
             plot_window = self.main_window.add_plot_window(
                 is_navigator=True, plot_manager=self, signal_tree=self.signal_tree
             )
-            nav_plot_1d = plot_window.add_new_plot(multiplot_manager=self)
+            nav_plot_1d = plot_window.add_new_plot()
             self.plot_windows[plot_window] = {}
             self.plots[plot_window] = [nav_plot_1d]
             self.navigation_selectors[plot_window] = []

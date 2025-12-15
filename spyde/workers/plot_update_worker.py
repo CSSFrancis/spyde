@@ -1,7 +1,7 @@
 import numpy as np
 from PySide6 import QtCore
 
-from typing import Callable, Optional, Set
+from typing import Callable, Optional, Set, Dict
 
 from dask.distributed import Future
 
@@ -22,6 +22,7 @@ class PlotUpdateWorker(QtCore.QObject):
         parent: Optional[QtCore.QObject] = None,
     ) -> None:
         super().__init__(parent)
+        self._seen_plots: Dict[int:int] = dict()
         self._get_plots = get_plots_callable
         self._timer = QtCore.QTimer(self)
         self._timer.setInterval(interval_ms)
@@ -102,9 +103,10 @@ class PlotUpdateWorker(QtCore.QObject):
         if not isinstance(fut, Future) or not fut.done():
             return
         fid = id(fut)
-        if fid in self._seen:
+        if fid in self._seen and self._seen_plots.get(fid, None) == id(plot):
             return
         self._seen.add(fid)
+        self._seen_plots[fid] = id(plot)
         try:
             result = fut.result()
         except Exception as e:

@@ -1,4 +1,4 @@
-from pyqtgraph import LinearRegionItem, RectROI, LineROI
+from pyqtgraph import LinearRegionItem, RectROI, LineROI, ROI
 
 from PySide6 import QtCore, QtWidgets, QtGui
 import numpy as np
@@ -62,110 +62,65 @@ def no_return_update_function(
     return None
 
 
-def create_linked_selectors(
-    selector_cls: Type["BaseSelector"],
-    initial_selector: "BaseSelector",
-    parent_plots: Iterable["Plot"],
-) -> List["BaseSelector"]:
+def create_linked_rect_roi(core_roi: ROI) -> ROI:
+    """Create a new ROI of the same type as `core_roi`, linked to `core_roi` so that it always matches its geometry/
+    position.
     """
-    Create new selectors on `parent_plots` that stay linked with `initial_selector`.
 
-    * Each plot gets its own selector instance.
-    * Any change to one selector's ROI is propagated to all others.
+    roi_type = type(core_roi)
+
+    new_roi = roi_type(
+        pos=core_roi.pos(),
+        size=core_roi.size(),
+        pen=core_roi.pen,
+        handlePen=core_roi.handlePen,
+        hoverPen=core_roi.hoverPen,
+        handleHoverPen=core_roi.handleHoverPen,
+    )
+
+    def sync_roi(source_roi, target_roi):
+        """Synchronize target_roi to match source_roi's state."""
+        target_roi.blockSignals(True)  # Prevent infinite recursion
+        target_roi.setPos(source_roi.pos(), finish=False)
+        target_roi.setSize(source_roi.size(), finish=False)
+        target_roi.setAngle(source_roi.angle(), finish=False)
+        target_roi.blockSignals(False)
+        print("Syncing ROIs:", source_roi, target_roi)
+        #target_roi.sigRegionChanged.emit()
+
+    core_roi.sigRegionChanged.connect(lambda: sync_roi(core_roi, new_roi))
+    new_roi.sigRegionChanged.connect(lambda: sync_roi(new_roi, core_roi))
+
+    new_roi.sigRegionChanged.connect(core_roi.sigRegionChanged.emit)
+
+    return new_roi
+
+def create_linked_linear_region(core_roi: LinearRegionItem,
+                                pen,
+                                hover_pen) -> LinearRegionItem:
+    """Create a new LinearRegionItem linked to `core_roi` so that it always matches its geometry/position.
     """
-    parent_plots = list(parent_plots)
-    if not parent_plots:
-        return []
 
-    # Collect all selectors that will participate in the linkage
-    selectors: List["BaseSelector"] = [initial_selector]
+    new_roi = LinearRegionItem(
+        values=core_roi.getRegion(),
+        pen = pen,
+        hoverPen = hover_pen,
+    )
 
-    # Build a selector on each plot except the one that already has initial_selector
-    for plot in parent_plots:
-        if plot is initial_selector.parent:
-            continue
+    def sync_roi(source_roi, target_roi):
+        """Synchronize target_roi to match source_roi's state."""
+        target_roi.blockSignals(True)  # Prevent infinite recursion
+        target_roi.setRegion(source_roi.getRegion())
+        target_roi.blockSignals(False)
+        print("Syncing Linear ROIs:", source_roi, target_roi)
 
-        sel = selector_cls(
-            parent=initial_selector.parent,
-            children=[],
-            update_function=[
-                no_return_update_function,
-            ],
-            multi_selector=initial_selector.multi_selector,
-        )
-        # Force an initial geometry sync from the master
-        _copy_selector_geometry(src=initial_selector, dst=sel)
-        selectors.append(sel)
+    core_roi.sigRegionChanged.connect(lambda: sync_roi(core_roi, new_roi))
+    new_roi.sigRegionChanged.connect(lambda: sync_roi(new_roi, core_roi))
 
-    # Link all selectors together
-    _wire_selector_group(selectors)
-    return selectors
+    new_roi.sigRegionChanged.connect(core_roi.sigRegionChanged.emit)
 
+    return new_roi
 
-def _copy_selector_geometry(src: "BaseSelector", dst: "BaseSelector") -> None:
-    """
-    Copy ROI/region geometry from `src` to `dst`.
-
-    This assumes your `BaseSelector` exposes a uniform API, e.g.
-    * `get_geometry()` / `set_geometry()`
-    or at least `getRegion()` / `setRegion()` for linear/rectangular ROIs.
-    Adjust this function to match your actual selector API.
-    """
-    selector_src = src.selector
-    selector_dst = dst.selector
-
-    # LinearRegionItem / similar
-    if hasattr(selector_src, "getRegion") and hasattr(selector_dst, "setRegion"):
-        region = selector_src.getRegion()
-        selector_dst.setRegion(region)
-        return
-
-    # Rectangular ROI / general ROI
-    if hasattr(selector_src, "pos") and hasattr(selector_src, "size"):
-        selector_dst.setPos(selector_src.pos())
-        if hasattr(selector_dst, "setSize"):
-            selector_dst.setSize(selector_src.size())
-        return
-
-    # Fallback: extend as needed (elliptical, annular, etc.)
-    # raise NotImplementedError or just ignore
-
-
-def _wire_selector_group(selectors: List["BaseSelector"]) -> None:
-    """
-    Wire a list of selectors so that any change to one updates all the others.
-    """
-    if not selectors:
-        return
-
-    updating = {"flag": False}  # simple reentrancy guard
-
-    def make_handler(src_sel: BaseSelector):
-        def _on_region_changed(*_args, **_kwargs):
-            if updating["flag"]:
-                return
-            updating["flag"] = True
-            try:
-                for other in selectors:
-                    if other is src_sel:
-                        continue
-                    _copy_selector_geometry(src_sel, other)
-                    # Trigger their own update without refiring the change signal
-                    other.delayed_update_data(force=True)
-            finally:
-                updating["flag"] = False
-
-        return _on_region_changed
-
-    # Connect both continuous and finished signals if present
-    for sel in selectors:
-        roi = sel.selector
-        handler = make_handler(sel)
-
-        if hasattr(roi, "sigRegionChanged"):
-            roi.sigRegionChanged.connect(handler)
-        if hasattr(roi, "sigRegionChangeFinished"):
-            roi.sigRegionChangeFinished.connect(handler)
 
 
 class BaseSelector:
@@ -246,6 +201,7 @@ class BaseSelector:
         self.update_function = update_function
         self._last_size_sig = None
         self.selector = None  # to be defined in subclasses # type: pg.ROI | None
+        self.linked_selectors = []  # type: List[ROI]
         self.multi_selector = multi_selector
 
     def apply_transform_to_selector(self, transform: QtGui.QTransform):
@@ -307,6 +263,7 @@ class BaseSelector:
         """
         Start the timer to delay the update.
         """
+        print("Updating Data")
         if ev is None:
             self.delayed_update_data()
         else:
@@ -382,6 +339,14 @@ class BaseSelector:
                 self._autorange_child_plot(child)
             self._last_size_sig = new_sig
 
+    def add_linked_selector(self, plot: "Plot"):
+        """
+        Add the selector to a new plot.
+        """
+        pass
+
+
+
     def close(self):
         """
         Clean up the selector.
@@ -437,8 +402,8 @@ class RectangleSelector(BaseSelector):
         self.selector.sigRegionChangeFinished.connect(self._on_region_change_finished)
 
         for plot in parent.plots:
-            print("Adding selector to plot:", plot)
-            plot.addItem(self.selector)
+            # The selector isn't actually added to any plot??
+            self.add_linked_selector(plot)
         self.selector.sigRegionChanged.connect(self.update_data)
 
     def _get_selected_indices(self):
@@ -478,6 +443,13 @@ class RectangleSelector(BaseSelector):
         indices[:, 1] += np.round(lower_left_pixel.y()).astype(int)
         indices = indices.astype(int)
         return indices
+
+    def add_linked_selector(self, plot: "Plot"):
+
+        if self.selector is not None:
+            new_selector = create_linked_rect_roi(self.selector)
+            plot.addItem(new_selector)
+            self.linked_selectors.append(new_selector)
 
 
 class IntegratingSelectorMixin:
@@ -540,6 +512,7 @@ class IntegratingSelectorMixin:
         """
         Start the timer to delay the update.
         """
+        print("Updating Data")
         if self.is_live:
             if ev is None:
                 self.delayed_update_data()
@@ -598,9 +571,12 @@ class LinearRegionSelector(BaseSelector):
         )
         self._last_size_sig = self._size_signature()
         self.selector.sigRegionChangeFinished.connect(self._on_region_change_finished)
+
         for plot in parent.plots:
-            plot.addItem(self.selector)
+            # The selector isn't actually added to any plot??
+            self.add_linked_selector(plot)
         self.selector.sigRegionChanged.connect(self.update_data)
+
 
     def _get_selected_indices(self):
         """
@@ -625,6 +601,15 @@ class LinearRegionSelector(BaseSelector):
         ).reshape(-1, 1)
 
         return indices
+
+    def add_linked_selector(self, plot: "Plot"):
+
+        if self.selector is not None:
+            new_selector = create_linked_linear_region(self.selector,
+                                                       pen=self.roi_pen,
+                                                       hover_pen=self.hoverPen)
+            plot.addItem(new_selector)
+            self.linked_selectors.append(new_selector)
 
 
 class IntegratingLinearRegionSelector(IntegratingSelectorMixin, LinearRegionSelector):

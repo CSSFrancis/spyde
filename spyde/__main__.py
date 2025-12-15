@@ -529,6 +529,22 @@ class MainWindow(QMainWindow):
 
         """
         print("Creating Signal Tree for signal")
+
+        # If Dask client is not ready, show a waiting message and check until it is
+        if self.client is None:
+            message_box = QtWidgets.QMessageBox(self)
+            message_box.setWindowTitle("Please wait")
+            message_box.setText("Dask client is still initializing. Please wait...")
+            message_box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.NoButton)
+            message_box.setModal(False)
+            message_box.show()
+
+            while self.client is None:
+                QApplication.processEvents()
+            message_box.hide()
+            message_box.close()
+
+
         signal_tree = BaseSignalTree(
             root_signal=signal, main_window=self, distributed_client=self.client
         )
@@ -752,7 +768,7 @@ class MainWindow(QMainWindow):
             if p is plot:
                 continue
             p.plot_state.hide_toolbars()
-            p.remove_selector_control_widgets()
+            #p.remove_selector_control_widgets()
 
         # Histogram binding: use the image_item on the inner widget / plot
         img_item = plot.image_item
@@ -1149,7 +1165,8 @@ class MainWindow(QMainWindow):
             nav_plot.multiplot_manager.add_plot_states_for_navigation_signals(
                 navigation_signal
             )
-
+        print("setting plot state to:", signal[0])
+        print(signal[0].data)
         nav_plot.set_plot_state(signal=signal[0])
         # Clean up
         self._original_layout_state = {}

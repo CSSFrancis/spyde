@@ -219,14 +219,17 @@ class Plot(PlotItem):
         vb = self.getViewBox()
 
         if self.plot_state.dimensions == 2 and old_dim != 2:
-            self.clear()
+            #self.clear()
+            if self.line_item is None:
+                self.removeItem(self.line_item)
             self.addItem(self.image_item)
+            print("All Items:", self.items)
             vb.setAspectLocked(True, ratio=1)
             vb.enableAutoRange(x=True, y=True)
             vb.autoRange()
 
         elif self.plot_state.dimensions == 1 and old_dim != 1:
-            self.clear()
+            #self.clear()
             self.addItem(self.line_item)
             vb.setAspectLocked(False)
             vb.enableAutoRange(x=True, y=True)
@@ -405,6 +408,7 @@ class Plot(PlotItem):
                 #make checkerboard pattern to indicate loading
                 place_holder[::2, ::2] = 0
             self.current_data = place_holder
+            self.update()
 
             self.add_updating_plot_text()
             # This will then get overwritten below when the Future completes.
@@ -463,6 +467,9 @@ class Plot(PlotItem):
         visible_selectors = (
             self.plot_state.plot_selectors + self.plot_state.signal_tree_selectors
         )
+        print("Showing selectors for plot_window:", self.plot_window)
+        print("Current visible selectors:", visible_selectors)
+        print("Multiplot manager:", self.multiplot_manager.navigation_selectors)
         if self.multiplot_manager is not None:
             if self.plot_window not in self.multiplot_manager.navigation_selectors:
                 print("No navigation selectors for this plot window.")
@@ -481,10 +488,13 @@ class Plot(PlotItem):
                 selector.widget.show()
 
     def remove_selector_control_widgets(self):
+        print("Removing selector control widgets for plot_window:", self.plot_window)
         visible_selectors = (
             self.plot_state.plot_selectors + self.plot_state.signal_tree_selectors
         )
         if self.multiplot_manager is not None:
+            print("Nav sel", self.multiplot_manager.navigation_selectors)
+            print("Plot win", self.plot_window)
             if self.plot_window not in self.multiplot_manager.navigation_selectors:
                 print("No navigation selectors for this plot window.")
             else:
