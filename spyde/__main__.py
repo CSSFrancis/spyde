@@ -26,6 +26,11 @@ import hyperspy.api as hs
 import pyxem.data
 from hyperspy.signal import BaseSignal
 
+from spyde.live.camera_control_widget import CameraControlWidget
+from spyde.live.control_dock_widget import ControlDockWidget
+from spyde.live.stage_control_widget import StageControlWidget
+from spyde.live.stem_control_widget import StemControlWidget
+from spyde.live.reference_control_widget import ReferenceControlWidget
 from spyde.misc.dialogs import DatasetSizeDialog, CreateDataDialog, MovieExportDialog
 from spyde.drawing.plots.plot import Plot
 from spyde.drawing.plots.plot_window import PlotWindow
@@ -133,6 +138,8 @@ class MainWindow(QMainWindow):
                 threads_per_worker = 4
         # get screen size and set window size to 3/4 of the screen size
         self.dock_widget = None
+        self.control_widget = None
+
         screen = QApplication.primaryScreen()
         self.screen_size = screen.size()
         self.resize(
@@ -245,6 +252,10 @@ class MainWindow(QMainWindow):
         self._navigator_drag_over_active = False
         with log_startup_time("Plot control dock creation"):
             self.add_plot_control_widget()
+
+        with log_startup_time("Inst. control dock creation"):
+            self.add_instrument_control_widget()
+
 
         self.cursor_readout = QtWidgets.QLabel("x: -, y: -, value: -")
         self.statusBar().addPermanentWidget(self.cursor_readout)
@@ -792,6 +803,22 @@ class MainWindow(QMainWindow):
 
         if plot_state is not None and hasattr(self, "cmap_selector"):
             self.cmap_selector.setCurrentText(plot_state.colormap)
+
+    def add_instrument_control_widget(self):
+        """
+        This is the left-hand side docked widget that contains the instrument controls.
+        """
+        self.control_widget = ControlDockWidget()
+        self.control_widget.setVisible(True)  # Add this line
+
+        self.addDockWidget(
+            QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, self.control_widget
+        )
+        self.control_widget.add_widget(StageControlWidget())
+        self.control_widget.add_widget(CameraControlWidget())
+        self.control_widget.add_widget(StemControlWidget())
+        self.control_widget.add_widget(ReferenceControlWidget())
+
 
     def add_plot_control_widget(self):
         """
