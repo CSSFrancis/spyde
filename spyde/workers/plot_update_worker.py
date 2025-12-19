@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 from PySide6 import QtCore
 
@@ -14,11 +16,12 @@ class PlotUpdateWorker(QtCore.QObject):
 
     plot_ready = QtCore.Signal(object, object)  # (plot, result)
     signal_ready = QtCore.Signal(object, object, object)  # (signal, result)
+    debug_print = QtCore.Signal(str)  # debug messages routed to main thread
 
     def __init__(
         self,
         get_plots_callable: Callable[[], list["Plot"]],
-        interval_ms: int = 20,
+        interval_ms: int = 2,
         parent: Optional[QtCore.QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -97,7 +100,6 @@ class PlotUpdateWorker(QtCore.QObject):
         self,
         fut: Optional[Future],
         emitter: Callable[[object, object, Optional[object]], None],
-        payload: object,
         plot: Optional["Plot"] = None,
     ) -> None:
         if not isinstance(fut, Future) or not fut.done():
@@ -108,14 +110,16 @@ class PlotUpdateWorker(QtCore.QObject):
         self._seen.add(fid)
         self._seen_plots[fid] = id(plot)
         try:
-            if "write_shared_array" in fut.key:
+            self.debug_print.emit(
+                f"Emitting Future, {fut.key} for plot: {plot}")  # avoid blocking on shared arrays
+            if "write_shared_array" in fut.key and plot is not None:
+                start_read = time.time()
                 result  = read_shared_array(plot.shared_memory)
-                # avoid blocking on shared arrays
+                self.debug_print.emit(f"Read shared array in {(time.time() - start_read)*1000:.2f} ms")  # avoid blocking on shared arrays
             else:
+                start_transfer = time.time()
                 result = fut.result()
+                self.debug_print.emit(f"Transferred Future over TCP in {(time.time() - start_transfer)*1000:.2f} ms")
         except Exception as e:
             result = e
-        if plot is not None:
-            emitter(payload,result, plot)
-        else:
-            emitter(payload, result)
+        emitter(plot, result)

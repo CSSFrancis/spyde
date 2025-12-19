@@ -104,6 +104,7 @@ def update_from_navigation_selection(
 
     print("Updating child plot based on navigation selection with indices:", indices)
     print("Current signal shape", current_signal.data.shape)
+    print("Cache in shared memory:", cache_in_shared_memory, "")
 
     if current_signal._lazy:
         if isinstance(current_signal.data[0], Future):
@@ -119,7 +120,7 @@ def update_from_navigation_selection(
             if cache_in_shared_memory:
                 # Write to shared memory and return the name
                 shared_arr_name = f"plot_buffer{id(child)}"
-                child.main_window.client.submit(write_shared_array,
+                current_img = child.main_window.client.submit(write_shared_array,
                                                 current_img,
                                                 shared_arr_name)
     else:

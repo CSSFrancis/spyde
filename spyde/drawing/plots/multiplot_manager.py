@@ -249,6 +249,7 @@ class MultiplotManager:
         )
 
         self.navigation_selectors[plot_window].append(selector)
+        plot_window.last_used_selector = selector
 
         if is_navigator:
             for signal in self.signal_tree.navigator_signals.values():

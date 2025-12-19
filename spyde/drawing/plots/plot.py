@@ -5,7 +5,6 @@ from PySide6 import QtCore, QtGui
 
 import pyqtgraph as pg
 from distributed.client import FutureCancelledError
-from joblib.numpy_pickle_utils import BUFFER_SIZE
 from pyqtgraph import PlotItem
 
 from spyde.external.pyqtgraph.scale_bar import OutlinedScaleBar as ScaleBar
@@ -644,8 +643,10 @@ class Plot(PlotItem):
             print("Setting image data with img", img)
 
             start_time = time.perf_counter()
+            if img.dtype == np.int16:
+                img = img.astype(np.uint16)
             self.image_item.setImage(
-                img, levels=(self.plot_state.min_level, self.plot_state.max_level)
+                img, levels=(self.plot_state.min_level, self.plot_state.max_level),autoDownsample=True
             )
             elapsed = time.perf_counter() - start_time
             print(f"setImage took {elapsed * 1000:.2f}ms")
@@ -665,6 +666,10 @@ class Plot(PlotItem):
             if self.needs_update_range:
                 self.update_range()
                 self.needs_update_range = False
+
+
+        if self.parent_selector is not None and self.parent_selector.timer is not None:
+            print(f"Update in {(time.time()- self.parent_selector.timer)*1000:.2f}ms")
 
 
     def close_plot(self):

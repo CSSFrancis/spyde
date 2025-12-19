@@ -1,3 +1,5 @@
+import time
+
 from pyqtgraph import LinearRegionItem, RectROI, LineROI, ROI
 
 from PySide6 import QtCore, QtWidgets, QtGui
@@ -155,7 +157,7 @@ class BaseSelector:
         width: int = 3,
         color: str = "green",
         hover_color: str = "red",
-        live_delay: int = 20,
+        live_delay: int = 2,
         resize_on_move: bool = False,
         multi_selector: bool = False,
     ):
@@ -203,6 +205,7 @@ class BaseSelector:
         self.selector = None  # to be defined in subclasses # type: pg.ROI | None
         self.linked_selectors = []  # type: List[ROI]
         self.multi_selector = multi_selector
+        self.timer = None
 
     def apply_transform_to_selector(self, transform: QtGui.QTransform):
         """
@@ -274,19 +277,19 @@ class BaseSelector:
         """
         Perform the actual update if the indices have not changed.
         """
+        if self.timer is not None:
+            print(f"Starting Updating Data, timer took {(time.time() - self.timer)*1000:.2f} ms")
+
         indices = self.get_selected_indices()
         if not np.array_equal(indices, self.current_indices) or force:
             for child in self.children:
-                print("Updating Child Plot:", child)
                 new_data = self.children[child](self, child, indices, cache_in_shared_memory=True)
                 child.update_data(
                     new_data
-                )  # update the child plot data. If this is a future then
+                )  # update the child plot data. If this is a future, then
                 if update_contrast:
                     child.needs_auto_level = True
                 # update all plots downstream of the child
-                print("Child plot updated.", child)
-                print("Child.multiplot_manager:", child.multiplot_manager)
                 if (
                     child.multiplot_manager is not None
                     and child.plot_window
@@ -299,6 +302,8 @@ class BaseSelector:
                         child_selector.delayed_update_data()
             # the plot will update when the future completes
             self.current_indices = indices
+        if self.timer is not None:
+            print(f"Finished Updating Data, took {(time.time() - self.timer)*1000:.2f} ms")
 
     # Helper: compute a compact signature of the current selector size
     def _size_signature(self):
@@ -345,7 +350,11 @@ class BaseSelector:
         """
         pass
 
-
+    def move_selector(self, key: QtCore.Qt.Key):
+        """
+        Move the selector based on the key pressed.
+        """
+        pass
 
     def close(self):
         """
@@ -365,7 +374,7 @@ class RectangleSelector(BaseSelector):
         parent: "PlotWindow",
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
-        live_delay: int = 20,
+        live_delay: int = 2,
         multi_selector: bool = False,
         *args,
         **kwargs,
@@ -419,7 +428,7 @@ class RectangleSelector(BaseSelector):
         lower_left = self.selector.pos()
         size = self.selector.size()
 
-        # pyqtgraph only knows one coordinate system.  We need to map to scene
+        # pyqtgraph only knows one coordinate system.  We need to map the scene
         # to pixels.
 
         inverted_transform, is_inversion = (
@@ -450,6 +459,31 @@ class RectangleSelector(BaseSelector):
             new_selector = create_linked_rect_roi(self.selector)
             plot.addItem(new_selector)
             self.linked_selectors.append(new_selector)
+
+    def translate_pixels(self, shift_x: int, shift_y: int):
+        """
+        Translate the selector by the given amount in pixels.
+        """
+        if self.selector is not None:
+            shift = QtCore.QPointF(shift_x, shift_y)
+            transform = self.parent.current_plot_item.image_item.transform()
+            shift = transform.map(shift)
+            self.selector.translate(shift.x(), shift.y())
+
+
+    def move_selector(self, key: QtCore.Qt.Key):
+        """
+        Move the selector based on the key pressed.
+        """
+        self.timer = time.time()
+        if key == QtCore.Qt.Key.Key_Left:
+            self.translate_pixels(-1, 0)
+        elif key == QtCore.Qt.Key.Key_Right:
+            self.translate_pixels(1, 0)
+        elif key == QtCore.Qt.Key.Key_Up:
+            self.translate_pixels(0, 1)
+        elif key == QtCore.Qt.Key.Key_Down:
+            self.translate_pixels(0, -1)
 
 
 class IntegratingSelectorMixin:
@@ -527,7 +561,7 @@ class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
         parent: "PlotWindow",
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
-        live_delay: int = 20,
+        live_delay: int = 3,
         multi_selector: bool = False,
         *args,
         **kwargs,
@@ -610,6 +644,29 @@ class LinearRegionSelector(BaseSelector):
                                                        hover_pen=self.hoverPen)
             plot.addItem(new_selector)
             self.linked_selectors.append(new_selector)
+
+    def translate_pixels(self, shift_x: int):
+        """
+        Translate the selector by the given amount in pixels.
+        """
+        if self.selector is not None:
+            axs = self.parent.current_plot_state.current_signal.axes_manager.signal_axes[0]
+            scale = axs.scale
+            offset = axs.offset
+            region = self.selector.getRegion()
+            start, end = region
+
+            self.selector.setRegion([start + shift_x*scale, end + shift_x*scale])
+
+    def move_selector(self, key: QtCore.Qt.Key):
+        """
+        Move the selector based on the key pressed.
+        """
+        self.timer = time.time()
+        if key == QtCore.Qt.Key.Key_Left:
+            self.translate_pixels(-1)
+        elif key == QtCore.Qt.Key.Key_Right:
+            self.translate_pixels(1)
 
 
 class IntegratingLinearRegionSelector(IntegratingSelectorMixin, LinearRegionSelector):

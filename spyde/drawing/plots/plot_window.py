@@ -1,3 +1,5 @@
+import time
+
 from PySide6 import QtCore, QtWidgets, QtGui
 import pyqtgraph as pg
 from pyqtgraph import GraphicsItem, GraphicsLayoutWidget
@@ -91,8 +93,11 @@ class PlotWindow(FramelessSubWindow):
         container_layout.addWidget(self.plot_widget)
         self.setWidget(self.container)
 
+        self.last_used_selector = None # Type: BaseSelector | None
+
         # Explicitly store the main window reference provided at construction.
         self.main_window = main_window  # type: "MainWindow"
+        self.timer = None
 
     @property
     def current_plot_item(self) -> Union["Plot", None]:
@@ -405,6 +410,22 @@ class PlotWindow(FramelessSubWindow):
     def resizeEvent(self, ev: QtGui.QResizeEvent) -> None:
         super().resizeEvent(ev)
         self.reposition_toolbars()
+
+    def keyPressEvent(self, ev: QtGui.QKeyEvent):
+        """Handle arrow keys to move the active selector."""
+        if ev.key() not in (
+            QtCore.Qt.Key.Key_Left,
+            QtCore.Qt.Key.Key_Right,
+            QtCore.Qt.Key.Key_Up,
+            QtCore.Qt.Key.Key_Down,
+        ):
+            return
+
+        if self.last_used_selector is not None:
+            # change the position of the selector
+            self.timer = time.time()
+            self.last_used_selector.move_selector(ev.key())
+            return
 
     def close_window(self):
         """Close the plot window and clean up toolbars and selectors."""
