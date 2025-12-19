@@ -278,7 +278,7 @@ class BaseSelector:
         if not np.array_equal(indices, self.current_indices) or force:
             for child in self.children:
                 print("Updating Child Plot:", child)
-                new_data = self.children[child](self, child, indices)
+                new_data = self.children[child](self, child, indices, cache_in_shared_memory=True)
                 child.update_data(
                     new_data
                 )  # update the child plot data. If this is a future then

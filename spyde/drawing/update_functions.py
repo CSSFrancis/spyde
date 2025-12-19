@@ -16,10 +16,64 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from spyde.drawing.selector import BaseSelector
     from spyde.drawing.plots.plot import Plot
+from multiprocessing import shared_memory
 
+def write_shared_array(data, shared_arr_name):
+    dtype_bytes = data.dtype.str.encode('utf-8')
+    dtype_length = len(dtype_bytes)
+    # Calculate header size: 4 bytes for dtype length + dtype bytes + shape info
+    ndim = data.ndim
+    # Create shared memory
+    shm = shared_memory.SharedMemory(name=shared_arr_name)
+    # Write header
+    buffer = shm.buf
+    offset = 0
+    # Write dtype length (4 bytes)
+    buffer[offset:offset+4] = dtype_length.to_bytes(4, byteorder='little')
+    offset += 4
+    # Write dtype string
+    buffer[offset:offset+dtype_length] = dtype_bytes
+    offset += dtype_length
+    # Write number of dimensions (4 bytes)
+    buffer[offset:offset+4] = ndim.to_bytes(4, byteorder='little')
+    offset += 4
+    # Write shape (8 bytes per dimension)
+    for dim in data.shape:
+        buffer[offset:offset+8] = dim.to_bytes(8, byteorder='little')
+        offset += 8
+    # Write array data
+    target_arr = np.ndarray(data.shape, dtype=data.dtype, buffer=shm.buf[offset:])
+    target_arr[:] = data
+    return
+
+
+def read_shared_array(shm):
+    buffer = shm.buf
+    offset = 0
+    # Read dtype length
+    dtype_length = int.from_bytes(buffer[offset:offset+4], byteorder='little')
+    offset += 4
+    # Read dtype
+    dtype_str = bytes(buffer[offset:offset+dtype_length]).decode('utf-8')
+    dtype = np.dtype(dtype_str)
+    offset += dtype_length
+    # Read ndim
+    ndim = int.from_bytes(buffer[offset:offset+4], byteorder='little')
+    offset += 4
+    # Read shape
+    shape = tuple(int.from_bytes(buffer[offset+i*8:offset+(i+1)*8], byteorder='little')
+                  for i in range(ndim))
+    offset += ndim * 8
+    # Create array from buffer
+    arr = np.ndarray(shape, dtype=dtype, buffer=buffer[offset:])
+    return arr
 
 def update_from_navigation_selection(
-    selector: "BaseSelector", child: "Plot", indices, get_result: bool = False
+        selector: "BaseSelector",
+        child: "Plot",
+        indices,
+        get_result: bool = False,
+        cache_in_shared_memory: bool = False,
 ):
     """
     Update the plot based on the navigation selection. This is the most common update function for using some
@@ -36,6 +90,10 @@ def update_from_navigation_selection(
     get_result : bool
         Whether to compute the result immediately (for Dask arrays). Always False for using
         dask distributed futures.
+    cache_in_shared_memory : bool
+        Whether to cache the result in shared memory. This bypasses TCP transfer
+        with distributed futures but requires that the child process can access the
+        shared memory (e.g., same machine). Default is False.
     """
     # get the data from the signal tree based on the current indices
 
@@ -58,6 +116,12 @@ def update_from_navigation_selection(
             current_img = current_signal._get_cache_dask_chunk(
                 indices, get_result=get_result, return_future=True,
             )
+            if cache_in_shared_memory:
+                # Write to shared memory and return the name
+                shared_arr_name = f"plot_buffer{id(child)}"
+                child.main_window.client.submit(write_shared_array,
+                                                current_img,
+                                                shared_arr_name)
     else:
 
         tuple_inds = tuple([indices[ind] for ind in np.arange(len(indices))])

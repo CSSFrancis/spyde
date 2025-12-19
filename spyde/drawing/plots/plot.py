@@ -1,7 +1,11 @@
+import time
+from multiprocessing.shared_memory import SharedMemory
+
 from PySide6 import QtCore, QtGui
 
 import pyqtgraph as pg
 from distributed.client import FutureCancelledError
+from joblib.numpy_pickle_utils import BUFFER_SIZE
 from pyqtgraph import PlotItem
 
 from spyde.external.pyqtgraph.scale_bar import OutlinedScaleBar as ScaleBar
@@ -110,6 +114,12 @@ class Plot(PlotItem):
 
         self._updating_text = None  # type: pg.TextItem | None
         self._needs_hide_updating_text = False
+
+        # shared memory
+        BUFFER_SIZE = (8192 * 8192 * 4) + 128  # Example size, adjust as needed
+        self.shared_memory = SharedMemory(name=f"plot_buffer{id(self)}",
+                                          create=True,
+                                          size=BUFFER_SIZE)
 
     @property
     def toolbars(self):
@@ -633,10 +643,12 @@ class Plot(PlotItem):
 
             print("Setting image data with img", img)
 
+            start_time = time.perf_counter()
             self.image_item.setImage(
                 img, levels=(self.plot_state.min_level, self.plot_state.max_level)
             )
-
+            elapsed = time.perf_counter() - start_time
+            print(f"setImage took {elapsed * 1000:.2f}ms")
             if self.needs_auto_level and img is not None:
                 mn, mx = self.image_item.quickMinMax()
                 self.image_item.setLevels((mn, mx))
