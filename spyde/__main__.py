@@ -158,6 +158,10 @@ class MainWindow(QMainWindow):
         self.mdi_area.setBackground(QBrush(QColor("#0d0d0d")))
         self.setCentralWidget(self.mdi_area)
 
+        # settings and recent menu
+        self.settings = QtCore.QSettings("spyde", "SpyDE")
+        self.recent_menu = None
+
         self.plot_subwindows = []  # type: list[PlotWindow]
 
         self.mdi_area.subWindowActivated.connect(self.on_subwindow_activated)
@@ -168,7 +172,7 @@ class MainWindow(QMainWindow):
         self.s_list_widget = None
         self.file_dialog = None
 
-        # Start background worker thread to poll plot Futures
+        # Start a background worker thread to poll plot Futures
         self._update_thread = QtCore.QThread(self)
         self._plot_update_worker = PlotUpdateWorker(
             lambda: [p for plots in self.plot_subwindows for p in plots.plots],
@@ -178,6 +182,7 @@ class MainWindow(QMainWindow):
         self._update_thread.started.connect(self._plot_update_worker.start)
         self._plot_update_worker.plot_ready.connect(self.on_plot_future_ready)
         self._plot_update_worker.signal_ready.connect(self.on_signal_future_ready)
+        self._plot_update_worker.debug_print.connect(lambda msg: print(msg))
 
         with log_startup_time("Plot update worker thread start"):
             self._update_thread.start()
@@ -332,18 +337,6 @@ class MainWindow(QMainWindow):
                 selectors.extend(s.navigator_plot_manager.all_navigation_selectors)
         return selectors
 
-    def update_plots_loop(self) -> None:
-        """Poll plot futures on the GUI thread and apply finished results."""
-        print("Running update_plots_loop...")
-        for plot_window in self.plot_subwindows:
-            print("plots", plot_window.plots)
-            for p in plot_window.plots:
-                print("Checking Plot in loop...")
-                if isinstance(p.current_data, Future) and p.current_data.done():
-                    print("Updating Plot in loop...")
-                    p.current_data = p.current_data.result()
-                    p.update()
-
     @QtCore.Slot(object, object)
     def on_plot_future_ready(self, plot: Plot, result: object) -> None:
         """
@@ -409,6 +402,9 @@ class MainWindow(QMainWindow):
         open_create_data_dialog.triggered.connect(self.create_data)
         file_menu.addAction(open_create_data_dialog)
 
+        self.recent_menu = file_menu.addMenu("Open Recent")
+        self._update_recent_menu()
+
         example_data = file_menu.addMenu("Load Example Data...")
 
         names = [
@@ -450,6 +446,82 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "No active plot window to export from.")
             return
         export_dialog = MovieExportDialog(plot=self._active_plot(), parent=self).exec()
+
+    ### Handling Recent File opens ###
+
+    def _add_to_recent(self, path: str) -> None:
+        """Add a path to the recent-files list (persisted via QSettings)."""
+        try:
+            recent = self.settings.value("recentFiles", [])
+            # QSettings may return a single string if only one item stored
+            if isinstance(recent, str):
+                recent = [recent]
+            recent = list(recent or [])
+            if path in recent:
+                recent.remove(path)
+            recent.insert(0, path)
+            # cap recent list
+            recent = recent[:10]
+            self.settings.setValue("recentFiles", recent)
+            self._update_recent_menu()
+        except Exception:
+            pass
+
+    def _update_recent_menu(self) -> None:
+        """Rebuild the Open Recent submenu from QSettings."""
+        if self.recent_menu is None:
+            return
+        self.recent_menu.clear()
+        recent = self.settings.value("recentFiles", [])
+        if isinstance(recent, str):
+            recent = [recent]
+        recent = list(recent or [])
+        if not recent:
+            act = QAction("No recent files", self)
+            act.setEnabled(False)
+            self.recent_menu.addAction(act)
+            return
+        for path in recent:
+            # show only the filename in the menu but keep full path in the triggered slot
+            display = os.path.basename(path) if os.path.basename(path) else path
+            act = QAction(display, self)
+            act.setToolTip(path)
+            act.triggered.connect(partial(self.open_recent, path))
+            self.recent_menu.addAction(act)
+        self.recent_menu.addSeparator()
+        clear_act = QAction("Clear Recent", self)
+        clear_act.triggered.connect(self._clear_recent)
+        self.recent_menu.addAction(clear_act)
+
+    def open_recent(self, path: str) -> None:
+        """Open a recent file (called by the recent menu actions)."""
+        if not os.path.isfile(path):
+            QMessageBox.warning(self, "Open Recent", f"File not found: {path}")
+            # remove missing entry
+            try:
+                recent = self.settings.value("recentFiles", [])
+                if isinstance(recent, str):
+                    recent = [recent]
+                recent = list(recent or [])
+                if path in recent:
+                    recent.remove(path)
+                    self.settings.setValue("recentFiles", recent)
+                    self._update_recent_menu()
+            except Exception:
+                pass
+            return
+        # reuse existing loading path
+        self._create_signals([path])
+        # ensure the opened file is moved to the top of recent
+        self._add_to_recent(path)
+
+    def _clear_recent(self) -> None:
+        """Clear the recent-files list."""
+        try:
+            self.settings.remove("recentFiles")
+            self._update_recent_menu()
+        except Exception:
+            pass
 
     def open_dask_dashboard(self) -> None:
         """
@@ -508,13 +580,17 @@ class MainWindow(QMainWindow):
             signal = hs.load(file_path, **kwargs)
             if kwargs.get("lazy", False):
                 if signal.axes_manager.navigation_dimension == 1:
-                    signal.cache_pad = 10
+                    signal.cache_pad = 3
                 elif signal.axes_manager.navigation_dimension == 2:
                     signal.cache_pad = 2
             print("Signal loaded:", signal)
             print("Signal shape:", signal.data.shape)
             print("Signal Chunks:", signal.data.chunks)
             self.add_signal(signal)
+            try:
+                self._add_to_recent(file_path)
+            except Exception:
+                print("Failed to add to recent files list")
 
     def open_file(self):
         self.file_dialog = QFileDialog()
