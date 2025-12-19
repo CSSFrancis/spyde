@@ -4,7 +4,7 @@ from PySide6 import QtCore
 from typing import Callable, Optional, Set, Dict
 
 from dask.distributed import Future
-
+from spyde.drawing.update_functions import read_shared_array
 
 class PlotUpdateWorker(QtCore.QObject):
     """
@@ -108,7 +108,11 @@ class PlotUpdateWorker(QtCore.QObject):
         self._seen.add(fid)
         self._seen_plots[fid] = id(plot)
         try:
-            result = fut.result()
+            if "write_shared_array" in fut.key:
+                result  = read_shared_array(plot.shared_memory)
+                # avoid blocking on shared arrays
+            else:
+                result = fut.result()
         except Exception as e:
             result = e
         if plot is not None:

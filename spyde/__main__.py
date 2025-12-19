@@ -508,7 +508,7 @@ class MainWindow(QMainWindow):
             signal = hs.load(file_path, **kwargs)
             if kwargs.get("lazy", False):
                 if signal.axes_manager.navigation_dimension == 1:
-                    signal.cache_pad = 5
+                    signal.cache_pad = 10
                 elif signal.axes_manager.navigation_dimension == 2:
                     signal.cache_pad = 2
             print("Signal loaded:", signal)
