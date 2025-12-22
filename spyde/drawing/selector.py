@@ -266,7 +266,7 @@ class BaseSelector:
         """
         Start the timer to delay the update.
         """
-        print("Updating Data")
+        print("Updating Data...", )
         if ev is None:
             self.delayed_update_data()
         else:

@@ -433,6 +433,10 @@ class MainWindow(QMainWindow):
         view_plot_control_action.triggered.connect(self.toggle_plot_control_dock)
         view_menu.addAction(view_plot_control_action)
 
+        view_camera_control_action = QAction("Toggle Instrument Control Dock", self)
+        view_camera_control_action.triggered.connect(self.toggle_camera_control_dock)
+        view_menu.addAction(view_camera_control_action)
+
     def toggle_plot_control_dock(self) -> None:
         """
         Toggle the visibility of the plot control dock widget.
@@ -440,6 +444,14 @@ class MainWindow(QMainWindow):
         if self.dock_widget is not None:
             is_visible = self.dock_widget.isVisible()
             self.dock_widget.setVisible(not is_visible)
+
+    def toggle_camera_control_dock(self) -> None:
+        """
+        Toggle the visibility of the camera control dock widget.
+        """
+        if self.control_widget is not None:
+            is_visible = self.control_widget.isVisible()
+            self.control_widget.setVisible(not is_visible)
 
     def export_current_signal(self):
         if not isinstance(self._active_plot(), Plot):
@@ -885,7 +897,7 @@ class MainWindow(QMainWindow):
         This is the left-hand side docked widget that contains the instrument controls.
         """
         self.control_widget = ControlDockWidget()
-        self.control_widget.setVisible(True)  # Add this line
+        self.control_widget.setVisible(False)  # Add this line
 
         self.addDockWidget(
             QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, self.control_widget
