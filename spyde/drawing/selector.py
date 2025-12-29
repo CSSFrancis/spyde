@@ -671,15 +671,101 @@ class LinearRegionSelector(BaseSelector):
 
 class IntegratingLinearRegionSelector(IntegratingSelectorMixin, LinearRegionSelector):
     def __init__(
-        self,
-        parent: "PlotWindow",
-        children: Union["Plot", List["Plot"]],
-        update_function: Union[callable, List[callable]],
-        *args,
-        **kwargs,
+            self,
+            parent: "PlotWindow",
+            children: Union["Plot", List["Plot"]],
+            update_function: Union[callable, List[callable]],
+            *args,
+            **kwargs,
     ):
         super().__init__(parent, children, update_function, *args, **kwargs)
+        self._line_mode_selector = None
+        self._region_selector = self.selector
 
+        # Initialize in line mode since is_integrating starts as False (Probably should
+        self._switch_to_line_mode()
+
+    def on_integrate_toggled(self, checked):
+        """Override to switch between LinearRegionItem and InfiniteLine."""
+        if not checked:
+            # Switch to InfiniteLine mode when NOT integrating
+            self._switch_to_line_mode()
+        else:
+            # Switch back to LinearRegionItem mode when integrating
+            self._switch_to_region_mode()
+        super().on_integrate_toggled(checked)
+
+    def _switch_to_line_mode(self):
+        """Replace LinearRegionItem with InfiniteLine."""
+        if self._line_mode_selector is None:
+            region = self.selector.getRegion()
+            center = (region[0] + region[1]) / 2
+
+            self._line_mode_selector = pg.InfiniteLine(
+                pos=center,
+                angle=90,
+                pen=self.roi_pen,
+                hoverPen=self.hoverPen,
+                movable=True
+            )
+
+        # Remove LinearRegionItem from all plots
+        for plot in self.parent.plots:
+            if self.selector in plot.items:
+                plot.removeItem(self.selector)
+
+        # Remove linked selectors
+        for linked in self.linked_selectors:
+            for plot in self.parent.plots:
+                if linked in plot.items:
+                    plot.removeItem(linked)
+
+        # Add InfiniteLine to all plots
+        for plot in self.parent.plots:
+            plot.addItem(self._line_mode_selector)
+
+        self._line_mode_selector.sigPositionChanged.connect(self.update_data)
+
+    def _switch_to_region_mode(self):
+        """Replace InfiniteLine with LinearRegionItem."""
+        if self._line_mode_selector is not None:
+            # Get position from InfiniteLine
+            pos = self._line_mode_selector.value()
+
+            # Remove InfiniteLine from all plots
+            for plot in self.parent.plots:
+                if self._line_mode_selector in plot.items:
+                    plot.removeItem(self._line_mode_selector)
+
+            self._line_mode_selector.sigPositionChanged.disconnect(self.update_data)
+
+            # Restore LinearRegionItem centered at the line position
+            width = 10  # Default width, adjust as needed
+            self.selector.setRegion([pos - width / 2, pos + width / 2])
+
+            # Re-add LinearRegionItem and linked selectors
+            for i, plot in enumerate(self.parent.plots):
+                if i == 0:
+                    plot.addItem(self.selector)
+                else:
+                    plot.addItem(self.linked_selectors[i - 1])
+
+    def _get_selected_indices(self):
+        """Override to handle both LinearRegionItem and InfiniteLine."""
+        if not self.is_integrating and self._line_mode_selector is not None:
+            # Get single index from InfiniteLine
+            axs = self.parent.current_plot_state.current_signal.axes_manager.signal_axes[0]
+            scale = axs.scale
+            offset = axs.offset
+
+            pos = self._line_mode_selector.value()
+            index = int(np.round((pos - offset) / scale))
+
+            print("Selected index from line:", index)
+            return np.array([[index]])
+        else:
+            # Use parent implementation for LinearRegionItem
+            return super()._get_selected_indices()
 
 class LineSelector(BaseSelector):
     """
