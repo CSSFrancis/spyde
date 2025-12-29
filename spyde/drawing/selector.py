@@ -557,15 +557,19 @@ class IntegratingSelectorMixin:
 
 class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
     def __init__(
-        self,
-        parent: "PlotWindow",
-        children: Union["Plot", List["Plot"]],
-        update_function: Union[callable, List[callable]],
-        live_delay: int = 3,
-        multi_selector: bool = False,
-        *args,
-        **kwargs,
+            self,
+            parent: "PlotWindow",
+            children: Union["Plot", List["Plot"]],
+            update_function: Union[callable, List[callable]],
+            live_delay: int = 3,
+            multi_selector: bool = False,
+            *args,
+            **kwargs,
     ):
+        # Store initial crosshair size options
+        self._crosshair_selector = None
+        self._rect_selector = None
+
         super().__init__(
             parent,
             children,
@@ -576,6 +580,112 @@ class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
             **kwargs,
         )
 
+        # Store the rectangle selector created by parent
+        self._rect_selector = self.selector
+
+        # Start with crosshair mode
+        self._switch_to_crosshair_mode()
+
+
+    def on_integrate_toggled(self, checked):
+        """Switch between crosshair and rectangle."""
+        if not checked:
+            self._switch_to_crosshair_mode()
+        else:
+            self._switch_to_rectangle_mode()
+        super().on_integrate_toggled(checked)
+
+    def _switch_to_crosshair_mode(self):
+        """Replace rectangle with crosshair."""
+        if self._crosshair_selector is None:
+            # Get center of current rectangle
+            pos = self._rect_selector.pos()
+            size = self._rect_selector.size()
+            center_pos = pos + QtCore.QPointF(size.x() / 2, size.y() / 2)
+
+            # Create crosshair at center with pixel size
+            pixel_size = 3 * 10
+            view = self.parent.current_plot_item.getViewBox()
+
+            self._crosshair_selector = CrosshairROI(
+                center_pos,
+                pixel_size=pixel_size,
+                view=view,
+                pen=self.roi_pen,
+                hoverPen=self.hoverPen
+            )
+            self._crosshair_selector.sigRegionChanged.connect(self.update_data)
+
+        # Remove rectangle from plots
+        for plot in self.parent.plots:
+            if self._rect_selector in plot.items:
+                plot.removeItem(self._rect_selector)
+
+        # Remove linked rectangles
+        for linked in self.linked_selectors:
+            for plot in self.parent.plots:
+                if linked in plot.items:
+                    plot.removeItem(linked)
+
+        # Add crosshair
+        for plot in self.parent.plots:
+            plot.addItem(self._crosshair_selector)
+
+        self.selector = self._crosshair_selector
+
+    def _switch_to_rectangle_mode(self):
+        """Replace crosshair with rectangle."""
+        if self._crosshair_selector is not None:
+            # Get crosshair center position
+            pos = self._crosshair_selector.pos()
+            size = self._crosshair_selector.size()
+            center_pos = pos + QtCore.QPointF(size[0] / 2, size[1] / 2)
+
+            # Disconnect zoom updates
+            view = self.parent.current_plot_item.getViewBox()
+            if view is not None:
+                self._crosshair_selector.view.sigRangeChanged.disconnect(
+                    self._crosshair_selector._update_for_zoom
+                )
+
+            # Remove crosshair
+            for plot in self.parent.plots:
+                if self._crosshair_selector in plot.items:
+                    plot.removeItem(self._crosshair_selector)
+
+            self._crosshair_selector.sigRegionChanged.disconnect(self.update_data)
+
+            # Position rectangle at crosshair center
+            rect_size = self._rect_selector.size()
+            new_pos = center_pos - QtCore.QPointF(rect_size.x() / 2, rect_size.y() / 2)
+            self._rect_selector.setPos(new_pos)
+
+        # Re-add rectangle and linked selectors
+        for i, plot in enumerate(self.parent.plots):
+            if i == 0:
+                plot.addItem(self._rect_selector)
+            elif i - 1 < len(self.linked_selectors):
+                plot.addItem(self.linked_selectors[i - 1])
+
+        self.selector = self._rect_selector
+
+    def _get_selected_indices(self):
+        """Handle both crosshair and rectangle selection."""
+        if not self.is_integrating and self._crosshair_selector is not None:
+            # Get crosshair center pixel
+            inverted_transform, _ = self.parent.current_plot_item.image_item.transform().inverted()
+            pos = self._crosshair_selector.pos()
+            size = self._crosshair_selector.size()
+            center = pos + QtCore.QPointF(size[0] / 2, size[1] / 2)
+            center_pixel = inverted_transform.map(center)
+
+            x = int(np.round(center_pixel.x()))
+            y = int(np.round(center_pixel.y()))
+            indices = np.array([[x, y]])
+            return indices
+        else:
+            # Use parent implementation for rectangle
+            return super()._get_selected_indices()
 
 class LinearRegionSelector(BaseSelector):
     """
@@ -806,3 +916,82 @@ class LineSelector(BaseSelector):
             [[np.round(pos[0][i]).astype(int)] for i in range(len(pos[0]))]
         )
         return indices
+
+
+class CrosshairROI(pg.ROI):
+    """A crosshair (+) shaped ROI with adjustable arm lengths that stays constant size when zooming."""
+
+    def __init__(self, pos, pixel_size=10, view=None, **kwargs):
+        super().__init__(pos, [pixel_size, pixel_size], **kwargs)
+        self.pixel_size = pixel_size  # Size in pixels
+        self.view = view  # ViewBox reference
+
+        # Remove default handle
+        for h in self.getHandles():
+            self.removeHandle(h)
+
+        # Add handle at center to move the crosshair
+        self.addTranslateHandle([0.5, 0.5])
+
+        # Connect to view range changes to maintain constant pixel size
+        if self.view is not None:
+            self.view.sigRangeChanged.connect(self._update_for_zoom)
+            self._update_for_zoom()
+
+    def _update_for_zoom(self):
+        """Update size based on current zoom level to maintain constant pixel size."""
+        if self.view is None:
+            return
+
+        # Get the current view range
+        view_rect = self.view.viewRect()
+        view_width = view_rect.width()
+        view_height = view_rect.height()
+
+        # Get widget size in pixels
+        widget_width = self.view.width()
+        widget_height = self.view.height()
+
+        if widget_width == 0 or widget_height == 0:
+            return
+
+        # Calculate data units per pixel
+        units_per_pixel_x = view_width / widget_width
+        units_per_pixel_y = view_height / widget_height
+
+        # Set size to maintain constant pixel size
+        scene_size = max(units_per_pixel_x, units_per_pixel_y) * self.pixel_size
+        self.setSize([scene_size, scene_size], finish=False)
+        self.size_value = scene_size
+
+    def paint(self, p, *args):
+        """Draw a + shape with a small square in the center."""
+        pen = self.currentPen
+        p.setPen(pen)
+
+        size = self.size_value
+        center = size / 2
+
+        # Draw vertical line
+        p.drawLine(QtCore.QPointF(center, 0), QtCore.QPointF(center, size))
+        # Draw horizontal line
+        p.drawLine(QtCore.QPointF(0, center), QtCore.QPointF(size, center))
+
+        # Draw small square in center (10% of total size)
+        square_size = size * 0.1
+        half_square = square_size / 2
+        p.drawRect(QtCore.QRectF(
+            center - half_square,
+            center - half_square,
+            square_size,
+            square_size
+        ))
+
+    def set_pixel_size(self, pixel_size):
+        """Adjust the crosshair pixel size."""
+        self.pixel_size = pixel_size
+        self._update_for_zoom()
+        self.update()
+
+    def boundingRect(self):
+        return QtCore.QRectF(0, 0, self.size_value, self.size_value)
