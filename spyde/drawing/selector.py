@@ -632,6 +632,7 @@ class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
             plot.addItem(self._crosshair_selector)
 
         self.selector = self._crosshair_selector
+        self.selector.sigRegionChanged.connect(self.update_data)
 
     def _switch_to_rectangle_mode(self):
         """Replace crosshair with rectangle."""
@@ -668,10 +669,12 @@ class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
                 plot.addItem(self.linked_selectors[i - 1])
 
         self.selector = self._rect_selector
+        self.selector.sigRegionChanged.connect(self.update_data)
+
 
     def _get_selected_indices(self):
         """Handle both crosshair and rectangle selection."""
-        if not self.is_integrating and self._crosshair_selector is not None:
+        if not self.is_integrating:
             # Get crosshair center pixel
             inverted_transform, _ = self.parent.current_plot_item.image_item.transform().inverted()
             pos = self._crosshair_selector.pos()
@@ -682,6 +685,7 @@ class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
             x = int(np.round(center_pixel.x()))
             y = int(np.round(center_pixel.y()))
             indices = np.array([[x, y]])
+            print("Selected Indices (Crosshair):", indices)
             return indices
         else:
             # Use parent implementation for rectangle
