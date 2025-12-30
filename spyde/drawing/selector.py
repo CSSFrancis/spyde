@@ -632,6 +632,7 @@ class IntegratingRectangleSelector(IntegratingSelectorMixin, RectangleSelector):
             plot.addItem(self._crosshair_selector)
 
         self.selector = self._crosshair_selector
+        # maybe both should be connected?
         self.selector.sigRegionChanged.connect(self.update_data)
 
     def _switch_to_rectangle_mode(self):

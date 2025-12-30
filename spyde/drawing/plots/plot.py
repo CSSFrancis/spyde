@@ -197,6 +197,11 @@ class Plot(PlotItem):
         """Get the parent selector for this plot."""
         return self.plot_window.parent_selector
 
+    def normalize_axes(self):
+        """ Normalize the axes widths for 1D plots in the plot window."""
+        for plot in self.plot_window.plots:
+            plot.getAxis('left').setWidth(75)
+
     def set_plot_state(self, signal: BaseSignal):
         """Set the plot state to the state for some signal."""
         # first save the current plot state selectors and child plots
@@ -238,11 +243,12 @@ class Plot(PlotItem):
             vb.autoRange()
 
         elif self.plot_state.dimensions == 1 and old_dim != 1:
-            #self.clear()
+            # self.clear()
             self.addItem(self.line_item)
             vb.setAspectLocked(False)
-            vb.enableAutoRange(x=True, y=True)
-            vb.autoRange()
+            vb.enableAutoRange(x=False, y=True)
+            vb.setMouseEnabled(x=True, y=False)
+            self.normalize_axes()
 
         # show the new selectors and child plots
         for selector in (
@@ -288,7 +294,7 @@ class Plot(PlotItem):
         print(self.image_item)
         print("Showing toolbars for plot state:", self.plot_state)
         self.plot_state.show_toolbars()
-        self.setTitle(signal.metadata.General.title)
+        self.axes["left"]["item"].setLabel(signal.metadata.General.title)
 
     def add_plot_state(
         self,
@@ -360,6 +366,7 @@ class Plot(PlotItem):
     def update_range(self):
         """Update the view range to fit the current data."""
         self.getViewBox().autoRange()
+        self.normalize_axes()
 
     def mousePressEvent(self, ev):
         """Ensure clicking a plot marks it as the active plot."""
