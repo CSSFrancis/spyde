@@ -1,27 +1,13 @@
-from PySide6 import QtCore, QtGui
-
-import pyqtgraph as pg
-from distributed.client import FutureCancelledError
-from pyqtgraph import PlotItem
-
-from spyde.external.pyqtgraph.scale_bar import OutlinedScaleBar as ScaleBar
-from math import floor, log10
-
-import numpy as np
-import dask.array as da
-from dask.distributed import Future
-
-from typing import TYPE_CHECKING, Union, List, Dict, Tuple, Optional
+from typing import TYPE_CHECKING, List, Dict, Tuple, Optional
 
 if TYPE_CHECKING:
     from spyde.signal_tree import BaseSignalTree
     from spyde.__main__ import MainWindow
-    from spyde.drawing.selector import BaseSelector
+    from spyde.drawing.selectors import BaseSelector, IntegratingSelector2D
     from spyde.drawing.plots.plot import Plot
     from spyde.drawing.plots.plot_window import PlotWindow
 
 from hyperspy.signal import BaseSignal
-from spyde.drawing.plots.plot_states import PlotState
 from spyde.drawing.update_functions import update_from_navigation_selection
 
 import logging
@@ -189,9 +175,9 @@ class MultiplotManager:
         Plots in one PlotWindow. Creating one Child Plot.
 
         """
-        from spyde.drawing.selector import (
-            IntegratingLinearRegionSelector,
-            IntegratingRectangleSelector,
+        from spyde.drawing.selectors import (
+            IntegratingSelector1D,
+            IntegratingSelector2D,
             BaseSelector,
         )
 
@@ -203,9 +189,9 @@ class MultiplotManager:
             "Adding navigation selector to plot window:", plot_window, " with dim:", dim
         )
         if dim == 1 and selector_type is None:
-            selector_type = IntegratingLinearRegionSelector
+            selector_type = IntegratingSelector1D
         elif dim == 2 and selector_type is None:
-            selector_type = IntegratingRectangleSelector
+            selector_type = IntegratingSelector2D
         elif not isinstance(selector_type, BaseSelector):
             raise ValueError("Type must be a BaseSelector class.")
 

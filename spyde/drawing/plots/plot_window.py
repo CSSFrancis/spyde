@@ -15,7 +15,7 @@ from spyde.qt.subwindow import FramelessSubWindow
 if TYPE_CHECKING:
     from spyde.signal_tree import BaseSignalTree
     from spyde.__main__ import MainWindow
-    from spyde.drawing.selector import BaseSelector
+    from spyde.drawing.selectors import BaseSelector
 
 import logging
 
@@ -100,6 +100,7 @@ class PlotWindow(FramelessSubWindow):
         # Explicitly store the main window reference provided at construction.
         self.main_window = main_window  # type: "MainWindow"
         self.timer = None
+
 
     @property
     def current_plot_item(self) -> Union["Plot", None]:

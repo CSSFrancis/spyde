@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Union, List, Dict, Tuple, Optional
 if TYPE_CHECKING:
     from spyde.signal_tree import BaseSignalTree
     from spyde.__main__ import MainWindow
-    from spyde.drawing.selector import BaseSelector
+    from spyde.drawing.selectors import BaseSelector
 from hyperspy.signal import BaseSignal
 from spyde.drawing.plots.plot_states import PlotState
 

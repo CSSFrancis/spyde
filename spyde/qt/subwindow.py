@@ -111,6 +111,13 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self._resizing_left = False
         self._resizing_right = False
 
+        # Edge snap state
+        self._is_dragging = False
+        self._snap_preview = None  # QGraphicsRectItem for preview
+        self._snap_threshold = -1  # pixels from edge to trigger snap
+        self._snap_zone = None  # 'top', 'bottom', 'left', 'right', or None
+        self._drag_start_pos = None # Global pos where drag started
+
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.Type.MouseMove:
             self.mouseMoveEvent(event)
@@ -192,6 +199,32 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
 
         x, y = pos.x(), pos.y()
         w, h = rect.width(), rect.height()
+
+        if self._is_dragging and self.main_window is not None:
+            mdi_rect = self.main_window.mdi_area.rect()
+            try:
+                global_pos = event.globalPosition().toPoint()
+            except AttributeError:
+                global_pos = event.globalPos()
+
+            # Convert to MDI area coordinates
+            local_pos = self.main_window.mdi_area.mapFromGlobal(global_pos)
+
+            # Determine snap zone
+            new_zone = None
+            if local_pos.y() >= mdi_rect.height() - self._snap_threshold:
+                new_zone = 'bottom'
+            elif local_pos.y() <= self._snap_threshold:
+                new_zone = 'top'
+            elif local_pos.x() <= self._snap_threshold:
+                new_zone = 'left'
+            elif local_pos.x() >= mdi_rect.width() - self._snap_threshold:
+                new_zone = 'right'
+
+            # Update preview if zone changed
+            if new_zone != self._snap_zone:
+                self._snap_zone = new_zone
+                self._update_snap_preview(mdi_rect)
 
         # Update cursor shape only when not resizing and only on change
         if not self.resizing:
@@ -275,6 +308,8 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         rect = self.rect()
 
         if event.button() == Qt.MouseButton.LeftButton:
+            self._is_dragging = True
+            self._drag_start_pos = event.globalPosition().toPoint()
             p = self.mapFromGlobal(event.globalPosition().toPoint())
             x, y = p.x(), p.y()
             w, h = rect.width(), rect.height()
@@ -310,8 +345,116 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
 
     def mouseReleaseEvent(self, event):
         # Stop resizing the window
+        if event.button() == QtCore.Qt.MouseButton.LeftButton and self._is_dragging:
+            self._is_dragging = False
+
+            if self._snap_zone is not None:
+                self._apply_snap(self._snap_zone)
+
+            # Clear preview
+            self._clear_snap_preview()
+            self._snap_zone = None
         if event.button() == Qt.MouseButton.LeftButton:
             self._resizing_top = False
             self._resizing_bottom = False
             self._resizing_left = False
             self._resizing_right = False
+
+    def _update_snap_preview(self, mdi_rect: QtCore.QRect) -> None:
+        """Show/update blue preview box for snap zone."""
+        self._clear_snap_preview()
+
+        if self._snap_zone is None:
+            return
+
+        # Calculate preview rectangle based on zone
+        preview_rect = QtCore.QRect()
+        margin = 10  # margin from edges
+
+        if self._snap_zone == 'bottom':
+            preview_rect = QtCore.QRect(
+                margin,
+                mdi_rect.height() // 2,
+                mdi_rect.width() - 2 * margin,
+                mdi_rect.height() // 2 - margin
+            )
+        elif self._snap_zone == 'top':
+            preview_rect = QtCore.QRect(
+                margin,
+                margin,
+                mdi_rect.width() - 2 * margin,
+                mdi_rect.height() // 2 - margin
+            )
+        elif self._snap_zone == 'left':
+            preview_rect = QtCore.QRect(
+                margin,
+                margin,
+                mdi_rect.width() // 2 - margin,
+                mdi_rect.height() - 2 * margin
+            )
+        elif self._snap_zone == 'right':
+            preview_rect = QtCore.QRect(
+                mdi_rect.width() // 2,
+                margin,
+                mdi_rect.width() // 2 - margin,
+                mdi_rect.height() - 2 * margin
+            )
+
+        # Create preview widget
+        self._snap_preview = QtWidgets.QWidget(self.main_window.mdi_area)
+        self._snap_preview.setGeometry(preview_rect)
+        self._snap_preview.setStyleSheet(
+            "background-color: rgba(100, 150, 255, 50); "
+            "border: 2px solid rgba(100, 150, 255, 200);"
+        )
+        self._snap_preview.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._snap_preview.show()
+        self._snap_preview.raise_()
+
+    def _clear_snap_preview(self) -> None:
+        """Remove snap preview widget."""
+        if self._snap_preview is not None:
+            self._snap_preview.deleteLater()
+            self._snap_preview = None
+
+    def _apply_snap(self, zone: str) -> None:
+        """Snap window to the specified zone."""
+        if self.main_window is None:
+            return
+
+        mdi_rect = self.main_window.mdi_area.rect()
+        margin = 50 # margin from edges for toolbars
+
+        target_rect = QtCore.QRect()
+
+        if zone == 'bottom':
+            target_rect = QtCore.QRect(
+                margin,
+                mdi_rect.height() // 2,
+                mdi_rect.width() - 2 * margin,
+                mdi_rect.height() // 2 - margin
+            )
+        elif zone == 'top':
+            target_rect = QtCore.QRect(
+                margin,
+                margin,
+                mdi_rect.width() - 2 * margin,
+                mdi_rect.height() // 2 - margin
+            )
+        elif zone == 'left':
+            target_rect = QtCore.QRect(
+                margin,
+                margin,
+                mdi_rect.width() // 2 - margin,
+                mdi_rect.height() - 2 * margin
+            )
+        elif zone == 'right':
+            target_rect = QtCore.QRect(
+                mdi_rect.width() // 2,
+                margin,
+                mdi_rect.width() // 2 - margin,
+                mdi_rect.height() - 2 * margin
+            )
+
+        # Apply geometry with animation (optional)
+        self.setGeometry(target_rect)

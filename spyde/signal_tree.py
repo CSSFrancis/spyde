@@ -227,15 +227,15 @@ class BaseSignalTree:
                 # maybe just use the index?
                 index = sig.axes_manager._axes.index(axis)
                 sig.axes_manager._axes[index].__setattr__(field, line_edit.text())
-            for plot in self.navigator_plot_manager.plots:
+            for plot in self.navigator_plot_manager.plots.values():
                 print("Updating navigator plot image rectangle for: ", plot)
                 plot.update_image_rectangle()
         else:
             index = signal.axes_manager._axes.index(axis)
             signal.axes_manager._axes[index].__setattr__(field, line_edit.text())
-            for signal in self.signal_plots:
-                if signal.plot_state.current_signal == signal:
-                    signal.update_image_rectangle()
+            for plot in self.signal_plots:
+                if plot.plot_state.current_signal is signal:
+                    plot.update_image_rectangle()
 
     def build_axes_groups(
         self, signal: Union[BaseSignal, None], plot: "Plot"

@@ -14,7 +14,7 @@ from scipy import fft
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from spyde.drawing.selector import BaseSelector
+    from spyde.drawing.selectors import BaseSelector
     from spyde.drawing.plots.plot import Plot
 from multiprocessing import shared_memory
 
@@ -100,6 +100,7 @@ def update_from_navigation_selection(
     current_signal = child.plot_state.current_signal
 
     if not selector.is_integrating:
+        print("Not integrating, taking mean of indices")
         indices = np.mean(indices, axis=0).astype(int)
 
     print("Updating child plot based on navigation selection with indices:", indices)

@@ -1,0 +1,340 @@
+"""2D Selectors for a Plot."""
+
+from spyde.drawing.selectors.base_selector import BaseSelector, IntegratingSelectorMixin
+
+
+import time
+
+from pyqtgraph import LinearRegionItem, RectROI, LineROI, ROI
+
+from PySide6 import QtCore, QtWidgets, QtGui
+import numpy as np
+
+import pyqtgraph as pg
+import logging
+
+from typing import TYPE_CHECKING, Union, List, Type, Iterable
+
+from spyde.drawing.selectors.utils import create_linked_rect_roi
+from spyde.external.pyqtgraph.crosshair_roi import CrosshairROI
+
+if TYPE_CHECKING:
+    from spyde.drawing.plots.plot import Plot
+    from spyde.drawing.plots.plot_window import PlotWindow
+
+Logger = logging.getLogger(__name__)
+
+class CrosshairSelector(BaseSelector):
+    def __init__(
+        self,
+        parent: "PlotWindow",
+        children: Union["Plot", List["Plot"]],
+        update_function: Union[callable, List[callable]],
+        live_delay: int = 2,
+        multi_selector: bool = False,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            parent,
+            children,
+            update_function,
+            live_delay=live_delay,
+            multi_selector=multi_selector,
+            *args,
+            **kwargs,
+        )
+        # auto position and size
+        # 20 % of the image size and bottom left corner
+        transform = parent.current_plot_item.image_item.transform()
+        pos = transform.map(QtCore.QPointF(0, 0))
+        width = parent.current_plot_item.image_item.width() // 5
+        self.selector = CrosshairROI(
+            pos=pos,
+            pixel_size=width,
+            view=parent.current_plot_item.getViewBox(),
+            pen=self.roi_pen,
+            handlePen=self.handlePen,
+            hoverPen=self.hoverPen,
+            handleHoverPen=self.handleHoverPen,
+            *args,
+            **kwargs,
+        )
+
+        self._last_size_sig = (0, 0)
+        self.selector.sigRegionChangeFinished.connect(self._on_region_change_finished)
+
+        for plot in parent.plots:
+            # The selector isn't actually added to any plot??
+            self.add_linked_selector(plot)
+        self.selector.sigRegionChanged.connect(self.update_data)
+
+    def _get_selected_indices(self):
+        """
+        Get the currently selected indices from the crosshair selector.
+        """
+        inverted_transform, _ = self.parent.current_plot_item.image_item.transform().inverted()
+        pos = self.selector.pos()
+        size = self.selector.size()
+        center = pos + QtCore.QPointF(size[0] / 2, size[1] / 2)
+        center_pixel = inverted_transform.map(center)
+
+        x = int(np.round(center_pixel.x()))
+        y = int(np.round(center_pixel.y()))
+        indices = np.array([[x, y]])
+        print("Selected Indices (Crosshair):", indices)
+        return indices
+
+    def add_linked_selector(self, plot: "Plot"):
+
+        if self.selector is not None:
+            new_selector = create_linked_rect_roi(self.selector)
+            plot.addItem(new_selector)
+            self.linked_selectors.append(new_selector)
+
+
+class RectangleSelector(BaseSelector):
+    def __init__(
+            self,
+            parent: "PlotWindow",
+            children: Union["Plot", List["Plot"]],
+            update_function: Union[callable, List[callable]],
+            live_delay: int = 2,
+            multi_selector: bool = False,
+            *args,
+            **kwargs,
+    ):
+        super().__init__(
+            parent,
+            children,
+            update_function,
+            live_delay=live_delay,
+            multi_selector=multi_selector,
+            *args,
+            **kwargs,
+        )
+        print("Creating Rectangle Selector")
+        print(args, kwargs)
+
+        # auto position and size
+        # 10 % of the image size and bottom left corner
+        transform = parent.current_plot_item.image_item.transform()
+        pos = transform.map(QtCore.QPointF(0, 0))
+        width = parent.current_plot_item.image_item.width() // 10
+
+        self.selector = RectROI(
+            pos=pos,
+            size=(width, width),
+            pen=self.roi_pen,
+            handlePen=self.handlePen,
+            hoverPen=self.hoverPen,
+            handleHoverPen=self.handleHoverPen,
+            *args,
+            **kwargs,
+        )
+        self._last_size_sig = (0, 0)
+        self.selector.sigRegionChangeFinished.connect(self._on_region_change_finished)
+
+        for plot in parent.plots:
+            # The selector isn't actually added to any plot??
+            self.add_linked_selector(plot)
+        self.selector.sigRegionChanged.connect(self.update_data)
+
+    def _get_selected_indices(self):
+        """
+        Get the currently selected indices from the selector.
+        """
+        if self.multi_selector:
+            [
+                parent_selector.get_selected_indices()
+                for parent_selector in self.upstream_selectors()
+            ]
+
+        lower_left = self.selector.pos()
+        size = self.selector.size()
+
+        # pyqtgraph only knows one coordinate system.  We need to map the scene
+        # to pixels.
+
+        inverted_transform, is_inversion = (
+            self.parent.current_plot_item.image_item.transform().inverted()
+        )
+
+        lower_left_pixel = inverted_transform.map(lower_left)
+
+        size_pixels = inverted_transform.map(size) - inverted_transform.map(
+            QtCore.QPointF(0, 0)
+        )
+
+        # ignore rotation for now...
+        rotation = self.selector.angle()
+
+        y_indices = np.arange(0, np.round(size_pixels.y()), dtype=int)
+        x_indices = np.arange(0, np.round(size_pixels.x()), dtype=int)
+
+        indices = np.reshape(np.array(np.meshgrid(x_indices, y_indices)).T, (-1, 2))
+        indices[:, 0] += np.round(lower_left_pixel.x()).astype(int)
+        indices[:, 1] += np.round(lower_left_pixel.y()).astype(int)
+        indices = indices.astype(int)
+        return indices
+
+    def add_linked_selector(self, plot: "Plot"):
+
+        if self.selector is not None:
+            new_selector = create_linked_rect_roi(self.selector)
+            plot.addItem(new_selector)
+            self.linked_selectors.append(new_selector)
+
+    def translate_pixels(self, shift_x: int, shift_y: int):
+        """
+        Translate the selector by the given amount in pixels.
+        """
+        if self.selector is not None:
+            shift = QtCore.QPointF(shift_x, shift_y)
+            transform = self.parent.current_plot_item.image_item.transform()
+            shift = transform.map(shift)
+            self.selector.translate(shift.x(), shift.y())
+
+    def move_selector(self, key: QtCore.Qt.Key):
+        """
+        Move the selector based on the key pressed.
+        """
+        self.timer = time.time()
+        if key == QtCore.Qt.Key.Key_Left:
+            self.translate_pixels(-1, 0)
+        elif key == QtCore.Qt.Key.Key_Right:
+            self.translate_pixels(1, 0)
+        elif key == QtCore.Qt.Key.Key_Up:
+            self.translate_pixels(0, 1)
+        elif key == QtCore.Qt.Key.Key_Down:
+            self.translate_pixels(0, -1)
+
+
+
+class IntegratingSelector2D(IntegratingSelectorMixin):
+    def __init__(
+            self,
+            parent: "PlotWindow",
+            children: Union["Plot", List["Plot"]],
+            update_function: Union[callable, List[callable]],
+            live_delay: int = 3,
+            multi_selector: bool = False,
+            *args,
+            **kwargs,
+    ):
+        # initialize the rect and the crosshair
+        # Store the rectangle selector created by parents
+        super().__init__()
+        self._rect_selector = RectangleSelector(parent,
+                                                children,
+                                                update_function,
+                                                live_delay=live_delay,
+                                                multi_selector=multi_selector,
+                                                *args,
+                                                **kwargs
+        )
+        self._crosshair_selector = CrosshairSelector(parent,
+                                                     children,
+                                                     update_function,
+                                                     live_delay=live_delay,
+                                                     multi_selector=multi_selector,
+                                                    *args,
+                                                     **kwargs
+        )
+
+        self._hide_rect_selector()
+        self.selector = self._crosshair_selector
+        # connect the is_integrating property to the selector
+        self._crosshair_selector.is_integrating = False
+        self._rect_selector.is_integrating = True
+
+    def _hide_crosshair_selector(self):
+        """Hide the crosshair selector."""
+        print(f"Hiding {self._crosshair_selector.linked_selectors}")
+        for linked in self._crosshair_selector.linked_selectors:
+                linked.hide()
+    def _show_crosshair_selector(self):
+        """Show the crosshair selector."""
+        for linked in self._crosshair_selector.linked_selectors:
+                linked.show()
+        self.selector = self._crosshair_selector
+    def _hide_rect_selector(self):
+        """Hide the rectangle selector."""
+        for linked in self._rect_selector.linked_selectors:
+                linked.hide()
+
+    def _show_rect_selector(self):
+        """Show the rectangle selector."""
+        for linked in self._rect_selector.linked_selectors:
+                linked.show()
+        self.selector = self._rect_selector
+
+    def add_linked_selector(self, plot: "Plot"):
+        """Add both selectors to the new plot."""
+        self._rect_selector.add_linked_selector(plot)
+        self._crosshair_selector.add_linked_selector(plot)
+        if not self.is_integrating:
+            self._show_crosshair_selector()
+            self._hide_rect_selector()
+        else:
+            self._show_rect_selector()
+            self._hide_crosshair_selector()
+
+    def on_integrate_toggled(self, checked):
+        """Switch between crosshair and rectangle."""
+        if not checked:
+            self._hide_rect_selector()
+            self._show_crosshair_selector()
+        else:
+            self._hide_crosshair_selector()
+            self._show_rect_selector()
+        super().on_integrate_toggled(checked)
+
+    def _get_selected_indices(self):
+        """Handle both crosshair and rectangle selection."""
+        if not self.is_integrating:
+            # Use crosshair implementation
+            return self._crosshair_selector._get_selected_indices()
+        else:
+            # Use parent implementation for rectangle
+            return self._rect_selector._get_selected_indices()
+
+
+class LineSelector(BaseSelector):
+    """
+    A selector which uses a LineROI to select a region along one axis.
+    """
+
+    def __init__(
+        self,
+        parent: "PlotWindow",
+        children: Union["Plot", List["Plot"]],
+        update_function: Union[callable, List[callable]],
+        *args,
+        **kwargs,
+    ):
+        super().__init__(parent, children, update_function, *args, **kwargs)
+        self.selector = LineROI(
+            pen=self.roi_pen,
+            handlePen=self.handlePen,
+            hoverPen=self.hoverPen,
+            handleHoverPen=self.handleHoverPen,
+            *args,
+            **kwargs,
+        )
+        for plot in parent.plots:
+            plot.addItem(self.selector)
+        self.selector.sigRegionChanged.connect(self.update_data)
+
+    def _get_selected_indices(self):
+        """
+        Get the currently selected indices from the selector.
+        """
+        pos = self.selector.getArraySlice(
+            np.arange(self.parent.current_plot_item.data.shape[0]),
+            self.parent.data.shape,
+        )[0]
+        indices = np.array(
+            [[np.round(pos[0][i]).astype(int)] for i in range(len(pos[0]))]
+        )
+        return indices
