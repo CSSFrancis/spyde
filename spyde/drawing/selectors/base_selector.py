@@ -95,7 +95,7 @@ class BaseSelector:
         self.update_timer.timeout.connect(self.delayed_update_data)
         self.update_function = update_function
         self._last_size_sig = None
-        self.selector = None  # to be defined in subclasses # type: pg.ROI | None
+        self.roi = None  # to be defined in subclasses # type: pg.ROI | None
         self.linked_selectors = []  # type: List[ROI]
         self.multi_selector = multi_selector
         self.timer = None
@@ -104,9 +104,9 @@ class BaseSelector:
         """
         Apply a transformation to the selector.
         """
-        if self.selector is not None:
-            self.selector.resetTransform()
-            self.selector.setTransform(transform)
+        if self.roi is not None:
+            self.roi.resetTransform()
+            self.roi.setTransform(transform)
 
     def _get_selected_indices_from_upstream(self):
         """
@@ -237,7 +237,7 @@ class BaseSelector:
                 self._autorange_child_plot(child)
             self._last_size_sig = new_sig
 
-    def add_linked_selector(self, plot: "Plot"):
+    def add_linked_roi(self, plot: "Plot"):
         """
         Add the selector to a new plot.
         """
@@ -253,12 +253,21 @@ class BaseSelector:
         """
         Clean up the selector.
         """
-        if self.selector is not None:
+        self.hide()
+        for linked in self.linked_selectors:
             for plot in self.parent.plots:
-                if self.selector in plot.items:
-                    plot.removeItem(self.selector)
-                    plot.update()
-        self.selector = None
+                if linked in plot.items:
+                    plot.removeItem(linked)
+
+    def hide(self):
+        """
+        Hide the selector.
+        """
+        for linked in self.linked_selectors:
+            linked.hide()
+
+        if self.roi is not None:
+            self.roi.hide()
 
 
 class IntegratingSelectorMixin:

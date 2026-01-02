@@ -14,7 +14,7 @@ class PlotUpdateWorker(QtCore.QObject):
     Runs in its own thread; GUI updates happen via a signal on the main thread.
     """
 
-    plot_ready = QtCore.Signal(object, object)  # (plot, result)
+    plot_ready = QtCore.Signal(object, object, object)  # (plot, result, fid)
     signal_ready = QtCore.Signal(object, object, object)  # (signal, result)
     debug_print = QtCore.Signal(str)  # debug messages routed to main thread
 
@@ -122,4 +122,4 @@ class PlotUpdateWorker(QtCore.QObject):
                 self.debug_print.emit(f"Transferred Future over TCP in {(time.time() - start_transfer)*1000:.2f} ms")
         except Exception as e:
             result = e
-        emitter(plot, result)
+        emitter(plot, result, fid)

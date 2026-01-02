@@ -53,7 +53,7 @@ class LinearRegionSelector(BaseSelector):
 
         for plot in parent.plots:
             # The selector isn't actually added to any plot??
-            self.add_linked_selector(plot)
+            self.add_linked_roi(plot)
         self.selector.sigRegionChanged.connect(self.update_data)
 
 
@@ -81,7 +81,7 @@ class LinearRegionSelector(BaseSelector):
 
         return indices
 
-    def add_linked_selector(self, plot: "Plot"):
+    def add_linked_roi(self, plot: "Plot"):
 
         if self.selector is not None:
             new_selector = create_linked_linear_region(self.selector,
@@ -143,7 +143,7 @@ class InfiniteLineSelector(BaseSelector):
 
         for plot in parent.plots:
             # The selector isn't actually added to any plot??
-            self.add_linked_selector(plot)
+            self.add_linked_roi(plot)
         self.selector.sigPositionChanged.connect(self.update_data)
 
     def _get_selected_indices(self):
@@ -161,7 +161,7 @@ class InfiniteLineSelector(BaseSelector):
 
         return np.array([[index]])
 
-    def add_linked_selector(self, plot: "Plot"):
+    def add_linked_roi(self, plot: "Plot"):
 
         if self.selector is not None:
             new_selector = create_linked_infinite_line(self.selector,
@@ -217,7 +217,6 @@ class IntegratingSelector1D(IntegratingSelectorMixin):
             *args,
             **kwargs,
         )
-        self.selector = self._inf_line_selector
 
         self._hide_linear_region_selector()
         self.selector = self._inf_line_selector
@@ -250,8 +249,8 @@ class IntegratingSelector1D(IntegratingSelectorMixin):
 
     def add_linked_selector(self, plot: "Plot"):
         """Add both selectors to the new plot."""
-        self._inf_line_selector.add_linked_selector(plot)
-        self._linear_region_selector.add_linked_selector(plot)
+        self._inf_line_selector.add_linked_roi(plot)
+        self._linear_region_selector.add_linked_roi(plot)
         if not self.is_integrating:
             self._show_inf_line_selector()
             self._hide_linear_region_selector()
@@ -278,9 +277,26 @@ class IntegratingSelector1D(IntegratingSelectorMixin):
             # Use parent implementation for rectangle
             return self._linear_region_selector._get_selected_indices()
 
-    def move_selector(self, key: QtCore.Qt.Key):
+    def move_roi(self, key: QtCore.Qt.Key):
         """Move the active selector."""
         if not self.is_integrating:
-            self._inf_line_selector.move_selector(key)
+            self._inf_line_selector.move_roi(key)
         else:
-            self._linear_region_selector.move_selector(key)
+            self._linear_region_selector.move_roi(key)
+
+    def hide(self):
+        """Hide both selectors."""
+        self._inf_line_selector.hide()
+        self._linear_region_selector.hide()
+
+    def show(self):
+        """Show the active selector."""
+        if not self.is_integrating:
+            self._inf_line_selector.show()
+        else:
+            self._linear_region_selector.show()
+
+    def close(self):
+        """Close both selectors."""
+        self._inf_line_selector.close()
+        self._linear_region_selector.close()

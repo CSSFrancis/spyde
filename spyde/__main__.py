@@ -337,22 +337,28 @@ class MainWindow(QMainWindow):
                 selectors.extend(s.navigator_plot_manager.all_navigation_selectors)
         return selectors
 
-    @QtCore.Slot(object, object)
-    def on_plot_future_ready(self, plot: Plot, result: object) -> None:
+    @QtCore.Slot(object, object, object)
+    def on_plot_future_ready(self, plot: Plot, result: object, fid:int) -> None:
         """
         Receive finished compute results from the worker and apply them on the GUI thread.
 
         Parameters:
             plot: Plot to update.
             result: Either the computed data or an Exception.
+            fid: The id of the Future that was completed.
         """
         if isinstance(result, Exception):
             print(f"Plot update failed: {result}")
             return
         try:
             print("Updating Plot from worker signal...")
-            plot.current_data = result
-            plot.update()
+            # make sure that the future is still the current data. It may have changed meanwhile.
+            if id(plot.current_data) != fid:
+                print("Plot data has changed since the Future was issued; skipping update.")
+                return
+            else:
+                plot.current_data = result
+                plot.update()
         except Exception as e:
             print(f"Failed to update plot: {e}")
 

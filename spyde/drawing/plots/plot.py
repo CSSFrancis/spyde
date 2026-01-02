@@ -120,6 +120,9 @@ class Plot(PlotItem):
                                           create=True,
                                           size=BUFFER_SIZE)
 
+        self.data_max_y = 1  # type: float
+        self.data_min_y = 0  # type: float
+
     @property
     def toolbars(self):
         return [
@@ -205,6 +208,7 @@ class Plot(PlotItem):
     def set_plot_state(self, signal: BaseSignal):
         """Set the plot state to the state for some signal."""
         # first save the current plot state selectors and child plots
+
         old_plot_state = self.plot_state
         self.needs_auto_level = True
         if old_plot_state is not None:
@@ -226,6 +230,8 @@ class Plot(PlotItem):
                     child_plot.hide()
 
         # set the new plot state
+
+        print("setting Plot states: ", self.plot_states, " to signal:", signal)
         self.plot_state = self.plot_states.get(signal)
 
         # switch plot items if needed for dimensionality change
@@ -366,7 +372,7 @@ class Plot(PlotItem):
     def update_range(self):
         """Update the view range to fit the current data."""
         self.getViewBox().autoRange()
-        self.normalize_axes()
+        #self.normalize_axes()
 
     def mousePressEvent(self, ev):
         """Ensure clicking a plot marks it as the active plot."""
@@ -485,7 +491,6 @@ class Plot(PlotItem):
         )
         print("Showing selectors for plot_window:", self.plot_window)
         print("Current visible selectors:", visible_selectors)
-        print("Multiplot manager:", self.multiplot_manager.navigation_selectors)
         if self.multiplot_manager is not None:
             if self.plot_window not in self.multiplot_manager.navigation_selectors:
                 print("No navigation selectors for this plot window.")
@@ -626,8 +631,8 @@ class Plot(PlotItem):
                 else self.current_data
             )
             axis = self.plot_state.current_signal.axes_manager.signal_axes[0].axis
-            logger.info("Updating 1D plot with axis:", axis)
-            logger.info("Data shape:", current_data)
+            print("Updating 1D plot with axis:", axis)
+            print("Data shape:", current_data)
             self.line_item.setData(axis, current_data)
 
             if self._needs_hide_updating_text and self._updating_text is not None:
@@ -637,6 +642,8 @@ class Plot(PlotItem):
                 self._needs_hide_updating_text = False
 
             if self.needs_update_range:
+                self.data_max_y = np.nanmax(current_data)
+                self.data_min_y = np.nanmin(current_data)
                 self.update_range()
                 self.needs_update_range = False
 
@@ -673,10 +680,6 @@ class Plot(PlotItem):
             if self.needs_update_range:
                 self.update_range()
                 self.needs_update_range = False
-
-
-        if self.parent_selector is not None and self.parent_selector.timer is not None:
-            print(f"Update in {(time.time()- self.parent_selector.timer)*1000:.2f}ms")
 
 
     def close_plot(self):
