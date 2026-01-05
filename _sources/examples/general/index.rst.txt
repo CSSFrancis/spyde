@@ -1,0 +1,81 @@
+
+
+.. _sphx_glr_examples_general:
+
+General
+=======
+
+This directory contains general examples that demonstrate the general usage of SpyDE.
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbnails">
+
+.. thumbnail-parent-div-open
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to navigate through a high-dimensional dataset using selectors.">
+
+.. only:: html
+
+  .. image:: /examples/general/images/thumb/sphx_glr_navigating_with_selectors_thumb.png
+    :alt:
+
+  :doc:`/examples/general/navigating_with_selectors`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Navigating with Selectors</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to modify the scales and axes of a plot. These are rendered as QLabels but can be edited by left-clicking on them which will change them into QLineEdits for text input.">
+
+.. only:: html
+
+  .. image:: /examples/general/images/thumb/sphx_glr_editing_axes_thumb.png
+    :alt:
+
+  :doc:`/examples/general/editing_axes`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Changing Scales and Axes</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to open and visualize data using the SpyDE application.">
+
+.. only:: html
+
+  .. image:: /examples/general/images/thumb/sphx_glr_opening_data_thumb.png
+    :alt:
+
+  :doc:`/examples/general/opening_data`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Opening Data:</div>
+    </div>
+
+
+.. thumbnail-parent-div-close
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /examples/general/navigating_with_selectors
+   /examples/general/editing_axes
+   /examples/general/opening_data
+

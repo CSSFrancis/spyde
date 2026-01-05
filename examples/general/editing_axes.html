@@ -1,0 +1,762 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Changing Scales and Axes &#8212; spyde 0.0.1 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery.css?v=d2d258e8" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'examples/general/editing_axes';</script>
+    <link rel="icon" href="../../_static/icon.svg"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Opening Data:" href="opening_data.html" />
+    <link rel="prev" title="Navigating with Selectors" href="navigating_with_selectors.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/spyde_banner_light.svg" class="logo__image only-light" alt="spyde 0.0.1 documentation - Home"/>
+    <img src="../../_static/spyde_banner_dark.svg" class="logo__image only-dark pst-js-only" alt="spyde 0.0.1 documentation - Home"/>
+  
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="../../user_guide/index.html">
+    User Guide
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../index.html">
+    Examples
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../help.html">
+    Get Help
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../dev_guide/index.html">
+    Contribute
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="../../user_guide/index.html">
+    User Guide
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../index.html">
+    Examples
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../help.html">
+    Get Help
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../dev_guide/index.html">
+    Contribute
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../user_guide/gui_elements.html">GUI Elements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../user_guide/installing.html">Installing the Software</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Gallery of Examples</a></li>
+
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../../user_guide/index.html" class="nav-link">UserGuide</a></li>
+    
+    
+    <li class="breadcrumb-item"><a href="../index.html" class="nav-link">Gallery of Examples</a></li>
+    
+    
+    <li class="breadcrumb-item"><a href="index.html" class="nav-link">General</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Changing Scales and Axes</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <div class="sphx-glr-download-link-note admonition note">
+<p class="admonition-title">Note</p>
+<p><a class="reference internal" href="#sphx-glr-download-examples-general-editing-axes-py"><span class="std std-ref">Go to the end</span></a>
+to download the full example code.</p>
+</div>
+<section class="sphx-glr-example-title" id="changing-scales-and-axes">
+<span id="sphx-glr-examples-general-editing-axes-py"></span><h1>Changing Scales and Axes<a class="headerlink" href="#changing-scales-and-axes" title="Link to this heading">#</a></h1>
+<p>This example demonstrates how to modify the scales and axes of a plot. These are rendered as QLabels but
+can be edited by left-clicking on them which will change them into QLineEdits for text input.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span>
+</pre></div>
+</div>
+<img src="../../_images/sphx_glr_editing_axes_001.png" srcset="../../_images/sphx_glr_editing_axes_001.png" alt="editing axes" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>CPU Count: 3
+[startup] Plot update worker thread start completed in 0.0 ms
+[startup] Plot control dock creation completed in 15.0 ms
+[startup] Inst. control dock creation completed in 16.8 ms
+Starting Dask LocalCluster with 1 workers, and 1 threads per worker
+Creating Data
+Dialog accepted
+Data created
+Creating Signal Tree for signal
+Dask cluster ready. Dashboard: http://127.0.0.1:8787/status
+Initializing navigator for root signal:  &lt;LazySignal2D, title: , dimensions: (10|256, 256)&gt;
+Navigator initialized:  [&lt;LazySignal1D, title: , dimensions: (|10)&gt;]
+resolved icons /Users/runner/work/spyde/spyde/spyde/qt/assets/icons/minimize.svg
+False
+{&lt;spyde.drawing.plots.plot.Plot(0x1697c79a0, parent=0x1697c51c0, pos=12,12, flags=(ItemUsesExtendedStyleOption|ItemSendsGeometryChanges)) at 0x16aba1700&gt;: [(0, 0)]}  after adding item at ( 0 , 0 )
+Adding navigation plot states for signals: [&lt;LazySignal1D, title: , dimensions: (|10)&gt;]
+{&lt;spyde.drawing.plots.plot_window.PlotWindow(0x1697c93b0) at 0x158d85e80&gt;: {}}
+Adding navigation plot state for plot: &lt;spyde.drawing.plots.plot.Plot(0x1697c79a0, parent=0x1697c51c0, pos=12,12, flags=(ItemUsesExtendedStyleOption|ItemSendsGeometryChanges)) at 0x16aba1700&gt;
+Plot states {}
+SubTB: [[]]
+SubTB: [[], []]
+SubTB: [[], [], []]
+SubTB: [[], [], [], []]
+SubTB: [[], [], [], [], []]
+Adding toolbar action: Reset to right toolbar
+Function: functools.partial(&lt;function reset_view at 0x147d363e0&gt;, action_name=&#39;Reset&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/fullsize.svg, Toggle: False, Params: {}
+Adding toolbar action: Zoom In to right toolbar
+Function: functools.partial(&lt;function zoom_in at 0x147d34ea0&gt;, action_name=&#39;Zoom In&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/zoom.svg, Toggle: False, Params: {}
+Adding toolbar action: Zoom Out to right toolbar
+Function: functools.partial(&lt;function zoom_out at 0x147d36340&gt;, action_name=&#39;Zoom Out&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/zoomout.svg, Toggle: False, Params: {}
+Adding toolbar action: Add Selector to right toolbar
+Function: functools.partial(&lt;function add_selector at 0x147d371a0&gt;, action_name=&#39;Add Selector&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/add_selector.svg, Toggle: False, Params: {}
+Adding toolbar action: Select Navigator to right toolbar
+Function: functools.partial(&lt;function toggle_navigation_plots at 0x147d372e0&gt;, action_name=&#39;Select Navigator&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/navigator.svg, Toggle: True, Params: {}
+Initialized PlotState: &lt;PlotState signal=&lt;LazySignal1D, title: , dimensions: (|10)&gt;, dimensions=1, dynamic=False&gt;
+setting Plot states:  {&lt;LazySignal1D, title: , dimensions: (|10)&gt;: &lt;PlotState signal=&lt;LazySignal1D, title: , dimensions: (|10)&gt;, dimensions=1, dynamic=False&gt;}  to signal: &lt;LazySignal1D, title: , dimensions: (|10)&gt;
+updating data for static plot state... [&lt;Future: pending, key: finalize-hlgfinalizecompute-5e7ed98f27f743b3872d1c4ab8e52ece&gt;]
+Updating plot data [&lt;Future: pending, key: finalize-hlgfinalizecompute-5e7ed98f27f743b3872d1c4ab8e52ece&gt;]  force= False
+Updating 1D plot with axis: [0. 1. 2. 3. 4. 5. 6. 7. 8. 9.]
+Data shape: [1. 1. 1. 1. 1. 1. 1. 1. 1. 1.]
+The view range: [[0, 1], [0, 1]]
+Setting current data to: &lt;Future: pending, key: finalize-hlgfinalizecompute-5e7ed98f27f743b3872d1c4ab8e52ece&gt;
+Plot data updated.
+Showing selectors for plot_window: &lt;spyde.drawing.plots.plot_window.PlotWindow(0x1697c93b0) at 0x158d85e80&gt;
+Current visible selectors: []
+visible selectors: []
+Updating axes widget, plot state: &lt;PlotState signal=&lt;LazySignal1D, title: , dimensions: (|10)&gt;, dimensions=1, dynamic=False&gt;
+Getting metadata widget
+Processing subsection: Instrument Metadata
+Processing property: Mag with value: {&#39;key&#39;: &#39;Acquisition_instrument.TEM.magnification&#39;, &#39;type&#39;: &#39;float&#39;, &#39;description&#39;: &#39;The magnification factor of the instrument.&#39;, &#39;default&#39;: &#39;--&#39;, &#39;units&#39;: &#39;x&#39;}
+Resolved value for Mag: -- x
+Processing property: Acc. Volt. with value: {&#39;key&#39;: &#39;Acquisition_instrument.TEM.beam_energy&#39;, &#39;type&#39;: &#39;float&#39;, &#39;description&#39;: &#39;The acceleration voltage used during imaging.&#39;, &#39;default&#39;: &#39;--&#39;, &#39;units&#39;: &#39;kV&#39;}
+Resolved value for Acc. Volt.: -- kV
+Processing property: Cam. Len. with value: {&#39;key&#39;: &#39;Acquisition_instrument.TEM.camera_length&#39;, &#39;type&#39;: &#39;float&#39;, &#39;description&#39;: &#39;The camera length setting of the instrument.&#39;, &#39;default&#39;: &#39;--&#39;, &#39;units&#39;: &#39;mm&#39;}
+Resolved value for Cam. Len.: -- mm
+Processing property: Conv. Angle with value: {&#39;key&#39;: &#39;Acquisition_instrument.TEM.convergence_angle&#39;, &#39;type&#39;: &#39;float&#39;, &#39;description&#39;: &#39;The convergence angle of the electron beam.&#39;, &#39;default&#39;: &#39;--&#39;, &#39;units&#39;: &#39;mrad&#39;}
+Resolved value for Conv. Angle: -- mrad
+Processing subsection: Root Experiment Details
+Processing property: Name with value: {&#39;key&#39;: &#39;General.title&#39;, &#39;type&#39;: &#39;string&#39;, &#39;description&#39;: &#39;Name of the experiment.&#39;, &#39;default&#39;: &#39;--&#39;}
+Resolved value for Name:
+Processing property: Date with value: {&#39;key&#39;: &#39;General.date&#39;, &#39;type&#39;: &#39;string&#39;, &#39;description&#39;: &#39;Date when the experiment was conducted.&#39;, &#39;default&#39;: &#39;YYYY-MM-DD&#39;}
+Resolved value for Date: YYYY-MM-DD
+Processing property: e-/s with value: {&#39;type&#39;: &#39;float&#39;, &#39;key&#39;: &#39;Acquisition_instrument.TEM.electrons_per_second&#39;, &#39;description&#39;: &#39;Electrons per second.&#39;, &#39;default&#39;: &#39;--&#39;, &#39;units&#39;: &#39;e/s&#39;}
+Resolved value for e-/s: -- e/s
+Processing property: Dtype with value: {&#39;type&#39;: &#39;string&#39;, &#39;attr&#39;: &#39;root.data.dtype.name&#39;, &#39;description&#39;: &#39;Type of data collected.&#39;, &#39;default&#39;: &#39;--&#39;}
+Resolved value for Dtype: int8
+Processing property: Dim. with value: {&#39;type&#39;: &#39;string&#39;, &#39;function&#39;: &#39;root.axes_manager._get_dimension_str()&#39;, &#39;description&#39;: &#39;Dimensions of the collected data.&#39;, &#39;default&#39;: &#39;--&#39;}
+Calling function for property Dim.: root.axes_manager._get_dimension_str()
+Function root.axes_manager._get_dimension_str() not found.
+Resolved value for Dim.: --
+Processing property: Mode with value: {&#39;type&#39;: &#39;string&#39;, &#39;key&#39;: &#39;Acquisition_instrument.Detector.exposure_mode&#39;, &#39;description&#39;: &#39;Integrating or counting mode.&#39;, &#39;default&#39;: &#39;--&#39;}
+Resolved value for Mode: --
+Processing property: Cam. with value: {&#39;type&#39;: &#39;string&#39;, &#39;key&#39;: &#39;Acquisition_instrument.Detector.camera_model&#39;, &#39;description&#39;: &#39;The camera model used for data acquisition.&#39;, &#39;default&#39;: &#39;--&#39;}
+Resolved value for Cam.: --
+Final Subsections: {&#39;Instrument Metadata&#39;: {&#39;Mag&#39;: &#39;-- x&#39;, &#39;Acc. Volt.&#39;: &#39;-- kV&#39;, &#39;Cam. Len.&#39;: &#39;-- mm&#39;, &#39;Conv. Angle&#39;: &#39;-- mrad&#39;}, &#39;Root Experiment Details&#39;: {&#39;Name&#39;: &#39;&#39;, &#39;Date&#39;: &#39;YYYY-MM-DD&#39;, &#39;e-/s&#39;: &#39;-- e/s&#39;, &#39;Dtype&#39;: &#39;int8&#39;, &#39;Dim.&#39;: &#39;--&#39;, &#39;Mode&#39;: &#39;--&#39;, &#39;Cam.&#39;: &#39;--&#39;}}
+Parent selector None
+Delayed updating data for plot state: &lt;PlotState signal=&lt;LazySignal1D, title: , dimensions: (|10)&gt;, dimensions=1, dynamic=False&gt;
+&lt;pyqtgraph.graphicsItems.ImageItem.ImageItem(0x1697d5010, pos=0,0, flags=(ItemSendsGeometryChanges)) at 0x169987700&gt;
+Showing toolbars for plot state: &lt;PlotState signal=&lt;LazySignal1D, title: , dimensions: (|10)&gt;, dimensions=1, dynamic=False&gt;
+Adding navigation selector to plot window: &lt;spyde.drawing.plots.plot_window.PlotWindow(0x1697c93b0) at 0x158d85e80&gt;  with dim: 1
+Plot window level: 1  children dict: {}
+{&lt;spyde.drawing.plots.plot_window.PlotWindow(0x1697c93b0) at 0x158d85e80&gt;: {}}
+1
+resolved icons /Users/runner/work/spyde/spyde/spyde/qt/assets/icons/minimize.svg
+False
+{&lt;spyde.drawing.plots.plot.Plot(0x16ad3abf0, parent=0x16ad395c0, pos=12,12, flags=(ItemUsesExtendedStyleOption|ItemSendsGeometryChanges)) at 0x16ab7b140&gt;: [(0, 0)]}  after adding item at ( 0 , 0 )
+Hiding [&lt;pyqtgraph.graphicsItems.LinearRegionItem.LinearRegionItem(0x158ee4e90, parent=0x1697d5fe0, pos=0,0, flags=(ItemSendsGeometryChanges)) at 0x16ac34b40&gt;]
+Plot states {}
+SubTB: [[]]
+SubTB: [[], []]
+SubTB: [[], [], []]
+SubTB: [[], [], [], []]
+SubTB: [[], [], [], [], []]
+SubTB: [[], [], [], [], [], []]
+SubTB: [[], [], [], [], [], [], []]
+add_virtual_image
+{&#39;add_virtual_image&#39;: {&#39;name&#39;: &#39;Add Virtual Image&#39;, &#39;description&#39;: &#39;Adds a virtual image from the 4D-STEM data.&#39;, &#39;icon&#39;: &#39;drawing/toolbars/icons/zoom.svg&#39;, &#39;function&#39;: &#39;spyde.actions.pyxem.add_virtual_image&#39;}}
+Sub Entries [(functools.partial(&lt;function add_virtual_image at 0x159258e00&gt;, action_name=&#39;add_virtual_image&#39;), &#39;/Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/zoom.svg&#39;, &#39;Add Virtual Image&#39;, False, {})]
+SubTB: [[], [], [], [], [], [], [], [(functools.partial(&lt;function add_virtual_image at 0x159258e00&gt;, action_name=&#39;add_virtual_image&#39;), &#39;/Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/zoom.svg&#39;, &#39;Add Virtual Image&#39;, False, {})]]
+Adding toolbar action: Reset to right toolbar
+Function: functools.partial(&lt;function reset_view at 0x147d363e0&gt;, action_name=&#39;Reset&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/fullsize.svg, Toggle: False, Params: {}
+Adding toolbar action: Zoom In to right toolbar
+Function: functools.partial(&lt;function zoom_in at 0x147d34ea0&gt;, action_name=&#39;Zoom In&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/zoom.svg, Toggle: False, Params: {}
+Adding toolbar action: Zoom Out to right toolbar
+Function: functools.partial(&lt;function zoom_out at 0x147d36340&gt;, action_name=&#39;Zoom Out&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/zoomout.svg, Toggle: False, Params: {}
+Adding toolbar action: FFT to right toolbar
+Function: functools.partial(&lt;function add_fft_selector at 0x147d37240&gt;, action_name=&#39;FFT&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/fft.svg, Toggle: False, Params: {}
+Adding toolbar action: Navigate Signal Tree to right toolbar
+Function: functools.partial(&lt;function toggle_signal_tree at 0x147d377e0&gt;, action_name=&#39;Navigate Signal Tree&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/signal_tree.svg, Toggle: True, Params: {}
+Adding toolbar action: Rebin to bottom toolbar
+Function: functools.partial(&lt;function rebin2d at 0x147d37740&gt;, action_name=&#39;Rebin&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/rebin.svg, Toggle: True, Params: {&#39;scale_x&#39;: {&#39;name&#39;: &#39;Scale X&#39;, &#39;type&#39;: &#39;int&#39;, &#39;default&#39;: 2}, &#39;scale_y&#39;: {&#39;name&#39;: &#39;Scale Y&#39;, &#39;type&#39;: &#39;int&#39;, &#39;default&#39;: 2}}
+Setting CaretGroup side opposite to toolbar position: bottom
+Creating CaretParams with parameters: {&#39;scale_x&#39;: {&#39;name&#39;: &#39;Scale X&#39;, &#39;type&#39;: &#39;int&#39;, &#39;default&#39;: 2}, &#39;scale_y&#39;: {&#39;name&#39;: &#39;Scale Y&#39;, &#39;type&#39;: &#39;int&#39;, &#39;default&#39;: 2}}
+Adding toolbar action: Center Zero Beam to bottom toolbar
+Function: functools.partial(&lt;function center_zero_beam at 0x159259120&gt;, action_name=&#39;Center Zero Beam&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/center_zero_beam.svg, Toggle: True, Params: {&#39;method&#39;: {&#39;name&#39;: &#39;Method&#39;, &#39;type&#39;: &#39;enum&#39;, &#39;default&#39;: &#39;blur&#39;, &#39;options&#39;: [&#39;cross_correlate&#39;, &#39;center_of_mass&#39;, &#39;blur&#39;, &#39;interpolate&#39;]}, &#39;sigma&#39;: {&#39;name&#39;: &#39;Sigma&#39;, &#39;type&#39;: &#39;float&#39;, &#39;default&#39;: 2.0, &#39;display_condition&#39;: {&#39;parameter&#39;: &#39;method&#39;, &#39;value&#39;: &#39;blur&#39;}}, &#39;min_cc_disk_radius&#39;: {&#39;name&#39;: &#39;Min CC Disk Radius&#39;, &#39;type&#39;: &#39;int&#39;, &#39;default&#39;: 5, &#39;display_condition&#39;: {&#39;parameter&#39;: &#39;method&#39;, &#39;value&#39;: &#39;cross_correlate&#39;}}, &#39;max_cc_disk_radius&#39;: {&#39;name&#39;: &#39;Max CC Disk Radius&#39;, &#39;type&#39;: &#39;int&#39;, &#39;default&#39;: 15, &#39;display_condition&#39;: {&#39;parameter&#39;: &#39;method&#39;, &#39;value&#39;: &#39;cross_correlate&#39;}}, &#39;signal_slice&#39;: {&#39;name&#39;: &#39;Signal Slice&#39;, &#39;type&#39;: &#39;RectangleSelector&#39;, &#39;position&#39;: &#39;centered&#39;, &#39;size&#39;: 0.2}, &#39;make_flat_field&#39;: {&#39;name&#39;: &#39;Make Flat Field&#39;, &#39;type&#39;: &#39;bool&#39;, &#39;default&#39;: False}}
+Setting CaretGroup side opposite to toolbar position: bottom
+Creating CaretParams with parameters: {&#39;method&#39;: {&#39;name&#39;: &#39;Method&#39;, &#39;type&#39;: &#39;enum&#39;, &#39;default&#39;: &#39;blur&#39;, &#39;options&#39;: [&#39;cross_correlate&#39;, &#39;center_of_mass&#39;, &#39;blur&#39;, &#39;interpolate&#39;]}, &#39;sigma&#39;: {&#39;name&#39;: &#39;Sigma&#39;, &#39;type&#39;: &#39;float&#39;, &#39;default&#39;: 2.0, &#39;display_condition&#39;: {&#39;parameter&#39;: &#39;method&#39;, &#39;value&#39;: &#39;blur&#39;}}, &#39;min_cc_disk_radius&#39;: {&#39;name&#39;: &#39;Min CC Disk Radius&#39;, &#39;type&#39;: &#39;int&#39;, &#39;default&#39;: 5, &#39;display_condition&#39;: {&#39;parameter&#39;: &#39;method&#39;, &#39;value&#39;: &#39;cross_correlate&#39;}}, &#39;max_cc_disk_radius&#39;: {&#39;name&#39;: &#39;Max CC Disk Radius&#39;, &#39;type&#39;: &#39;int&#39;, &#39;default&#39;: 15, &#39;display_condition&#39;: {&#39;parameter&#39;: &#39;method&#39;, &#39;value&#39;: &#39;cross_correlate&#39;}}, &#39;signal_slice&#39;: {&#39;name&#39;: &#39;Signal Slice&#39;, &#39;type&#39;: &#39;RectangleSelector&#39;, &#39;position&#39;: &#39;centered&#39;, &#39;size&#39;: 0.2}, &#39;make_flat_field&#39;: {&#39;name&#39;: &#39;Make Flat Field&#39;, &#39;type&#39;: &#39;bool&#39;, &#39;default&#39;: False}}
+Adding RectangleSelector ROI for parameter: signal_slice
+Toolbar available: True
+toolbar.plot available: True
+Current signal extent: (0.0, 255.0, 0.0, 255.0)
+Computed signal center: (127.5, 127.5)
+Computed signal width: 255.0
+Computed ROI size: 51.0 51.0
+Computed ROI position: PySide6.QtCore.QPointF(102.000000, 102.000000)
+Adding RectangleSelector ROI to plot.
+Adding toolbar action: Virtual Imaging to bottom toolbar
+Function: functools.partial(&lt;function virtual_imaging at 0x159259260&gt;, action_name=&#39;Virtual Imaging&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/virtual_image_color.svg, Toggle: True, Params: {}
+Restoring plot items for action: Center Zero Beam
+Initialized PlotState: &lt;PlotState signal=&lt;LazySignal2D, title: , dimensions: (10|256, 256)&gt;, dimensions=2, dynamic=True&gt;
+setting Plot states:  {&lt;LazySignal2D, title: , dimensions: (10|256, 256)&gt;: &lt;PlotState signal=&lt;LazySignal2D, title: , dimensions: (10|256, 256)&gt;, dimensions=2, dynamic=True&gt;}  to signal: &lt;LazySignal2D, title: , dimensions: (10|256, 256)&gt;
+All Items: [&lt;pyqtgraph.graphicsItems.ImageItem.ImageItem(0x158ed9ba0, parent=0x16ad3e750, pos=0,0, flags=(ItemSendsGeometryChanges)) at 0x16ac0f400&gt;]
+Multi Selector
+Upstream Indices:  []
+Combined Indices: [[0]]
+Updating child plot based on navigation selection with indices: [[0]]
+Current signal shape (10, 256, 256)
+Cache in shared memory: True
+Updating plot data &lt;Future: pending, key: write_shared_array-f204178d7b0ac35b50a897a315267086&gt;  force= False
+Setting image data with img [[0. 1. 0. ... 1. 0. 1.]
+ [1. 1. 1. ... 1. 1. 1.]
+ [0. 1. 0. ... 1. 0. 1.]
+ ...
+ [1. 1. 1. ... 1. 1. 1.]
+ [0. 1. 0. ... 1. 0. 1.]
+ [1. 1. 1. ... 1. 1. 1.]]
+setImage took 0.17ms
+The view range: [[-0.5404624277456649, 0.5404624277456649], [-0.5000000000000001, 0.5000000000000001]]
+Setting current data to: &lt;Future: pending, key: write_shared_array-f204178d7b0ac35b50a897a315267086&gt;
+Plot data updated.
+updating data for dynamic plot state... &lt;Future: pending, key: write_shared_array-f204178d7b0ac35b50a897a315267086&gt;
+Updating plot data &lt;Future: pending, key: write_shared_array-f204178d7b0ac35b50a897a315267086&gt;  force= False
+Setting current data to: &lt;Future: pending, key: write_shared_array-f204178d7b0ac35b50a897a315267086&gt;
+Plot data updated.
+Updating selectors for new image transform: []
+50.0 &lt;undefined&gt;
+50.0 &amp;lt;undefined&amp;gt;
+Showing selectors for plot_window: &lt;spyde.drawing.plots.plot_window.PlotWindow(0x16ad2f2b0) at 0x1699f6800&gt;
+Current visible selectors: []
+No navigation selectors for this plot window.
+visible selectors: []
+Updating axes widget, plot state: &lt;PlotState signal=&lt;LazySignal2D, title: , dimensions: (10|256, 256)&gt;, dimensions=2, dynamic=True&gt;
+Removing selector control widgets for plot_window: &lt;spyde.drawing.plots.plot_window.PlotWindow(0x1697c93b0) at 0x158d85e80&gt;
+Nav sel {&lt;spyde.drawing.plots.plot_window.PlotWindow(0x1697c93b0) at 0x158d85e80&gt;: [&lt;spyde.drawing.selectors.selector1d.IntegratingSelector1D object at 0x16abd7010&gt;]}
+Plot win &lt;spyde.drawing.plots.plot_window.PlotWindow(0x1697c93b0) at 0x158d85e80&gt;
+Parent selector &lt;spyde.drawing.selectors.selector1d.LinearRegionSelector object at 0x1699e0310&gt;
+Delayed updating data for plot state: &lt;PlotState signal=&lt;LazySignal2D, title: , dimensions: (10|256, 256)&gt;, dimensions=2, dynamic=True&gt;
+Multi Selector
+Upstream Indices:  []
+Combined Indices: [[0]]
+Updating child plot based on navigation selection with indices: [[0]]
+Current signal shape (10, 256, 256)
+Cache in shared memory: True
+Updating plot data &lt;Future: pending, key: write_shared_array-d0f61943b2b392aca180919eb75f7e13&gt;  force= False
+Setting current data to: &lt;Future: pending, key: write_shared_array-d0f61943b2b392aca180919eb75f7e13&gt;
+Plot data updated.
+&lt;pyqtgraph.graphicsItems.ImageItem.ImageItem(0x158ed9ba0, parent=0x16ad3e750, pos=0,0, flags=(ItemSendsGeometryChanges)) at 0x16ac0f400&gt;
+Showing toolbars for plot state: &lt;PlotState signal=&lt;LazySignal2D, title: , dimensions: (10|256, 256)&gt;, dimensions=2, dynamic=True&gt;
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/pyqtgraph/graphicsItems/PlotItem/PlotItem.py:615: UserWarning: Item already added to PlotItem, ignoring.
+  warnings.warn(&#39;Item already added to PlotItem, ignoring.&#39;)
+Updating Data
+Multi Selector
+Upstream Indices:  []
+Combined Indices: [[0]]
+Not integrating, taking mean of indices
+Updating child plot based on navigation selection with indices: [0]
+Current signal shape (10, 256, 256)
+Cache in shared memory: True
+Updating plot data &lt;Future: pending, key: write_shared_array-f2da68ad0e04bb3a0fed25b893128bf8&gt;  force= False
+Setting current data to: &lt;Future: pending, key: write_shared_array-f2da68ad0e04bb3a0fed25b893128bf8&gt;
+Plot data updated.
+Updating plot data &lt;Future: pending, key: write_shared_array-f2da68ad0e04bb3a0fed25b893128bf8&gt;  force= False
+Setting current data to: &lt;Future: pending, key: write_shared_array-f2da68ad0e04bb3a0fed25b893128bf8&gt;
+Plot data updated.
+Created Signal Tree with root signal:  &lt;LazySignal2D, title: , dimensions: (10|256, 256)&gt;
+Signal Tree Created
+Adding navigator signal: Temperature
+Adding navigation plot states for signals: [&lt;Signal1D, title: Temperature, dimensions: (|10)&gt;]
+{&lt;spyde.drawing.plots.plot_window.PlotWindow(0x1697c93b0) at 0x158d85e80&gt;: {&lt;spyde.drawing.plots.plot_window.PlotWindow(0x16ad2f2b0) at 0x1699f6800&gt;: {}}}
+Adding navigation plot state for plot: &lt;spyde.drawing.plots.plot.Plot(0x1697c79a0, parent=0x1697c51c0, pos=12,12, flags=(ItemUsesExtendedStyleOption|ItemSendsGeometryChanges)) at 0x16aba1700&gt;
+Plot states {&lt;LazySignal1D, title: , dimensions: (|10)&gt;: &lt;PlotState signal=&lt;LazySignal1D, title: , dimensions: (|10)&gt;, dimensions=1, dynamic=False&gt;}
+SubTB: [[]]
+SubTB: [[], []]
+SubTB: [[], [], []]
+SubTB: [[], [], [], []]
+SubTB: [[], [], [], [], []]
+Adding toolbar action: Reset to right toolbar
+Function: functools.partial(&lt;function reset_view at 0x147d363e0&gt;, action_name=&#39;Reset&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/fullsize.svg, Toggle: False, Params: {}
+Adding toolbar action: Zoom In to right toolbar
+Function: functools.partial(&lt;function zoom_in at 0x147d34ea0&gt;, action_name=&#39;Zoom In&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/zoom.svg, Toggle: False, Params: {}
+Adding toolbar action: Zoom Out to right toolbar
+Function: functools.partial(&lt;function zoom_out at 0x147d36340&gt;, action_name=&#39;Zoom Out&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/zoomout.svg, Toggle: False, Params: {}
+Adding toolbar action: Add Selector to right toolbar
+Function: functools.partial(&lt;function add_selector at 0x147d371a0&gt;, action_name=&#39;Add Selector&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/add_selector.svg, Toggle: False, Params: {}
+Adding toolbar action: Select Navigator to right toolbar
+Function: functools.partial(&lt;function toggle_navigation_plots at 0x147d372e0&gt;, action_name=&#39;Select Navigator&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/navigator.svg, Toggle: True, Params: {}
+Initialized PlotState: &lt;PlotState signal=&lt;Signal1D, title: Temperature, dimensions: (|10)&gt;, dimensions=1, dynamic=False&gt;
+Adding navigator signal: Voltage
+Adding navigation plot states for signals: [&lt;Signal1D, title: Voltage, dimensions: (|10)&gt;]
+{&lt;spyde.drawing.plots.plot_window.PlotWindow(0x1697c93b0) at 0x158d85e80&gt;: {&lt;spyde.drawing.plots.plot_window.PlotWindow(0x16ad2f2b0) at 0x1699f6800&gt;: {}}}
+Adding navigation plot state for plot: &lt;spyde.drawing.plots.plot.Plot(0x1697c79a0, parent=0x1697c51c0, pos=12,12, flags=(ItemUsesExtendedStyleOption|ItemSendsGeometryChanges)) at 0x16aba1700&gt;
+Plot states {&lt;LazySignal1D, title: , dimensions: (|10)&gt;: &lt;PlotState signal=&lt;LazySignal1D, title: , dimensions: (|10)&gt;, dimensions=1, dynamic=False&gt;, &lt;Signal1D, title: Temperature, dimensions: (|10)&gt;: &lt;PlotState signal=&lt;Signal1D, title: Temperature, dimensions: (|10)&gt;, dimensions=1, dynamic=False&gt;}
+SubTB: [[]]
+SubTB: [[], []]
+SubTB: [[], [], []]
+SubTB: [[], [], [], []]
+SubTB: [[], [], [], [], []]
+Adding toolbar action: Reset to right toolbar
+Function: functools.partial(&lt;function reset_view at 0x147d363e0&gt;, action_name=&#39;Reset&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/fullsize.svg, Toggle: False, Params: {}
+Adding toolbar action: Zoom In to right toolbar
+Function: functools.partial(&lt;function zoom_in at 0x147d34ea0&gt;, action_name=&#39;Zoom In&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/zoom.svg, Toggle: False, Params: {}
+Adding toolbar action: Zoom Out to right toolbar
+Function: functools.partial(&lt;function zoom_out at 0x147d36340&gt;, action_name=&#39;Zoom Out&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/zoomout.svg, Toggle: False, Params: {}
+Adding toolbar action: Add Selector to right toolbar
+Function: functools.partial(&lt;function add_selector at 0x147d371a0&gt;, action_name=&#39;Add Selector&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/add_selector.svg, Toggle: False, Params: {}
+Adding toolbar action: Select Navigator to right toolbar
+Function: functools.partial(&lt;function toggle_navigation_plots at 0x147d372e0&gt;, action_name=&#39;Select Navigator&#39;), Icon: /Users/runner/work/spyde/spyde/spyde/drawing/toolbars/icons/navigator.svg, Toggle: True, Params: {}
+Initialized PlotState: &lt;PlotState signal=&lt;Signal1D, title: Voltage, dimensions: (|10)&gt;, dimensions=1, dynamic=False&gt;
+</pre></div>
+</div>
+<p>After opening the example data, we can see that the plot has default axis labels and scales.
+By left-clicking on the axis labels (e.g., “X Axis” or “Y Axis”), we can edit them to more meaningful names.
+Similarly, by left-clicking on the scale labels (e.g., “1.0” on the X-axis), we can change the scale values.
+This allows us to customize the plot to better represent the data being visualized.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span>
+</pre></div>
+</div>
+<img src="../../_images/sphx_glr_editing_axes_002.png" srcset="../../_images/sphx_glr_editing_axes_002.png" alt="editing axes" class = "sphx-glr-single-img"/><p>There is some limited support for mathematical expressions in the axis labels using LaTeX syntax.
+For example, we can label an axis as “$nm^{-1}$” to represent nanometers.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span>
+</pre></div>
+</div>
+<img src="../../_images/sphx_glr_editing_axes_003.png" srcset="../../_images/sphx_glr_editing_axes_003.png" alt="editing axes" class = "sphx-glr-single-img"/><div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="c1"># After editing the axis labels and scales, the plot now reflects these changes with the updated labels and scales.</span>
+<span class="c1"># This enhances the clarity and interpretability of the plot, making it easier to understand the data being presented.</span>
+</pre></div>
+</div>
+<img src="../../_images/sphx_glr_editing_axes_004.png" srcset="../../_images/sphx_glr_editing_axes_004.png" alt="editing axes" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>Updating navigator plot image rectangle for:  [&lt;spyde.drawing.plots.plot.Plot(0x1697c79a0, parent=0x1697c51c0, pos=12,12, flags=(ItemUsesExtendedStyleOption|ItemSendsGeometryChanges)) at 0x16aba1700&gt;]
+Traceback (most recent call last):
+  File &quot;/Users/runner/work/spyde/spyde/spyde/signal_tree.py&quot;, line 232, in _on_axis_field_edit
+    plot.update_image_rectangle()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: &#39;list&#39; object has no attribute &#39;update_image_rectangle&#39;
+</pre></div>
+</div>
+<p>Finally, we can see the main window with the updated axis labels and scales reflected in the plot.</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 3.031 seconds)</p>
+<div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-examples-general-editing-axes-py">
+<div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
+<p><a class="reference download internal" download="" href="../../_downloads/0acef8ef89545a96a1dfe32eb71ba87a/editing_axes.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">editing_axes.ipynb</span></code></a></p>
+</div>
+<div class="sphx-glr-download sphx-glr-download-python docutils container">
+<p><a class="reference download internal" download="" href="../../_downloads/90e79039b89eefdc2732e7db9c9b6514/editing_axes.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">editing_axes.py</span></code></a></p>
+</div>
+<div class="sphx-glr-download sphx-glr-download-zip docutils container">
+<p><a class="reference download internal" download="" href="../../_downloads/aa75c4f15488072318aa51b79c44cd19/editing_axes.zip"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">zipped:</span> <span class="pre">editing_axes.zip</span></code></a></p>
+</div>
+</div>
+<p class="sphx-glr-signature"><a class="reference external" href="https://sphinx-gallery.github.io">Gallery generated by Sphinx-Gallery</a></p>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="navigating_with_selectors.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Navigating with Selectors</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="opening_data.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Opening Data:</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="../../_sources/examples/general/editing_axes.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2025, Direct Electron.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.2.3.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.16.1.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>
