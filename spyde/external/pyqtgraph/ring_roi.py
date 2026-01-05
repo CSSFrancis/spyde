@@ -1,6 +1,6 @@
 from __future__ import annotations
-from PySide6 import QtCore, QtGui, QtWidgets
-from pyqtgraph import ROI, CircleROI
+from PySide6 import QtCore, QtWidgets
+from pyqtgraph import  CircleROI
 import numpy as np
 
 

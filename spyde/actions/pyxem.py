@@ -7,7 +7,7 @@ from pyqtgraph import RectROI, CircleROI, mkPen
 
 from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
 from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
-from spyde.qt.ring_roi import RingROI
+from spyde.external.pyqtgraph.ring_roi import RingROI
 
 
 def center_zero_beam(

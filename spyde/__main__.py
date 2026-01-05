@@ -337,22 +337,28 @@ class MainWindow(QMainWindow):
                 selectors.extend(s.navigator_plot_manager.all_navigation_selectors)
         return selectors
 
-    @QtCore.Slot(object, object)
-    def on_plot_future_ready(self, plot: Plot, result: object) -> None:
+    @QtCore.Slot(object, object, object)
+    def on_plot_future_ready(self, plot: Plot, result: object, fid:int) -> None:
         """
         Receive finished compute results from the worker and apply them on the GUI thread.
 
         Parameters:
             plot: Plot to update.
             result: Either the computed data or an Exception.
+            fid: The id of the Future that was completed.
         """
         if isinstance(result, Exception):
             print(f"Plot update failed: {result}")
             return
         try:
             print("Updating Plot from worker signal...")
-            plot.current_data = result
-            plot.update()
+            # make sure that the future is still the current data. It may have changed meanwhile.
+            if id(plot.current_data) != fid:
+                print("Plot data has changed since the Future was issued; skipping update.")
+                return
+            else:
+                plot.current_data = result
+                plot.update()
         except Exception as e:
             print(f"Failed to update plot: {e}")
 
@@ -433,6 +439,10 @@ class MainWindow(QMainWindow):
         view_plot_control_action.triggered.connect(self.toggle_plot_control_dock)
         view_menu.addAction(view_plot_control_action)
 
+        view_camera_control_action = QAction("Toggle Instrument Control Dock", self)
+        view_camera_control_action.triggered.connect(self.toggle_camera_control_dock)
+        view_menu.addAction(view_camera_control_action)
+
     def toggle_plot_control_dock(self) -> None:
         """
         Toggle the visibility of the plot control dock widget.
@@ -440,6 +450,14 @@ class MainWindow(QMainWindow):
         if self.dock_widget is not None:
             is_visible = self.dock_widget.isVisible()
             self.dock_widget.setVisible(not is_visible)
+
+    def toggle_camera_control_dock(self) -> None:
+        """
+        Toggle the visibility of the camera control dock widget.
+        """
+        if self.control_widget is not None:
+            is_visible = self.control_widget.isVisible()
+            self.control_widget.setVisible(not is_visible)
 
     def export_current_signal(self):
         if not isinstance(self._active_plot(), Plot):
@@ -885,7 +903,7 @@ class MainWindow(QMainWindow):
         This is the left-hand side docked widget that contains the instrument controls.
         """
         self.control_widget = ControlDockWidget()
-        self.control_widget.setVisible(True)  # Add this line
+        self.control_widget.setVisible(False)  # Add this line
 
         self.addDockWidget(
             QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, self.control_widget

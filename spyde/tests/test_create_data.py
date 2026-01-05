@@ -138,15 +138,15 @@ class TestOpenExampleData:
         print("Old data captured:", current)
 
         # make sure that the selector is in the navigation plot
-        assert selector.selector in nav.items
+        assert selector.roi in nav.items
 
         # Simulate moving the selector in the navigation plot
-        original_pos = selector.selector.pos()  # Mock original position
+        original_pos = selector.roi.pos()  # Mock original position
 
-        selector.selector.setRegion((original_pos.x() + 2, original_pos.x() + 4))
+        selector.roi.setRegion((original_pos.x() + 2, original_pos.x() + 4))
 
         # Verify that the position has been updated
-        new_pos = selector.selector.getRegion()
+        new_pos = selector.roi.getRegion()
         assert new_pos[0] == original_pos.x() + 2
 
         # wait and make sure that the signal plot updated accordingly
@@ -181,12 +181,12 @@ class TestOpenExampleData:
         assert selector.selector in nav.items
 
         # Simulate moving the selector in the navigation plot
-        original_pos = selector.selector.pos()  # Mock original position
+        original_pos = selector.roi.pos()  # Mock original position
         new_pos = (original_pos[0] + 10, original_pos[1] + 10)
         selector.selector.setPos(new_pos[0], new_pos[1])
 
         # Verify that the position has been updated
-        new_pos = selector.selector.pos()
+        new_pos = selector.roi.pos()
         assert new_pos.x() == original_pos[0] + 10
         assert new_pos.y() == original_pos[1] + 10
 

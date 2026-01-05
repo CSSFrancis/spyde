@@ -29,5 +29,24 @@ be computed as needed for display.  This can cause extra delay for visualization
 are very fast.  This also allows us to easily play with different processing parameters, even compare
 before computing/saving the entire strain matrix.
 
+Visualization:
+--------------
+Visualization is often a difficult part of working with large datasets.  For large images pyqtgraph
+does a really good job of handling/ rendering large images.  We avoid things like resetting the view
+and the contrast levels as plots update to avoid some of the more expensive re-rendering operations. The
+hardest part, however, is visualizing data stored on disk rather then memory.  Data needs to:
 
+1. Be loaded from disk to CPU memory
+2. Transferred to the GPU
+3. Rendered
+
+What actually happens is:
+1. Load a small chunk of data from disk to CPU memory
+  a. Optionally decompress if needed
+  b. Perform any calculations on the chunk
+  c. Transfer the data over TCP from the worker process to the main CPU process
+2. Transfer the chunk to the GPU
+3. Render the chunk
+
+Of all of these steps 1c is often the slowest.
 

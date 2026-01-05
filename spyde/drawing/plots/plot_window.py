@@ -10,12 +10,13 @@ from typing import TYPE_CHECKING, Union, List, Dict, Tuple, Optional
 from spyde.drawing.plots.multiplot_manager import MultiplotManager
 from spyde.drawing.plots.plot import Plot
 from spyde.drawing.plots.plot_states import PlotState
+from spyde.drawing.selectors.base_selector import IntegratingSelectorMixin
 from spyde.qt.subwindow import FramelessSubWindow
 
 if TYPE_CHECKING:
     from spyde.signal_tree import BaseSignalTree
     from spyde.__main__ import MainWindow
-    from spyde.drawing.selector import BaseSelector
+    from spyde.drawing.selectors import BaseSelector
 
 import logging
 
@@ -67,6 +68,8 @@ class PlotWindow(FramelessSubWindow):
 
         # Instance state: track the currently active Plot (or None)
         self._current_plot_item = None  # type: Plot | None
+        # The primary plot item: used for linking axes when new plots are added.
+        self._primary_plot_item = None  # type: Plot | None
 
         # Previous layout state: used when restoring saved multiplexed layouts
         self.previous_subplots_pos = (
@@ -75,7 +78,7 @@ class PlotWindow(FramelessSubWindow):
         self.previous_graphics_layout_widget = (
             None
         )  # type: pg.GraphicsLayoutWidget | None
-        self.parent_selector = parent_selector  # type: BaseSelector | None
+        self.parent_selector = parent_selector  # type: BaseSelector | None | IntegratingSelectorMixin
 
         # UI: container widget + layout that will host the GraphicsLayoutWidget.
         # Use a QVBoxLayout with zero margins/spacing so the plot fills the subwindow.
@@ -98,6 +101,7 @@ class PlotWindow(FramelessSubWindow):
         # Explicitly store the main window reference provided at construction.
         self.main_window = main_window  # type: "MainWindow"
         self.timer = None
+
 
     @property
     def current_plot_item(self) -> Union["Plot", None]:
@@ -166,6 +170,11 @@ class PlotWindow(FramelessSubWindow):
         self.add_item(plot, row, col)
         if self.current_plot_item is None:
             self.current_plot_item = plot
+        if self._primary_plot_item is None:
+            self._primary_plot_item = plot
+
+
+
         return plot
 
     def _arrange_graphics_layout_preview(
@@ -251,9 +260,9 @@ class PlotWindow(FramelessSubWindow):
         return new_pos, zone
 
     def _build_new_layout(
-        self,
-        drop_pos: QtCore.QPointF,
-        plot_to_add: "Plot",
+            self,
+            drop_pos: QtCore.QPointF,
+            plot_to_add: "Plot",
     ):
         """Build a new layout with the new plot added at the drop position."""
         new_pos, zone = self._arrange_graphics_layout_preview(
@@ -277,9 +286,9 @@ class PlotWindow(FramelessSubWindow):
                 prev_pos = position[0]  # this is a list of (col, row) positions
                 # rows should shift that column down
                 if (
-                    col == prev_pos[1]
-                    and row <= prev_pos[0]
-                    and zone in ("top", "bottom")
+                        col == prev_pos[1]
+                        and row <= prev_pos[0]
+                        and zone in ("top", "bottom")
                 ):
                     new_layout_dictionary[plot] = (prev_pos[0] + 1, prev_pos[1])
                 # columns to the right should shift right
@@ -291,7 +300,25 @@ class PlotWindow(FramelessSubWindow):
             # add the placeholder at the new position
             new_layout_dictionary[plot_to_add] = (new_pos[1], new_pos[0])
 
+            # Find the maximum row to determine bottom plots
+            max_row = max(pos[0] for pos in new_layout_dictionary.values())
+
+            # Hide x-axis for all plots except those in the bottom row for each column
+            if self.dimensions == 1:
+                for plot, pos in new_layout_dictionary.items():
+                    if isinstance(plot, Plot):
+                        if pos[0] == max_row:
+                            plot.showAxis('bottom')
+                        else:
+                            plot.hideAxis('bottom')
+
             self.set_graphics_layout_widget(new_layout_dictionary)
+            self.plot_widget.ci.layout.setContentsMargins(0, 0, 0, 0)
+            self.plot_widget.ci.layout.setSpacing(2)  # Small positive spacing
+            for plot in self.plots:
+                plot.getViewBox().setDefaultPadding(0.0)
+
+            self.plot_widget.ci.layout.setSpacing(-2) # axes should be
 
     def insert_new_plot(
         self,
@@ -316,9 +343,39 @@ class PlotWindow(FramelessSubWindow):
         print("Adding linked selectors to new plot:", new_plot)
         print("Current selectors:", self.navigation_selectors)
         for selector in self.navigation_selectors:
-            selector.add_linked_selector(plot=new_plot)
+            selector.add_linked_roi(plot=new_plot)
             print("Newplot items:", new_plot.items)
             print(new_plot.items[0].isVisible())
+        # link the plot
+        if self.multiplot_manager is not None and self.is_navigator and self.multiplot_manager.nav_dim == 1:
+            new_plot.setXLink(self._primary_plot_item)
+            primary_vb = self._primary_plot_item.getViewBox()
+            new_vb = new_plot.getViewBox()
+
+            def sync_y_relative(view_box):
+                """Synchronize Y range relative to maximum values."""
+                primary_range = primary_vb.viewRange()[1]
+                primary_data_max = getattr(self._primary_plot_item, 'data_max_y', 1.0)
+                primary_data_min = getattr(self._primary_plot_item, 'data_min_y', 0.0)
+                new_data_max = getattr(new_plot, 'data_max_y', 1.0)
+                new_data_min = getattr(new_plot, 'data_min_y', 1.0)
+                print("Syncing Y range:", primary_range,
+                      " Primary max:", [primary_data_min, primary_data_max],
+                      " New max:", [new_data_min, new_data_max])
+
+                if primary_data_max != 0 and new_data_max != 0:
+                    scale_factor = (new_data_max-new_data_min) / (primary_data_max-primary_data_min)
+                    shift = new_data_min - primary_data_min * scale_factor
+                    new_range = [primary_range[0] * scale_factor + shift,
+                                 primary_range[1] * scale_factor + shift]
+                    print("Setting new Y range:", new_range)
+                    view_box.setYRange(*new_range, padding=0)
+
+            primary_vb.sigRangeChanged.connect(lambda: sync_y_relative(new_vb))
+        elif self.multiplot_manager is not None and self.is_navigator and self.multiplot_manager.nav_dim == 2:
+            new_plot.setXLink(self._primary_plot_item)
+            new_plot.setYLink(self._primary_plot_item)
+
         return new_plot
 
     def add_item(self, item: GraphicsItem, row: int = 0, col: int = 0):
@@ -462,7 +519,7 @@ class PlotWindow(FramelessSubWindow):
             )
             if self.parent_selector in nav_selectors:
                 nav_selectors.remove(self.parent_selector)
-            self.parent_selector.widget.hide()
+            self.parent_selector.hide()
             self.parent_selector.close()
 
         # Remove from main window tracking

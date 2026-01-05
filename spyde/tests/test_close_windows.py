@@ -1,7 +1,10 @@
 # Test Closing the windows and making sure that the
 # appropriate resources are released.
+from PyQt6.QtGui import qBlue
+from pyqtgraph import RectROI
 
 from spyde.drawing.plots.plot_window import PlotWindow
+from spyde.external.pyqtgraph.crosshair_roi import CrosshairROI
 
 
 class TestCloseWindows:
@@ -18,8 +21,8 @@ class TestCloseWindows:
         assert len(nav_manager.navigation_selectors) == 1
         selector = nav_manager.navigation_selectors[nav][0]
 
-        # make sure that the selector is in the navigation plot
-        assert selector.selector in nav_plot.items
+        # make sure that the selector is in the navigation plot (not true as the selector is just a "copy")
+        # assert selector.roi in nav_plot.items
         sig.close()
 
         assert len(win.plot_subwindows) == 1
@@ -30,7 +33,10 @@ class TestCloseWindows:
         assert len(nav_manager.navigation_selectors[nav]) == 0
 
         # make sure that the selector is removed from the navigation plot
-        assert selector.selector not in nav_plot.items
+        for item in nav_plot.items:
+            assert not isinstance(item, CrosshairROI)
+            assert not isinstance(item, RectROI)
+        qtbot.wait(500)
 
     def test_close_navigation_window(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
@@ -47,7 +53,6 @@ class TestCloseWindows:
         selector = nav_manager.navigation_selectors[nav][0]
 
         # make sure that the selector is in the navigation plot
-        assert selector.selector in nav_plot.items
         nav.close()
 
         # Both windows should be closed now

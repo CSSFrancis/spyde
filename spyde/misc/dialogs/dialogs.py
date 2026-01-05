@@ -308,7 +308,12 @@ class CreateDataDialog(QDialog):
                 np.arange(s.axes_manager.navigation_shape[0])
             )
             temp_nav.metadata.set_item("General.title", "Temperature")
-            return self._wrap_lazy_signal2d(data), [temp_nav]
+
+            voltage_nav = hs.signals.Signal1D(
+                np.random.random(s.axes_manager.navigation_shape[0])
+            )
+            voltage_nav.metadata.set_item("General.title", "Voltage")
+            return self._wrap_lazy_signal2d(data), [temp_nav, voltage_nav]
 
         if current_tab == "4D STEM":
             if self.fs_random_radio.isChecked():
