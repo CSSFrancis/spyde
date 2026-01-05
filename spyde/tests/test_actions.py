@@ -2,7 +2,8 @@ from PySide6 import QtWidgets
 from pyqtgraph import CircleROI, RectROI
 
 from spyde.drawing.toolbars.caret_group import CaretParams
-from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar, PopoutToolBar
+from spyde.drawing.toolbars.toolbar import RoundedToolBar
+from spyde.drawing.toolbars.popout_toolbar import PopoutToolBar
 
 
 class TestActions:

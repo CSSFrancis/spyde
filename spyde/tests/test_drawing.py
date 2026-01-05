@@ -1,5 +1,5 @@
 # Test UI elements and make sure that they are rendering as intended to reduce clipping etc.
-from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
+from spyde.drawing.toolbars.toolbar import RoundedToolBar
 from spyde.drawing.plots.plot import Plot
 
 

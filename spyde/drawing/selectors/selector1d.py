@@ -45,16 +45,16 @@ class LinearRegionSelector(BaseSelector):
             *args,
             **kwargs,
         )
-        self.selector = LinearRegionItem(
+        self.roi = LinearRegionItem(
             pen=self.roi_pen, hoverPen=self.hoverPen, *args, **kwargs
         )
         self._last_size_sig = self._size_signature()
-        self.selector.sigRegionChangeFinished.connect(self._on_region_change_finished)
+        self.roi.sigRegionChangeFinished.connect(self._on_region_change_finished)
 
         for plot in parent.plots:
             # The selector isn't actually added to any plot??
             self.add_linked_roi(plot)
-        self.selector.sigRegionChanged.connect(self.update_data)
+        self.roi.sigRegionChanged.connect(self.update_data)
 
 
     def _get_selected_indices(self):
@@ -67,7 +67,7 @@ class LinearRegionSelector(BaseSelector):
         scale = axs.scale
         offset = axs.offset
 
-        region = self.selector.getRegion()
+        region = self.roi.getRegion()
         start, end = region
         if start > end:
             start, end = end, start
@@ -83,8 +83,8 @@ class LinearRegionSelector(BaseSelector):
 
     def add_linked_roi(self, plot: "Plot"):
 
-        if self.selector is not None:
-            new_selector = create_linked_linear_region(self.selector,
+        if self.roi is not None:
+            new_selector = create_linked_linear_region(self.roi,
                                                        pen=self.roi_pen,
                                                        hover_pen=self.hoverPen)
             plot.addItem(new_selector)
@@ -94,16 +94,16 @@ class LinearRegionSelector(BaseSelector):
         """
         Translate the selector by the given amount in pixels.
         """
-        if self.selector is not None:
+        if self.roi is not None:
             axs = self.parent.current_plot_state.current_signal.axes_manager.signal_axes[0]
             scale = axs.scale
             offset = axs.offset
-            region = self.selector.getRegion()
+            region = self.roi.getRegion()
             start, end = region
 
-            self.selector.setRegion([start + shift_x*scale, end + shift_x*scale])
+            self.roi.setRegion([start + shift_x*scale, end + shift_x*scale])
 
-    def move_selector(self, key: QtCore.Qt.Key):
+    def move_roi(self, key: QtCore.Qt.Key):
         """
         Move the selector based on the key pressed.
         """
@@ -134,7 +134,7 @@ class InfiniteLineSelector(BaseSelector):
             *args,
             **kwargs,
         )
-        self.selector = pg.InfiniteLine(
+        self.roi = pg.InfiniteLine(
             angle=90,
             pen=self.roi_pen,
             hoverPen=self.hoverPen,
@@ -144,7 +144,7 @@ class InfiniteLineSelector(BaseSelector):
         for plot in parent.plots:
             # The selector isn't actually added to any plot??
             self.add_linked_roi(plot)
-        self.selector.sigPositionChanged.connect(self.update_data)
+        self.roi.sigPositionChanged.connect(self.update_data)
 
     def _get_selected_indices(self):
         """
@@ -156,15 +156,15 @@ class InfiniteLineSelector(BaseSelector):
         scale = axs.scale
         offset = axs.offset
 
-        pos = self.selector.value()
+        pos = self.roi.value()
         index = int(np.round((pos - offset) / scale))
 
         return np.array([[index]])
 
     def add_linked_roi(self, plot: "Plot"):
 
-        if self.selector is not None:
-            new_selector = create_linked_infinite_line(self.selector,
+        if self.roi is not None:
+            new_selector = create_linked_infinite_line(self.roi,
                                                       pen=self.roi_pen,
                                                       hover_pen=self.hoverPen)
             plot.addItem(new_selector)
@@ -181,7 +181,8 @@ class InfiniteLineSelector(BaseSelector):
             pos = self.selector.value()
 
             self.selector.setValue(pos + shift_x*scale)
-    def move_selector(self, key: QtCore.Qt.Key):
+
+    def move_roi(self, key: QtCore.Qt.Key):
         """
         Move the selector based on the key pressed.
         """
@@ -289,6 +290,10 @@ class IntegratingSelector1D(IntegratingSelectorMixin):
         self._inf_line_selector.hide()
         self._linear_region_selector.hide()
 
+    @property
+    def roi(self):
+        return self.selector.roi
+
     def show(self):
         """Show the active selector."""
         if not self.is_integrating:
@@ -300,3 +305,7 @@ class IntegratingSelector1D(IntegratingSelectorMixin):
         """Close both selectors."""
         self._inf_line_selector.close()
         self._linear_region_selector.close()
+
+    def add_linked_roi(self, plot: "Plot"):
+        self._inf_line_selector.add_linked_roi(plot=plot)
+        self._linear_region_selector.add_linked_roi(plot=plot)

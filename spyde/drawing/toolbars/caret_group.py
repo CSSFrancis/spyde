@@ -6,7 +6,7 @@ import numpy as np
 
 
 if TYPE_CHECKING:
-    from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
+    from spyde.drawing.toolbars.toolbar import RoundedToolBar
 
 
 class CaretGroup(QtWidgets.QGroupBox):

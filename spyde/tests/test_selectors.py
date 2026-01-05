@@ -1,9 +1,15 @@
 import numpy as np
+import dask.array as da
+import hyperspy.api as hs
+from pytestqt.plugin import qtbot
 
 from spyde.drawing.plots.multiplot_manager import MultiplotManager
 from spyde.drawing.plots.plot import Plot
 from spyde.external.pyqtgraph.crosshair_roi import CrosshairROI
 from pyqtgraph import RectROI, InfiniteLine, LinearRegionItem
+
+from spyde.qt.shared import open_window as _open_window
+
 
 class TestSelectors:
     def test_selector_moving(self, qtbot, stem_4d_dataset):
@@ -141,3 +147,52 @@ class TestSelectors:
 
         assert len(nav_manager.navigation_selectors[nav_window]) == 2
         assert len(nav_manager.signal_tree.signal_plots) == 2
+
+
+    def test_chunk_recall_1d(self, qtbot):
+        """
+        Test that the moving selector accurately gets the right data from a chunked dataset"""
+
+        data = np.repeat(
+            np.arange(0, 10), repeats=1000).reshape(100, 10, 10)
+        lazy_data = da.from_array(data, chunks=(10,10,10))
+        new_sig = hs.signals.Signal2D(lazy_data)
+
+        win = _open_window()
+
+        win.add_signal(new_sig)
+        qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 2, timeout=5000)
+
+        subplots = win.plots
+        subwindows = win.plot_subwindows
+        assert len(subwindows) == 2
+
+        nav, sig = subplots  # type: Plot
+        nav_window, sig_window = subwindows
+        nav_manager = nav.multiplot_manager
+        assert len(nav_manager.navigation_selectors) == 1
+        selector = nav_manager.navigation_selectors[nav_window][0]
+        current = sig.current_data
+
+        nav, sig = subplots  # type: Plot
+
+        np.testing.assert_array_equal(sig.image_item.image, 0)
+
+        # move the selector to position 10
+        for i in range(10):
+            selector.roi.setPos(i*10)
+            qtbot.wait(1000)
+            np.testing.assert_array_equal(sig.image_item.image, i)
+
+
+        # change the axes manager
+
+        new_sig.axes_manager.navigation_axes[0].scale = 2
+        new_sig.axes_manager.navigation_axes[0].offset = -10
+
+        for i in range(10):
+            selector.roi.setPos(i*10)
+            qtbot.wait(1000)
+            np.testing.assert_array_equal(sig.image_item.image, i)
+
+        win.close()

@@ -1,9 +1,4 @@
-from functools import partial
-
 from PySide6 import QtCore
-from PySide6.QtCore import QRectF
-from pyqtgraph.examples.MultiDataPlot import pltItem
-
 from spyde.actions.base import NAVIGATOR_DRAG_MIME
 from spyde.actions.base import NavigatorButton
 
@@ -125,10 +120,6 @@ class TestNavigatorMultiplex:
         # there should be three plots now stacked in one column (the last one should be in the middle)
         # assert len(nav.plot_widget.ci.items)  == 3
 
-    def test_synced_selectors(self, qtbot, stem_4d_dataset, monkeypatch):
-        win, nav_subwindow, sig_subwindow, nav, sig = self.multiplex_4d_dataset(
-            qtbot, stem_4d_dataset, monkeypatch
-        )
 
     def test_navigator_preview(self, qtbot, stem_4d_dataset, monkeypatch):
         win = stem_4d_dataset["window"]
