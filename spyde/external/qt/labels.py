@@ -53,11 +53,14 @@ class EditableLabel(QtWidgets.QWidget):
             "}"
         )
 
+        self.previous_text = text
+
     def _start_editing(self):
         self._line_edit.setText(self._raw_text)
         self._stack.setCurrentWidget(self._line_edit)
         self._line_edit.selectAll()
         self._line_edit.setFocus()
+        self.previous_text = self._raw_text
 
     def _finish_editing(self):
         new_text = self._line_edit.text()
