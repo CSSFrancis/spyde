@@ -5,7 +5,7 @@ from hyperspy.signal import BaseSignal
 from typing import TYPE_CHECKING, Optional, List
 
 from spyde.drawing.toolbars.plot_control_toolbar import get_toolbar_actions_for_plot
-from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
+from spyde.drawing.toolbars.toolbar import RoundedToolBar
 
 if TYPE_CHECKING:
     from spyde.drawing.plots.plot import MultiplotManager, Plot

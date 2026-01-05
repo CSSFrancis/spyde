@@ -1,9 +1,13 @@
 from typing import TYPE_CHECKING
 
+from spyde.drawing.plots.plot_window import PlotWindow
+
 if TYPE_CHECKING:
-    from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
+    from spyde.drawing.toolbars.toolbar import RoundedToolBar
 from spyde.drawing.toolbars.floating_button_trees import RoundedButton, ButtonTree
 from spyde.drawing.toolbars.caret_group import CaretGroup
+
+from spyde.drawing.selectors import RectangleSelector
 
 from PySide6 import QtWidgets, QtCore, QtGui
 
@@ -65,16 +69,45 @@ def add_selector(toolbar: "RoundedToolBar", toggled=None, *args, **kwargs):
     )
 
 
-def add_fft_selector(toolbar: "RoundedToolBar", *args, **kwargs):
+def add_fft_selector(toolbar: "RoundedToolBar", action_name="", toggle=None, *args, **kwargs):
     """
     Add FFT selector action for the plot.
+
+    The FFT selector allows selecting a region in the navigation plot to compute and display its FFT. It
+    is toggled on and off via the toolbar.
+
+
+    toolbar --> register_action_plot_item
+    toolbar --> register_action_plot_window
+
+
 
     Parameters
     ----------
     toolbar : RoundedToolBar
         The plot to add the FFT selector.
+    toggle : bool, optional
+        Whether to show or hide the selector.
     """
-    toolbar.plot.add_fft_selector()
+    if not hasattr(toolbar, 'active_selectors'):
+        toolbar.active_selectors = {}
+
+    if action_name not in toolbar.active_selectors:
+        selector = RectangleSelector(toolbar.plot,
+                                     name="FFT Selector",)
+
+        fft_plot_window = PlotWindow()
+        fft_plot =  Plot
+        toolbar.action_widgets[action_name] = {
+            "selector": selector,
+            "plot": fft_plot
+        }
+
+    state = toolbar.active_selectors[action_name]
+    if toggle is not None:
+        state["selector"].setVisible(toggle)
+        if state["plot"]:
+            state["plot"].setVisible(toggle)
 
 
 class NavigatorButton(RoundedButton):

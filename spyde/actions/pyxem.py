@@ -5,7 +5,7 @@ from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
 from PySide6.QtCore import Qt
 from pyqtgraph import RectROI, CircleROI, mkPen
 
-from spyde.drawing.toolbars.rounded_toolbar import RoundedToolBar
+from spyde.drawing.toolbars.toolbar import RoundedToolBar
 from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
 from spyde.external.pyqtgraph.ring_roi import RingROI
 
