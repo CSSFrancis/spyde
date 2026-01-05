@@ -290,8 +290,11 @@ class Plot(PlotItem):
             self.enable_scale_bar(False)
         self.main_window.on_subwindow_activated(self.plot_window)
         # update the plot
+        print("Parent selector", self.parent_selector)
+        print("Delayed updating data for plot state:", self.plot_state)
         if self.parent_selector is not None:
-            self.parent_selector.delayed_update_data(force=False)
+            # force update as the selector position is the same position...
+            self.parent_selector.delayed_update_data(force=True)
             self.needs_update_range = True
             # update the plot range
             self.update_range()

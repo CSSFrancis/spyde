@@ -114,25 +114,39 @@ class BaseSelector:
         """
         indices_list = []
         for parent_selector in self.upstream_selectors():
-            indices = parent_selector._get_selected_indices()
+            indices = parent_selector._get_selected_indices_and_clip()
             indices_list.append(indices)
         return indices_list
+
 
     def get_selected_indices(self):
         """
         Get the currently selected indices from the selector.
         """
         if self.multi_selector:
+            print("Multi Selector")
             upstream_indices = self._get_selected_indices_from_upstream()
-            current_indices = self._get_selected_indices()
+            print("Upstream Indices: ", upstream_indices)
+            current_indices = self._get_selected_indices_and_clip()
             combo = upstream_indices + [
                 current_indices,
             ]
             combined_indices = broadcast_rows_cartesian(*combo)
+
+            print("Combined Indices:", combined_indices)
+
             return combined_indices
         else:
-            print("single selector", self._get_selected_indices())
-            return self._get_selected_indices()
+            return self._get_selected_indices_and_clip()
+
+    def _get_selected_indices_and_clip(self):
+        """
+        Get the selected indices and clip them to the data shape.
+        """
+        indices = self._get_selected_indices()
+        signal_shape = self.parent.current_plot_state.current_signal.axes_manager.signal_shape
+        clipped_indices = np.clip(indices, 0, np.array(signal_shape) - 1)
+        return clipped_indices
 
     def _get_selected_indices(self):
         """

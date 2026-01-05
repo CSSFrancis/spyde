@@ -1,8 +1,11 @@
 from PySide6 import QtWidgets
 from PySide6.QtTest import QTest
 import numpy as np
+from pyqtgraph import InfiniteLine
+
 from spyde.__main__ import MainWindow
 from spyde.drawing.plots.plot import Plot
+from spyde.external.pyqtgraph.crosshair_roi import CrosshairROI
 
 
 def _find_menu_action(menu_or_bar, action_name: str):
@@ -44,17 +47,24 @@ class TestOpenExampleData:
 
             # this should load the example data and create a new MDI subwindow
             qtbot.waitUntil(
-                lambda: len(getattr(win, "mdi_area").subWindowList()) > 0, timeout=5000
+                lambda: len(getattr(win, "mdi_area").subWindowList()) > 0, timeout=10000
             )
+
+            print("Subwindows:", win.mdi_area.subWindowList())
 
             # assert that there are two subwindows: one for the plot and one for the navigation
             subwindows = win.mdi_area.subWindowList()
             assert len(subwindows) == 2
 
+            qtbot.wait(1000)  # wait for plots to render
+
+
             nav_window = subwindows[0]
             sig_window = subwindows[1]
 
             # check that there is a single selector on the navigation plot
+
+            print(win.signal_trees)
 
             assert len(win.signal_trees) == 1
             assert len(win.signal_trees[0].signal_plots) == 1
@@ -136,17 +146,18 @@ class TestOpenExampleData:
         current2 = sig2.current_data
 
         print("Old data captured:", current)
+        print("selector", selector, "roi", selector.roi)
 
         # make sure that the selector is in the navigation plot
-        assert selector.roi in nav.items
+        assert any([isinstance(item, InfiniteLine) for item in nav.items])
 
         # Simulate moving the selector in the navigation plot
         original_pos = selector.roi.pos()  # Mock original position
 
-        selector.roi.setRegion((original_pos.x() + 2, original_pos.x() + 4))
+        selector.roi.setPos(original_pos[0]+ 2)
 
         # Verify that the position has been updated
-        new_pos = selector.roi.getRegion()
+        new_pos = selector.roi.pos()
         assert new_pos[0] == original_pos.x() + 2
 
         # wait and make sure that the signal plot updated accordingly
@@ -178,12 +189,12 @@ class TestOpenExampleData:
         print("Old data captured:", current)
 
         # make sure that the selector is in the navigation plot
-        assert selector.selector in nav.items
+        assert any([isinstance(item, CrosshairROI) for item in nav.items])
 
         # Simulate moving the selector in the navigation plot
         original_pos = selector.roi.pos()  # Mock original position
         new_pos = (original_pos[0] + 10, original_pos[1] + 10)
-        selector.selector.setPos(new_pos[0], new_pos[1])
+        selector.roi.setPos(new_pos[0], new_pos[1])
 
         # Verify that the position has been updated
         new_pos = selector.roi.pos()

@@ -481,7 +481,7 @@ class PlotWindow(FramelessSubWindow):
         if self.last_used_selector is not None:
             # change the position of the selector
             self.timer = time.time()
-            self.last_used_selector.move_selector(ev.key())
+            self.last_used_selector.move_roi(ev.key())
             return
 
     def close_window(self):

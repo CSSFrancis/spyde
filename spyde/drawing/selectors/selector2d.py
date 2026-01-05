@@ -331,6 +331,11 @@ class IntegratingSelector2D(IntegratingSelectorMixin):
         self._crosshair_selector.close()
         self._rect_selector.close()
 
+    def add_linked_roi(self, plot: "Plot"):
+        """Add both selectors to the new plot."""
+        self._rect_selector.add_linked_roi(plot)
+        self._crosshair_selector.add_linked_roi(plot)
+
 class LineSelector(BaseSelector):
     """
     A selector which uses a LineROI to select a region along one axis.

@@ -34,9 +34,12 @@ class TestPlotStates:
         # assert the image is the right shape
 
         fut = sig.current_data
+        # make sure the future is applied
         qtbot.waitUntil(lambda: fut.done(), timeout=5000)
+
+
         qtbot.wait(100)
-        assert sig.current_data.shape == (10,10)
+        assert sig.image_item.image.shape == (10,10)
 
 
 
