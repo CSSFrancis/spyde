@@ -152,8 +152,10 @@ def get_fft(selector: "BaseSelector", child: "Plot", indices, get_result: bool =
     max_x, max_y = np.max(indices, axis=0)
     min_x, min_y = np.min(indices, axis=0)
 
-    img_max_x = selector.parent.current_data.shape[0] - 1
-    img_max_y = selector.parent.current_data.shape[1] - 1
+    img = selector.parent.image_item.image
+
+    img_max_x = img.shape[0] - 1
+    img_max_y = img.shape[1] - 1
     if max_x > img_max_x:
         max_x = img_max_x
     if max_y > img_max_y:
@@ -164,6 +166,6 @@ def get_fft(selector: "BaseSelector", child: "Plot", indices, get_result: bool =
         min_y = 0
 
     slice_x, slice_y = slice(min_x, max_x + 1), slice(min_y, max_y + 1)
-    sliced_img = selector.parent.current_data[slice_x, slice_y]
+    sliced_img = img[slice_x, slice_y]
     fft_img = fft.fftshift(fft.fft2(sliced_img))
     return fft_img.real

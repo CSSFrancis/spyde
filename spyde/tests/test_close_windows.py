@@ -1,6 +1,5 @@
 # Test Closing the windows and making sure that the
 # appropriate resources are released.
-from PyQt6.QtGui import qBlue
 from pyqtgraph import RectROI
 
 from spyde.drawing.plots.plot_window import PlotWindow

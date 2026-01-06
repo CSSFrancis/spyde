@@ -280,6 +280,7 @@ class PlotWindow(FramelessSubWindow):
             plot_to_add: "Plot",
     ):
         """Build a new layout with the new plot added at the drop position."""
+        from spyde.drawing.plots.plot import Plot
         new_pos, zone = self._arrange_graphics_layout_preview(
             self.previous_subplots_pos, self.previous_graphics_layout_widget, drop_pos
         )
@@ -345,6 +346,7 @@ class PlotWindow(FramelessSubWindow):
         be all the same size... That is handled when the plot states are added though.....
 
         """
+        from spyde.drawing.plots.plot import Plot
 
         new_plot = Plot(
             signal_tree=self.signal_tree,
