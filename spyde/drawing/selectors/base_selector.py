@@ -92,7 +92,7 @@ class BaseSelector:
         self.update_timer.timeout.connect(self.delayed_update_data)
         self.update_function = update_function
         self._last_size_sig = None
-        self.roi = None  # to be defined in subclasses # type: pg.ROI | None
+        self.roi = None  # type: pg.ROI | None
         self.linked_selectors = []  # type: List[ROI]
         self.multi_selector = multi_selector
         self.timer = None

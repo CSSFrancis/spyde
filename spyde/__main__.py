@@ -877,7 +877,7 @@ class MainWindow(QMainWindow):
                     continue
                 else:
                     plt.plot_state.hide_toolbars()
-                    plt.remove_selector_control_widgets()
+                    #plt.remove_selector_control_widgets()
 
         # Histogram binding: use the image_item on the inner widget / plot
         img_item = plot.image_item
