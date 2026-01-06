@@ -1,6 +1,10 @@
+from functools import partial
 from typing import TYPE_CHECKING
 
-from spyde.drawing.plots.plot_window import PlotWindow
+import numpy as np
+import hyperspy.api as hs
+from spyde.drawing.update_functions import get_fft
+
 
 if TYPE_CHECKING:
     from spyde.drawing.toolbars.toolbar import RoundedToolBar
@@ -69,7 +73,9 @@ def add_selector(toolbar: "RoundedToolBar", toggled=None, *args, **kwargs):
     )
 
 
-def add_fft_selector(toolbar: "RoundedToolBar", action_name="", toggle=None, *args, **kwargs):
+def add_fft_selector(toolbar: "RoundedToolBar",
+                     action_name="",
+                     *args, **kwargs):
     """
     Add FFT selector action for the plot.
 
@@ -86,28 +92,55 @@ def add_fft_selector(toolbar: "RoundedToolBar", action_name="", toggle=None, *ar
     ----------
     toolbar : RoundedToolBar
         The plot to add the FFT selector.
-    toggle : bool, optional
-        Whether to show or hide the selector.
+
     """
-    if not hasattr(toolbar, 'active_selectors'):
-        toolbar.active_selectors = {}
 
-    if action_name not in toolbar.active_selectors:
-        selector = RectangleSelector(toolbar.plot,
-                                     name="FFT Selector",)
+    # initialize a new plot window for the FFT when first clicked...
+    print("Action widgets:", toolbar.action_widgets)
+    print(action_name)
 
-        fft_plot_window = PlotWindow()
-        fft_plot =  Plot
-        toolbar.action_widgets[action_name] = {
-            "selector": selector,
-            "plot": fft_plot
-        }
+    if (action_name in toolbar.action_widgets and
+        "plot_windows" in toolbar.action_widgets[action_name] and
+        "FFT_Plot_Window" in toolbar.action_widgets[action_name]["plot_windows"]):
+        print("FFT selector already initialized.")
+        return
+    else:
+        plot = toolbar.plot
+        m_window = plot.main_window
+        signal_tree = plot.signal_tree
+        plot_window = m_window.add_plot_window(
+            is_navigator=False, signal_tree=signal_tree)
 
-    state = toolbar.active_selectors[action_name]
-    if toggle is not None:
-        state["selector"].setVisible(toggle)
-        if state["plot"]:
-            state["plot"].setVisible(toggle)
+        fft_plot = plot_window.add_new_plot()
+        place_holder_signal = hs.signals.Signal2D(
+            data=np.zeros((10, 10)),)
+
+        selector = RectangleSelector(
+            parent=plot,
+            children=fft_plot,
+            multi_selector=False,
+            update_function=get_fft,
+
+        )
+
+        # Connect parent plot updates to trigger FFT updates
+        if hasattr(plot, 'image_item'):
+            up_force = partial(selector.delayed_update_data, force=True)
+            plot.image_item.sigImageChanged.connect(up_force)
+
+        fft_plot.add_plot_state(signal=place_holder_signal,
+                                dimensions=2,
+                                dynamic=True,
+                                )
+        toolbar.register_action_plot_item(action_name=action_name,
+                                          item=selector.roi,
+                                          key="RectangleSelector_FFT")
+
+        toolbar.register_action_plot_window(action_name=action_name,
+                                           plot_window=plot_window,
+                                            key="FFT_Plot_Window")
+
+    print("Action widgets after FFT init:", toolbar.action_widgets)
 
 
 class NavigatorButton(RoundedButton):

@@ -73,7 +73,7 @@ def update_from_navigation_selection(
         child: "Plot",
         indices,
         get_result: bool = False,
-        cache_in_shared_memory: bool = False,
+        cache_in_shared_memory: bool = True,
 ):
     """
     Update the plot based on the navigation selection. This is the most common update function for using some

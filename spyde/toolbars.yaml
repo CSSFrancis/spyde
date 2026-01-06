@@ -30,6 +30,7 @@ functions:
     function: spyde.actions.base.add_fft_selector
     plot_dim: [ 2 ]
     toolbar_side: right
+    toggle: True
   Select Navigator:
     description: Selects the navigator for the data view.
     icon: drawing/toolbars/icons/navigator.svg

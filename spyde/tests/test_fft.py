@@ -6,25 +6,33 @@ class TestFFT:
 
     def test_fft_change_on_navigator_moving(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
-        subwindows = win.mdi_area.subWindowList()
+        subwindows = win.plots
         assert len(subwindows) == 2
 
-        nav, sig = stem_4d_dataset["subwindows"]  # type: Plot
-        nav_manager = nav.nav_plot_manager
-        assert len(nav_manager.navigation_selectors) == 1
-        selector = nav_manager.navigation_selectors[0]
+        nav, sig = subwindows
 
-        # make sure that the selector is in the navigation plot
-        assert selector.selector in nav.plot_item.items
+        toolbar_bottom = sig.plot_state.toolbar_right  # type: RoundedToolBar
 
-        # Simulate moving the selector in the navigation plot
+        actions = toolbar_bottom.actions()
+        print("Actions:", actions)
 
-        original_pos = selector.selector.pos()  # Original position
+        for action in actions:
+            print(action.text())
+            if action.text() == "FFT":
+                fft_button = action
+        fft_button.trigger()
+        qtbot.wait(500)
+        for window in win.plot_subwindows:
+            assert window.isVisible()
+        assert len(win.plot_subwindows) == 3
+        fft_button.trigger() # Close FFT the fft will be hidden
 
-        target_pos = (original_pos[0] + 10, original_pos[1] + 10)
-        selector.selector.setPos(target_pos[0], target_pos[1])
+        num_visible = 0
+        for window in win.plot_subwindows:
+            if window.isVisible():
+                num_visible += 1
+        assert num_visible == 2
 
-        # Verify that the position has been updated
-        new_pos = selector.selector.pos()
-        assert new_pos.x() == original_pos[0] + 10
-        assert new_pos.y() == original_pos[1] + 10
+        qtbot.wait(500)
+        fft_button.trigger() # Open FFT again
+        qtbot.wait(500)

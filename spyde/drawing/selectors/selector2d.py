@@ -96,7 +96,7 @@ class CrosshairSelector(BaseSelector):
 class RectangleSelector(BaseSelector):
     def __init__(
             self,
-            parent: "PlotWindow",
+            parent: Union["PlotWindow", "Plot"],
             children: Union["Plot", List["Plot"]],
             update_function: Union[callable, List[callable]],
             live_delay: int = 2,
@@ -104,6 +104,8 @@ class RectangleSelector(BaseSelector):
             *args,
             **kwargs,
     ):
+        from spyde.drawing.plots.plot import Plot
+        from spyde.drawing.plots.plot_window import PlotWindow
         super().__init__(
             parent,
             children,
@@ -118,9 +120,9 @@ class RectangleSelector(BaseSelector):
 
         # auto position and size
         # 10 % of the image size and bottom left corner
-        transform = parent.current_plot_item.image_item.transform()
+        transform = self.current_plot.image_item.transform()
         pos = transform.map(QtCore.QPointF(0, 0))
-        width = parent.current_plot_item.image_item.width() // 10
+        width = self.current_plot.image_item.width() // 10
 
         self.roi = RectROI(
             pos=pos,
@@ -135,9 +137,12 @@ class RectangleSelector(BaseSelector):
         self._last_size_sig = (0, 0)
         self.roi.sigRegionChangeFinished.connect(self._on_region_change_finished)
 
-        for plot in parent.plots:
-            # The selector isn't actually added to any plot??
-            self.add_linked_roi(plot)
+        if isinstance(parent, PlotWindow):
+            for plot in parent.plots:
+                # The selector isn't actually added to any plot??
+                self.add_linked_roi(plot)
+        else:
+            parent.addItem(self.roi)
         self.roi.sigRegionChanged.connect(self.update_data)
 
     def _get_selected_indices(self):
@@ -150,14 +155,13 @@ class RectangleSelector(BaseSelector):
                 for parent_selector in self.upstream_selectors()
             ]
 
-        lower_left = self.selector.pos()
-        size = self.selector.size()
+        lower_left = self.roi.pos()
+        size = self.roi.size()
 
         # pyqtgraph only knows one coordinate system.  We need to map the scene
         # to pixels.
-
         inverted_transform, is_inversion = (
-            self.parent.current_plot_item.image_item.transform().inverted()
+            self.current_plot.image_item.transform().inverted()
         )
 
         lower_left_pixel = inverted_transform.map(lower_left)
@@ -167,7 +171,7 @@ class RectangleSelector(BaseSelector):
         )
 
         # ignore rotation for now...
-        rotation = self.selector.angle()
+        rotation = self.roi.angle()
 
         y_indices = np.arange(0, np.round(size_pixels.y()), dtype=int)
         x_indices = np.arange(0, np.round(size_pixels.x()), dtype=int)

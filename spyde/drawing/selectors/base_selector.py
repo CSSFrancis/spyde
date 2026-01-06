@@ -12,9 +12,6 @@ from typing import TYPE_CHECKING, Union, List
 
 from spyde.drawing.selectors.utils import broadcast_rows_cartesian
 
-if TYPE_CHECKING:
-    from spyde.drawing.plots.plot import Plot
-    from spyde.drawing.plots.plot_window import PlotWindow
 
 Logger = logging.getLogger(__name__)
 
@@ -44,7 +41,7 @@ class BaseSelector:
 
     def __init__(
         self,
-        parent: "PlotWindow",
+        parent: Union["PlotWindow", "Plot"],
         children: Union["Plot", List["Plot"]],
         update_function: Union[callable, List[callable]],
         width: int = 3,
@@ -57,7 +54,7 @@ class BaseSelector:
 
         # the parent plot (data source) and the child plot (where the data is plotted)
         # a selector can have multiple children.
-        self.parent = parent  # type: PlotWindow
+        self.parent = parent  # type: Union[PlotWindow, Plot]
         if not isinstance(children, list):
             self.children = {children: update_function}  # type: dict[Plot, callable]
             self.active_children = [
@@ -139,12 +136,26 @@ class BaseSelector:
         else:
             return self._get_selected_indices_and_clip()
 
+    @property
+    def current_plot(self) -> Union["Plot", None]:
+        """
+        Get the current plot.
+        """
+        from spyde.drawing.plots.plot_window import PlotWindow
+        from spyde.drawing.plots.plot import Plot
+        if isinstance(self.parent, Plot):
+            return self.parent
+        elif isinstance(self.parent, PlotWindow):
+            return self.parent.current_plot_item
+        else:
+            return None
+
     def _get_selected_indices_and_clip(self):
         """
         Get the selected indices and clip them to the data shape.
         """
         indices = self._get_selected_indices()
-        signal_shape = self.parent.current_plot_state.current_signal.axes_manager.signal_shape
+        signal_shape = self.current_plot.plot_state.current_signal.axes_manager.signal_shape
         clipped_indices = np.clip(indices, 0, np.array(signal_shape) - 1)
         return clipped_indices
 
@@ -190,7 +201,7 @@ class BaseSelector:
         indices = self.get_selected_indices()
         if not np.array_equal(indices, self.current_indices) or force:
             for child in self.children:
-                new_data = self.children[child](self, child, indices, cache_in_shared_memory=True)
+                new_data = self.children[child](self, child, indices)
                 child.update_data(
                     new_data
                 )  # update the child plot data. If this is a future, then
