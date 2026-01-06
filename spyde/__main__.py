@@ -114,6 +114,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, app=None):
         super().__init__()
+        self._in_subwindow_activation = False
         self._original_layout = None
         self.btn_reset = None
         self.btn_auto = None
@@ -845,35 +846,38 @@ class MainWindow(QMainWindow):
 
     def on_subwindow_activated(self, window: "PlotWindow") -> None:
         """MDI activation handler: update toolbars, metadata, histogram binding, and colormap selector."""
+        # Guard against re-entry
+
+
+        print("Subwindow activated:", window)
         if window is None or not isinstance(window, PlotWindow):
             return
+
         plot = window.current_plot_item
         plot_state = getattr(plot, "plot_state", None)
         if plot is None:
             return
 
-        # Show selector controls for the active plot
-        plot.show_selector_control_widget()
-        # Get active PlotState from the active plot item
+        # hide all toolbar from other plots in the same window except toolbars from
+        # the active signal tree
+        if window.signal_tree.navigator_plot_manager is not None:
+            active_plots = [win.current_plot_item for
+                            win in window.signal_tree.navigator_plot_manager.all_plot_windows
+                            if win.isVisible()]
+        else:
+            active_plots = [plot]
 
-        if plot_state is not None:
-            self.update_axes_widget(plot)
-            plot_state.show_toolbars()
+        for plt in active_plots:
+            plt.plot_state.show_toolbars()
+            plt.show_selector_control_widget()
 
-        # Hide toolbars for all other windows
-        for sub in self.plot_subwindows:
-            if sub is window:
-                continue
-            for p in sub.plots:
-                p.plot_state.hide_toolbars()
-                p.remove_selector_control_widgets()
-
-        # hide all toolbar from other plots in the same window
-        for p in window.plots:
-            if p is plot:
-                continue
-            p.plot_state.hide_toolbars()
-            #p.remove_selector_control_widgets()
+        for win in self.plot_subwindows:
+            for plt in win.plots:
+                if plt in active_plots:
+                    continue
+                else:
+                    plt.plot_state.hide_toolbars()
+                    plt.remove_selector_control_widgets()
 
         # Histogram binding: use the image_item on the inner widget / plot
         img_item = plot.image_item
@@ -897,6 +901,7 @@ class MainWindow(QMainWindow):
 
         if plot_state is not None and hasattr(self, "cmap_selector"):
             self.cmap_selector.setCurrentText(plot_state.colormap)
+
 
     def add_instrument_control_widget(self):
         """

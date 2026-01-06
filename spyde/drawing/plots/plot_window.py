@@ -8,8 +8,6 @@ import numpy as np
 from typing import TYPE_CHECKING, Union, List, Dict, Tuple, Optional
 
 from spyde.drawing.plots.multiplot_manager import MultiplotManager
-from spyde.drawing.plots.plot import Plot
-from spyde.drawing.plots.plot_states import PlotState
 from spyde.drawing.selectors.base_selector import IntegratingSelectorMixin
 from spyde.qt.subwindow import FramelessSubWindow
 
@@ -17,6 +15,8 @@ if TYPE_CHECKING:
     from spyde.signal_tree import BaseSignalTree
     from spyde.__main__ import MainWindow
     from spyde.drawing.selectors import BaseSelector
+    from spyde.drawing.plots.plot_states import PlotState
+    from spyde.drawing.plots.plot import Plot
 
 import logging
 
@@ -102,6 +102,17 @@ class PlotWindow(FramelessSubWindow):
         self.main_window = main_window  # type: "MainWindow"
         self.timer = None
 
+    def hideEvent(self, ev: QtGui.QHideEvent) -> None:
+        """Called when the widget is hidden."""
+        super().hideEvent(ev)
+        if self.current_plot_state is not None:
+            self.current_plot_state.hide_toolbars()
+
+    def showEvent(self, ev: QtGui.QShowEvent) -> None:
+        """Called when the widget is shown."""
+        super().showEvent(ev)
+        if self.current_plot_state is not None:
+            self.current_plot_state.show_toolbars()
 
     @property
     def current_plot_item(self) -> Union["Plot", None]:
@@ -130,6 +141,7 @@ class PlotWindow(FramelessSubWindow):
     @property
     def plots(self) -> List["Plot"]:
         """Get the list of Plot objects in this PlotWindow."""
+        from spyde.drawing.plots.plot import Plot
         plots = []
         for item in self.plot_widget.ci.items.keys():
             if isinstance(item, Plot):
@@ -161,6 +173,8 @@ class PlotWindow(FramelessSubWindow):
         col: int = 0,
     ) -> "Plot":
         """Creates and returns a new (empty) Plot."""
+        from spyde.drawing.plots.plot import Plot
+
         plot = Plot(
             signal_tree=self.signal_tree,
             is_navigator=self.is_navigator,
@@ -258,6 +272,7 @@ class PlotWindow(FramelessSubWindow):
             new_pos = (drop_col + 1, drop_row)
         print("zone:", zone, " new pos:", new_pos)
         return new_pos, zone
+
 
     def _build_new_layout(
             self,
@@ -380,6 +395,8 @@ class PlotWindow(FramelessSubWindow):
 
     def add_item(self, item: GraphicsItem, row: int = 0, col: int = 0):
         """Add a GraphicsItem to the graphics layout at the specified row and column."""
+        from spyde.drawing.plots.plot import Plot
+
         self.plot_widget.addItem(item, row, col)
 
         print(self.plot_widget.ci.items, " after adding item at (", row, ",", col, ")")

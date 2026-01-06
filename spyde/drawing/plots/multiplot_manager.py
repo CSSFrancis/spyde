@@ -253,3 +253,45 @@ class MultiplotManager:
         child.needs_auto_level = True
         logger.info("Added navigation selector and signal plot:", selector, child)
         return window
+
+    @property
+    def all_plot_windows(self) -> List["PlotWindow"]:
+        """ Get all plot windows associated with this signal tree, including navigation plot windows and toolbar plot windows.
+        Returns
+        -------
+        List[PlotWindow]
+            A list of all plot windows managed by this MultiplotManager.
+        """
+        windows = [] # type: List["PlotWindow"]
+
+        def collect_windows(windows_dict):
+            """Recursively collect all plot windows from nested dictionary."""
+            for win, children in windows_dict.items():
+                if win not in windows:
+                    windows.append(win)
+                if children:
+                    collect_windows(children)
+
+        # Collect all navigation plot windows
+        collect_windows(self.plot_windows)
+
+        # Collect toolbar plot windows from signal tree
+        print("Collecting toolbars for windows:", windows)
+        for win in windows:
+            print("Collecting toolbars for window:", win)
+
+            tr = win.current_plot_state.toolbar_right
+            tl = win.current_plot_state.toolbar_left
+            tb = win.current_plot_state.toolbar_bottom
+            tt = win.current_plot_state.toolbar_top
+            for toolbar in [tr, tl, tb, tt]:
+                if toolbar is not None and toolbar.plot_windows is not None:
+                    for item in toolbar.plot_windows:
+                        # toolbar.plot_windows contains (name, window) tuples Ugly and should be fixed
+                        if isinstance(item, tuple):
+                            windows.append(item[1])
+                        else:
+                            windows.append(item)
+        return windows
+
+

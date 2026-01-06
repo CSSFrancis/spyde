@@ -1,10 +1,11 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Callable, Optional, Union, Tuple
+from typing import TYPE_CHECKING, Callable, Optional, Union, Tuple, List
 
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 
+from spyde.drawing.plots.plot_window import PlotWindow
 
 if TYPE_CHECKING:
     from spyde.drawing.toolbars.caret_group import CaretParams
@@ -425,14 +426,25 @@ class RoundedToolBar(StylizedToolBar):
         """Deregister the plot window associated with an action."""
         if (
                 action_name in self.action_widgets
-                and "plot_window" in self.action_widgets[action_name]
+                and "plot_windows" in self.action_widgets[action_name]
         ):
-            window = self.action_widgets[action_name].pop("plot_window")
+            window = self.action_widgets[action_name].pop("plot_windows")
             try:
                 window.close()
             except Exception:
                 pass
             return window
+
+    @property
+    def plot_windows(self) -> List["PlotWindow"]:
+        """Return a list of all registered plot windows."""
+        windows = []
+        for data in self.action_widgets.values():
+            plot_windows = data.get("plot_windows", {})
+
+            windows.extend(plot_windows.items())
+        return windows
+
     # ========== Event Handling ==========
 
     def showEvent(self, ev: QtGui.QShowEvent) -> None:

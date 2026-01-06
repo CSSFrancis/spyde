@@ -7,6 +7,8 @@ from hyperspy.signal import BaseSignal
 
 from typing import TYPE_CHECKING, Union, List
 
+from spyde.drawing.plots.plot_window import PlotWindow
+
 if TYPE_CHECKING:
     from spyde.drawing.plots.plot_states import PlotState
     from spyde.__main__ import MainWindow
@@ -139,6 +141,15 @@ class BaseSignalTree:
         plot.set_plot_state(list(plot.plot_states.keys())[0])
         self.signal_plots.append(plot)
         plot.update()
+
+    @property
+    def plot_windows(self) -> List["PlotWindow"]:
+        """
+        Return a list of all plots in the signal tree, including navigator and signal plots.
+        """
+        self.navigator_plot_manager.plot_windows
+
+
 
     def _preprocess_navigator(self, signal: BaseSignal) -> List[BaseSignal]:
         """

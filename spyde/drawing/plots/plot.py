@@ -489,18 +489,9 @@ class Plot(PlotItem):
         """
         if self.plot_state is None:
             return
-        visible_selectors = (
-            self.plot_state.plot_selectors + self.plot_state.signal_tree_selectors
-        )
-        print("Showing selectors for plot_window:", self.plot_window)
-        print("Current visible selectors:", visible_selectors)
-        if self.multiplot_manager is not None:
-            if self.plot_window not in self.multiplot_manager.navigation_selectors:
-                print("No navigation selectors for this plot window.")
-            else:
-                visible_selectors += self.multiplot_manager.navigation_selectors[
-                    self.plot_window
-                ]
+        visible_selectors = []
+        if self.signal_tree.navigator_plot_manager is not None:
+            visible_selectors = self.signal_tree.navigator_plot_manager.all_navigation_selectors
             print("visible selectors:", visible_selectors)
         # Hide selectors from other plots. Faster than deleting and recreating them (also renders nicer).
         for selector in self.main_window.navigation_selectors:
@@ -512,19 +503,15 @@ class Plot(PlotItem):
                 selector.widget.show()
 
     def remove_selector_control_widgets(self):
-        print("Removing selector control widgets for plot_window:", self.plot_window)
-        visible_selectors = (
-            self.plot_state.plot_selectors + self.plot_state.signal_tree_selectors
-        )
-        if self.multiplot_manager is not None:
-            print("Nav sel", self.multiplot_manager.navigation_selectors)
-            print("Plot win", self.plot_window)
-            if self.plot_window not in self.multiplot_manager.navigation_selectors:
-                print("No navigation selectors for this plot window.")
-            else:
-                visible_selectors += self.multiplot_manager.navigation_selectors[
-                    self.plot_window
-                ]
+
+        if self.plot_state is None:
+            return
+        visible_selectors = []
+        if self.signal_tree.navigator_plot_manager is not None:
+            visible_selectors = self.signal_tree.navigator_plot_manager.all_navigation_selectors
+            print("visible selectors:", visible_selectors)
+        # Hide selectors from other plots. Faster than deleting and recreating them (also renders nicer).
+
         for selector in visible_selectors:
             selector.widget.hide()
             self.main_window.selectors_layout.removeWidget(selector.widget)
