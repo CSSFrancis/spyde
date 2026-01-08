@@ -28,6 +28,7 @@ from hyperspy.signal import BaseSignal
 
 from spyde.live.camera_control_widget import CameraControlWidget
 from spyde.live.control_dock_widget import ControlDockWidget
+from spyde.live.particle_scanning import ParticleScanControlWidget
 from spyde.live.stage_control_widget import StageControlWidget
 from spyde.live.stem_control_widget import StemControlWidget
 from spyde.live.reference_control_widget import ReferenceControlWidget
@@ -913,10 +914,11 @@ class MainWindow(QMainWindow):
         self.addDockWidget(
             QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, self.control_widget
         )
-        self.control_widget.add_widget(StageControlWidget())
+        #self.control_widget.add_widget(StageControlWidget())
         self.control_widget.add_widget(CameraControlWidget())
-        self.control_widget.add_widget(StemControlWidget())
-        self.control_widget.add_widget(ReferenceControlWidget())
+        self.control_widget.add_widget(ParticleScanControlWidget())
+        #self.control_widget.add_widget(StemControlWidget())
+        #self.control_widget.add_widget(ReferenceControlWidget())
 
 
     def add_plot_control_widget(self):

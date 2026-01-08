@@ -18,7 +18,8 @@ Buttons:
 
 
 """
-from PySide6.QtWidgets import QGroupBox, QLabel, QHBoxLayout, QVBoxLayout, QComboBox, QPushButton, QWidget, QCheckBox
+from PySide6.QtWidgets import QGroupBox, QLabel, QHBoxLayout, QVBoxLayout, QComboBox, QPushButton, QWidget, QCheckBox, \
+    QSizePolicy
 from numpy import dtype
 from scipy.ndimage import label
 import numpy as np
@@ -135,12 +136,13 @@ class EditablePropertyLabel(QWidget):
                  parent=None):
 
         super().__init__(parent)
-        self.layout = QHBoxLayout()
-        self.setLayout(self.layout)
-
-        self.layout.addWidget(QLabel(f"{label}:"))
+        self._layout = QHBoxLayout()
+        self.setLayout(self._layout)
+        self.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.layout().addWidget(QLabel(f"{label}:"))
         # input field for x pixels
         self.input_field = EditableLabel(default_value)
+        self.layout().addWidget(self.input_field)
 
         # type, update_to_client_func, update_from_client_func
         self.dtype = dtype
@@ -160,11 +162,29 @@ class EditablePropertyLabel(QWidget):
             self.input_field.setText(str(value))
 
 
+class DummyClient:
+    """A dummy client for testing purposes.
+    """
+    def __init__(self):
+        self.store = {
+            "Scan - Size X": 256,
+            "Scan - Size Y": 256
+        }
+
+    def setitem(self, key, value):
+        self.store[key] = value
+        return True
+
+    def getitem(self, key):
+        return self.store.get(key, None)
+
 class ParticleScanControlWidget(QGroupBox):
     """
 
     """
-    def __init__(self, parent=None):
+    def __init__(self,
+                 parent=None,
+                 client=None):
         super().__init__(parent)
         # Scan parameters
         self.setTitle("Particle Scan Control")
@@ -172,13 +192,15 @@ class ParticleScanControlWidget(QGroupBox):
         self.setLayout(main_layout)
 
         scan_group = QGroupBox("Scan Control")
-        scan_group.setMaximumHeight(60)
         scan_group.setLayout(QHBoxLayout())
-        self.client = None
+        self.client = client
+
+        if self.client is None:
+            self.client = DummyClient()
         # input fields for x, y, scan rep.
         set_x_pixels_func = lambda x: self.client.setitem("Scan - Size X", x)
         get_x_pixels_func = lambda: self.client.getitem("Scan - Size X")
-        self.x_pixels_input = EditablePropertyLabel(label="X Points",
+        self.x_pixels_input = EditablePropertyLabel(label="X",
                                                     default_value="256",
                                                     dtype=int,
                                                     update_to_client_func=set_x_pixels_func,
@@ -187,33 +209,26 @@ class ParticleScanControlWidget(QGroupBox):
 
         set_y_pixels_func = lambda x: self.client.setitem("Scan - Size Y", x)
         get_y_pixels_func = lambda: self.client.getitem("Scan - Size Y")
-        self.y_pixels_input = EditablePropertyLabel(label="Y Points",
+        self.y_pixels_input = EditablePropertyLabel(label="Y",
                                                     default_value="256",
                                                     dtype=int,
                                                     update_to_client_func=set_y_pixels_func,
                                                     update_from_client_func=get_y_pixels_func)
 
         scan_group.layout().addWidget(self.y_pixels_input)
+
         main_layout.addWidget(scan_group)
 
-        # Particle Scan Folder
-        scan_folder_layout = QHBoxLayout()
-        self.scan_folder_label = QLabel("Scan Folder:")
-        scan_folder_layout.addWidget(self.scan_folder_label)
-        self.scan_folder_input = EditableLabel("")
-        scan_folder_layout.addWidget(self.scan_folder_input)
-        main_layout.addLayout(scan_folder_layout)
-
-        # Scan modifiers [Average DP]
-        scan_mod_layout = QHBoxLayout()
-        self.average_dp_checkbox = QCheckBox("Average DP")
-        scan_mod_layout.addWidget(self.average_dp_checkbox)
-
-        main_layout.addLayout(scan_mod_layout)
-
         # Control buttons [Search] [Acquire]
+        toggle_layout = QHBoxLayout()
+        self.save_four_d = QCheckBox("Save 4D")
+        toggle_layout.addWidget(self.save_four_d)
+        self.use_de_camera_checkbox = QCheckBox("Use DE Camera")
+        toggle_layout.addWidget(self.use_de_camera_checkbox)
+        main_layout.addLayout(toggle_layout)
+
         control_layout = QHBoxLayout()
-        self.search_beam_button = QPushButton("Search HAADF")
+        self.search_beam_button = QPushButton("Search")
         self.start_stop_button = QPushButton("Acquire")
         control_layout.addWidget(self.search_beam_button)
         control_layout.addWidget(self.start_stop_button)
