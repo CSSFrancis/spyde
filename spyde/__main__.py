@@ -598,6 +598,9 @@ class MainWindow(QMainWindow):
                 kwargs.pop("chunks")
             print("Loading signal from file:", file_path, "with kwargs:", kwargs)
             signal = hs.load(file_path, **kwargs)
+            # fix MRC loading in rsciio.
+            if (signal.axes_manager.signal_dimension + signal.axes_manager.navigation_dimension) ==2:
+                signal = signal.transpose(2)
             if kwargs.get("lazy", False):
                 if signal.axes_manager.navigation_dimension == 1:
                     signal.cache_pad = 3
@@ -1202,6 +1205,12 @@ class MainWindow(QMainWindow):
                             print("Navigator drag left active subwindow before drop")
                             self._navigator_drag_over_active = False
                         return False
+                    # Fallback: existing file-drop handling
+                    paths = self._extract_file_paths(mime)
+                    if any(self._is_supported_file(p) for p in paths):
+                        self._create_signals(paths)
+                        event.acceptProposedAction()
+                        return True
 
                 elif et == QEvent.Type.DragLeave:
                     if self._navigator_drag_over_active:
