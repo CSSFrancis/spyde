@@ -8,8 +8,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -31,6 +29,7 @@ dependencies = [
     "PySide6",
     "imageio-ffmpeg",
     "pyqtgraph",
+    "imagecodecs",
 ]
 description = "DE Visualization tool based on HyperSpy"
 version = "0.0.1"
@@ -44,11 +43,56 @@ keywords = [
     "4D STEM",
 ]
 name = "spyde"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
+
+[tool.uv]
+# When running via the PyCrucible launcher, install only core dependencies —
+# never optional extras (tests / doc) which aren't needed at runtime.
+extra-index-url = []
+
+[tool.pycrucible]
+entrypoint = "main.py"
+
+[tool.pycrucible.patterns]
+include = [
+    "main.py",
+    "spyde/**/*.py",
+    "spyde/**/*.yaml",
+    "spyde/**/*.png",
+    "spyde/**/*.ico",
+    "spyde/**/*.icns",
+    "spyde/**/*.svg",
+]
+exclude = [
+    ".venv/**/*",
+    ".venv2/**/*",
+    "**/__pycache__/**",
+    ".git/**/*",
+    "**/*.pyc",
+    "**/*.pyo",
+    "**/*.pyd",
+    "spyde/tests/**/*",
+    "spyde.egg-info/**/*",
+    "doc/**/*",
+    "examples/**/*",
+    "dist/**/*",
+]
 
 [tool.setuptools.packages.find]
 include = ["spyde*", "spyde.*"]
 where = ["."]
+
+[tool.setuptools.package-data]
+spyde = [
+    "*.yaml",
+    "*.png",
+    "*.ico",
+    "*.icns",
+    "*.svg",
+    "qt/assets/icons/*.svg",
+    "actions/hyper_signal_actions/*.yaml",
+    "actions/plot_actions/*.yaml",
+]
 
 [project.optional-dependencies]
 tests = [
@@ -59,6 +103,7 @@ tests = [
     "pytest-cov",
     "pytest-qt",
     "sphinx_gallery",
+    "tifffile",
 ]
 doc = [
     "sphinx",

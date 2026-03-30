@@ -1,0 +1,72 @@
+# NOTE: PyCrucible v0.4.6 reads its config from [tool.pycrucible] in pyproject.toml,
+# not from this file.  This file is kept for reference only.
+#
+# To build locally (Windows) – runs PyCrucible then injects the icon automatically:
+#   .\build.ps1
+#
+# To build without icon injection (quick test):
+#   .\build.ps1 -SkipIcon
+#
+# The CI workflow (.github/workflows/release.yml) runs these steps automatically
+# on Windows, macOS, and Linux when a vX.Y.Z tag is pushed.
+
+
+[app]
+name        = "SpyDE"
+version     = "0.0.1"
+description = "DE Visualization Tool built on HyperSpy"
+entry_point = "spyde/__main__.py"
+
+# ── per-platform icons ────────────────────────────────────────────────────────
+[app.windows]
+icon = "spyde/Spyde.ico"
+
+[app.macos]
+icon = "spyde/icon.icns"
+
+[app.linux]
+icon = "spyde/Spyde.png"
+
+# ── files that must travel inside the bundle alongside the Python package ─────
+[build]
+include_files = [
+    # core package assets
+    "spyde/toolbars.yaml",
+    "spyde/metadata_widget.yaml",
+
+    # icons / splash images
+    "spyde/Spyde.ico",
+    "spyde/Spyde.png",
+    "spyde/SpydeDark.png",
+    "spyde/Spyde.svg",
+    "spyde/icon.icns",
+    "spyde/spyde_banner.svg",
+
+    # action YAML definitions
+    "spyde/actions/hyper_signal_actions/insitu.yaml",
+    "spyde/actions/hyper_signal_actions/signal2d.yaml",
+    "spyde/actions/plot_actions/plot1d.yaml",
+    "spyde/actions/plot_actions/plot2d.yaml",
+
+    # UI icon assets
+    "spyde/qt/assets/icons/close.svg",
+    "spyde/qt/assets/icons/maximize.svg",
+    "spyde/qt/assets/icons/minimize.svg",
+]
+
+# ── desktop shortcut / launcher entry ────────────────────────────────────────
+[shortcut]
+name        = "SpyDE"
+description = "DE Visualization Tool"
+
+[shortcut.windows]
+icon = "spyde/Spyde.ico"
+
+[shortcut.macos]
+icon = "spyde/icon.icns"
+
+[shortcut.linux]
+icon       = "spyde/Spyde.png"
+categories = ["Science", "Education"]
+
+

@@ -51,7 +51,7 @@ COLORMAPS = {
     "fire": pg.colormap.get("CET-L3"),
 }
 
-SUPPORTED_EXTS = (".hspy", ".mrc")  # extend as needed
+SUPPORTED_EXTS = (".hspy", ".mrc", ".tif", ".tiff")  # extend as needed
 
 
 class DaskClusterWorker(QtCore.QObject):
@@ -597,11 +597,21 @@ class MainWindow(QMainWindow):
                 kwargs.pop("navigation_shape")
                 kwargs.pop("chunks")
             print("Loading signal from file:", file_path, "with kwargs:", kwargs)
-            signal = hs.load(file_path, **kwargs)
+            # tifffile-backed lazy arrays embed an open BufferedReader that
+            # cannot be pickled by Dask's distributed scheduler.  Load the
+            # TIFF eagerly and then convert to a serializable dask array via
+            # as_lazy(), which calls da.from_array on the in-memory numpy data.
+            is_tiff = file_path.lower().endswith((".tif", ".tiff"))
+            if is_tiff:
+                tiff_kwargs = {k: v for k, v in kwargs.items() if k != "lazy"}
+                signal = hs.load(file_path, lazy=False, **tiff_kwargs)
+                signal = signal.as_lazy()
+            else:
+                signal = hs.load(file_path, **kwargs)
             # fix MRC loading in rsciio.
-            if (signal.axes_manager.signal_dimension + signal.axes_manager.navigation_dimension) ==2:
+            if (signal.axes_manager.signal_dimension + signal.axes_manager.navigation_dimension) == 2:
                 signal = signal.transpose(2)
-            if kwargs.get("lazy", False):
+            if kwargs.get("lazy", False) or is_tiff:
                 if signal.axes_manager.navigation_dimension == 1:
                     signal.cache_pad = 3
                 elif signal.axes_manager.navigation_dimension == 2:
@@ -618,9 +628,10 @@ class MainWindow(QMainWindow):
     def open_file(self):
         self.file_dialog = QFileDialog()
         self.file_dialog.setFileMode(QtWidgets.QFileDialog.FileMode.ExistingFiles)
-        self.file_dialog.setNameFilter("Supported Files (*.hspy *.mrc);;"
+        self.file_dialog.setNameFilter("Supported Files (*.hspy *.mrc *.tif *.tiff);;"
                                        "Hyperspy Files (*.hspy);;"
-                                       "mrc Files (*.mrc)")
+                                       "mrc Files (*.mrc);;"
+                                       "TIFF Files (*.tif *.tiff)")
 
         if self.file_dialog.exec():
             file_paths = self.file_dialog.selectedFiles()
@@ -1447,13 +1458,19 @@ class MainWindow(QMainWindow):
         super().close()
 
 
+def _asset(filename: str) -> str:
+    """Return the absolute path to a bundled asset regardless of how the app was launched."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+
+
 def main() -> MainWindow:
     with log_startup_time("QApplication startup"):
         app = QtWidgets.QApplication(sys.argv)
-        app.setApplicationName("SpyDe")  # Set the application name
-    # Create and show the splash screen
-    logo_path = "SpydeDark.png"
-    pixmap = QPixmap(logo_path).scaled(
+        app.setApplicationName("SpyDE")
+
+    # Splash screen — use package-relative path so it works when bundled
+    splash_path = _asset("SpydeDark.png")
+    pixmap = QPixmap(splash_path).scaled(
         300,
         300,
         Qt.AspectRatioMode.KeepAspectRatio,
@@ -1462,24 +1479,25 @@ def main() -> MainWindow:
 
     splash = QSplashScreen(pixmap, Qt.WindowType.FramelessWindowHint)
     splash.show()
-    splash.raise_()  # Bring the splash screen to the front
+    splash.raise_()
     app.processEvents()
+
     with log_startup_time("MainWindow construction"):
         main_window = MainWindow(app=app)
 
-    main_window.setWindowTitle("SpyDE")  # Set the window title
+    main_window.setWindowTitle("SpyDE")
 
+    # Platform-appropriate window / taskbar icon
     if sys.platform == "darwin":
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        logo_path = os.path.join(base_dir, "icon.icns")
-        print("Using macOS icon:", logo_path)
-    else:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        logo_path = os.path.join(base_dir, "SpydeDark.png")
+        icon_path = _asset("icon.icns")
+    elif sys.platform == "win32":
+        icon_path = _asset("Spyde.ico")
+    else:  # Linux / other
+        icon_path = _asset("Spyde.png")
 
-    main_window.setWindowIcon(QIcon(str(logo_path)))
+    main_window.setWindowIcon(QIcon(icon_path))
     main_window.show()
-    splash.finish(main_window)  # Close the splash screen when the main window is shown
+    splash.finish(main_window)
 
     app.exec()
     return main_window
