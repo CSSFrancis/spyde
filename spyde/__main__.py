@@ -51,7 +51,7 @@ COLORMAPS = {
     "fire": pg.colormap.get("CET-L3"),
 }
 
-SUPPORTED_EXTS = (".hspy", ".mrc", ".tif", ".tiff")  # extend as needed
+SUPPORTED_EXTS = (".hspy", ".mrc", ".tif", ".tiff", ".de5")  # extend as needed
 
 
 class DaskClusterWorker(QtCore.QObject):
