@@ -149,6 +149,46 @@ class TestSelectors:
         assert len(nav_manager.signal_tree.signal_plots) == 2
 
 
+    def test_zoom_does_not_move_selector_or_recompute(self, qtbot, stem_4d_dataset):
+        """Zooming the navigator should not shift the crosshair center or trigger signal recompute."""
+        win = stem_4d_dataset["window"]
+        subplots = win.plots
+        subwindows = win.plot_subwindows
+        nav, sig = subplots
+        nav_window, sig_window = subwindows
+        nav_manager = nav.multiplot_manager
+        selector = nav_manager.navigation_selectors[nav_window][0]
+
+        qtbot.wait(500)
+
+        # Capture indices and data before zoom
+        pre_zoom_indices = selector.selector._get_selected_indices().copy()
+        pre_zoom_data = sig.current_data
+
+        # Simulate zoom by changing the ViewBox range (triggers sigRangeChanged -> _update_for_zoom)
+        vb = nav.getViewBox()
+        current_range = vb.viewRange()
+        cx = (current_range[0][0] + current_range[0][1]) / 2
+        cy = (current_range[1][0] + current_range[1][1]) / 2
+        half_w = (current_range[0][1] - current_range[0][0]) / 4
+        half_h = (current_range[1][1] - current_range[1][0]) / 4
+        # Zoom in 2x
+        vb.setRange(xRange=(cx - half_w, cx + half_w), yRange=(cy - half_h, cy + half_h), padding=0)
+
+        qtbot.wait(500)
+
+        # Indices should be unchanged after zoom
+        post_zoom_indices = selector.selector._get_selected_indices().copy()
+        np.testing.assert_array_equal(
+            pre_zoom_indices, post_zoom_indices,
+            err_msg="Crosshair selector indices changed after zoom — center drifted"
+        )
+
+        # Signal data should not have changed (no recompute triggered)
+        post_zoom_data = sig.current_data
+        assert pre_zoom_data is post_zoom_data or np.array_equal(pre_zoom_data, post_zoom_data), \
+            "Signal recomputed after zoom even though selector did not move"
+
     def test_chunk_recall_1d(self, qtbot):
         """
         Test that the moving selector accurately gets the right data from a chunked dataset"""

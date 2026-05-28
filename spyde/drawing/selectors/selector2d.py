@@ -69,6 +69,12 @@ class CrosshairSelector(BaseSelector):
             self.add_linked_roi(plot)
         self.roi.sigRegionChanged.connect(self.update_data)
 
+    def update_data(self, ev=None):
+        """Ignore region changes that are purely zoom-driven resizes."""
+        if getattr(self.roi, '_zoom_resize', False):
+            return
+        super().update_data(ev)
+
     def _get_selected_indices(self):
         """
         Get the currently selected indices from the crosshair selector.

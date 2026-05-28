@@ -24,13 +24,10 @@ class DatasetSizeDialog(QDialog):
 
         self.filename = filename
 
-        kwargs = {}
         # try to load the dataset
         print(f"loading: {filename}")
-        if ".mrc" in filename:
-            kwargs["distributed"] = True
         try:
-            data = hs.load(filename, lazy=True, **kwargs)
+            data = hs.load(filename, lazy=True)
         except Exception as e:
             print(f"Error loading dataset: {e}")
             self.reject()

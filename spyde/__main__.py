@@ -304,7 +304,10 @@ class MainWindow(QMainWindow):
         print(f"Dask cluster ready. Dashboard: {client.dashboard_link}")
 
         self._worker_keys = list(self.client.scheduler_info()['workers'].keys())
-        self._heavy_compute_workers = self._worker_keys[1:]  # leave one worker free for GUI tasks
+        heavy = self._worker_keys[1:]  # leave one worker free for GUI tasks
+        # If there is only one worker, don't restrict — an empty workers list
+        # would cause Dask to hang tasks with no eligible worker.
+        self._heavy_compute_workers = heavy if heavy else None
         # stop the bootstrap thread
         self._dask_thread.quit()
         self._dask_thread.wait(2000)
@@ -593,7 +596,7 @@ class MainWindow(QMainWindow):
                     )
 
                 print(f"chunks: {kwargs['chunks']}")
-            if hasattr(kwargs, "navigation_shape") and kwargs["navigation_shape"] == ():
+            if "navigation_shape" in kwargs and kwargs["navigation_shape"] == ():
                 kwargs.pop("navigation_shape")
                 kwargs.pop("chunks")
             print("Loading signal from file:", file_path, "with kwargs:", kwargs)

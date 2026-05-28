@@ -10,6 +10,7 @@ class CrosshairROI(ROI):
         super().__init__(pos, [pixel_size, pixel_size], **kwargs)
         self.pixel_size = pixel_size  # Size in pixels
         self.view = view  # ViewBox reference
+        self._zoom_resize = False  # True while resizing due to zoom (suppresses recompute)
 
         # Remove default handle
         for h in self.getHandles():
@@ -49,7 +50,20 @@ class CrosshairROI(ROI):
         # Set size to maintain constant pixel size
         scene_size = max(units_per_pixel_x, units_per_pixel_y) * self.pixel_size
         self.scene_size = scene_size
+
+        # Keep center fixed: pos is lower-left corner, center = pos + size/2
+        old_size = self.size()
+        old_pos = self.pos()
+        center_x = old_pos.x() + old_size[0] / 2
+        center_y = old_pos.y() + old_size[1] / 2
+
+        # Resize and reposition without triggering signal recomputation
+        self._zoom_resize = True
+        self.blockSignals(True)
         self.setSize([scene_size, scene_size], finish=False)
+        self.setPos([center_x - scene_size / 2, center_y - scene_size / 2], finish=False)
+        self.blockSignals(False)
+        self._zoom_resize = False
         self.size_value = scene_size
 
     def paint(self, p, *args):
