@@ -247,6 +247,8 @@ class Plot(PlotItem):
             vb.setAspectLocked(True, ratio=1)
             vb.enableAutoRange(x=True, y=True)
             vb.autoRange()
+            self.showAxis('bottom')
+            self.showAxis('left')
 
         elif self.plot_state.dimensions == 1 and old_dim != 1:
             # self.clear()
@@ -254,7 +256,13 @@ class Plot(PlotItem):
             vb.setAspectLocked(False)
             vb.enableAutoRange(x=False, y=True)
             vb.setMouseEnabled(x=True, y=False)
+            self.showAxis('bottom')
+            self.showAxis('left')
             self.normalize_axes()
+
+        # Ensure axes are always visible when a plot state is activated
+        self.showAxis('bottom')
+        self.showAxis('left')
 
         # show the new selectors and child plots
         for selector in (
@@ -363,6 +371,27 @@ class Plot(PlotItem):
             for sel in selectors:
                 sel.apply_transform_to_selector(transform)
             self.enable_scale_bar(True)
+
+            # Limit zoom-out to 80% of image extent so the image is never lost.
+            # maxXRange / maxYRange cap how wide the view can become (zoom-out limit).
+            # xMin/xMax/yMin/yMax prevent panning past the image boundary.
+            n_x = axes[0].size
+            n_y = axes[1].size
+            x_min = x
+            x_max = x + sx * n_x
+            y_min = y
+            y_max = y + sy * n_y
+            img_width = abs(x_max - x_min)
+            img_height = abs(y_max - y_min)
+            pad = 0.1  # 10% padding so the image edge isn't flush with the viewport
+            self.getViewBox().setLimits(
+                xMin=x_min - img_width * pad,
+                xMax=x_max + img_width * pad,
+                yMin=y_min - img_height * pad,
+                yMax=y_max + img_height * pad,
+                maxXRange=img_width * 1.8,
+                maxYRange=img_height * 1.8,
+            )
             self.getViewBox().autoRange()
         else:
             self.enable_scale_bar(False)

@@ -909,6 +909,7 @@ class MainWindow(QMainWindow):
                 self._histogram_image_item = img_item
                 if plot_state is not None:
                     self.histogram.setLevels(plot_state.min_level, plot_state.max_level)
+                self.histogram.item.autoHistogramRange()
             except Exception:
                 pass
 
@@ -916,6 +917,8 @@ class MainWindow(QMainWindow):
         if st is not None and st is not self.current_selected_signal_tree:
             self.current_selected_signal_tree = st
             self.update_metadata_widget(plot)
+
+        self.update_axes_widget(plot)
 
         if plot_state is not None and hasattr(self, "cmap_selector"):
             self.cmap_selector.setCurrentText(plot_state.colormap)

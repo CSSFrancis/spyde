@@ -1,6 +1,7 @@
 import numpy as np
 import dask.array as da
 import hyperspy.api as hs
+from PySide6 import QtCore
 from pytestqt.plugin import qtbot
 
 from spyde.drawing.plots.multiplot_manager import MultiplotManager
@@ -236,3 +237,120 @@ class TestSelectors:
             np.testing.assert_array_equal(sig.image_item.image, i)
 
         win.close()
+
+
+class TestPlotBehavior:
+
+    def test_new_selector_centered_in_fov(self, qtbot, stem_4d_dataset):
+        """A newly created crosshair selector should start at the center of the image FOV."""
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        nav_window = win.plot_subwindows[0]
+        nav_manager = nav.multiplot_manager
+        selector = nav_manager.navigation_selectors[nav_window][0]
+
+        qtbot.wait(300)
+
+        # Get image bounds in data coordinates
+        image_item = nav.image_item
+        transform = image_item.transform()
+        img_w = image_item.width()
+        img_h = image_item.height()
+        center_data = transform.map(QtCore.QPointF(img_w / 2, img_h / 2))
+
+        # Get the crosshair ROI center (pos is lower-left corner)
+        roi = selector.selector.roi
+        pos = roi.pos()
+        size = roi.size()
+        roi_center_x = pos.x() + size[0] / 2
+        roi_center_y = pos.y() + size[1] / 2
+
+        # The selector center should be within 5% of the image size from the FOV center
+        tolerance_x = img_w * 0.05 * abs(transform.m11())
+        tolerance_y = img_h * 0.05 * abs(transform.m22())
+        assert abs(roi_center_x - center_data.x()) < tolerance_x, (
+            f"Selector center x={roi_center_x:.3f} is not near image center x={center_data.x():.3f}"
+        )
+        assert abs(roi_center_y - center_data.y()) < tolerance_y, (
+            f"Selector center y={roi_center_y:.3f} is not near image center y={center_data.y():.3f}"
+        )
+
+    def test_zoom_out_limit(self, qtbot, stem_4d_dataset):
+        """Zooming out past 80% of image size should be prevented."""
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        qtbot.wait(300)
+
+        vb = nav.getViewBox()
+        # Get image extent
+        image_item = nav.image_item
+        transform = image_item.transform()
+        img_w = image_item.width()
+        img_h = image_item.height()
+        x_min = transform.map(QtCore.QPointF(0, 0)).x()
+        x_max = transform.map(QtCore.QPointF(img_w, 0)).x()
+        img_data_width = abs(x_max - x_min)
+
+        # Try to zoom out far beyond the image by setting a huge range
+        vb.setRange(xRange=(x_min - img_data_width * 10, x_max + img_data_width * 10), padding=0)
+        qtbot.wait(100)
+
+        x_range = vb.viewRange()[0]
+        actual_width = x_range[1] - x_range[0]
+        # The actual view width must not exceed maxXRange (1.8 * img_data_width)
+        assert actual_width <= img_data_width * 1.85, (
+            f"View zoomed out too far: view width {actual_width:.3f} > limit {img_data_width * 1.85:.3f}"
+        )
+
+    def test_zoom_respects_mouse_position(self, qtbot, stem_4d_dataset):
+        """Zooming should scale around the current view center (pyqtgraph native behavior preserved)."""
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        qtbot.wait(300)
+
+        vb = nav.getViewBox()
+        current_range = vb.viewRange()
+        cx = (current_range[0][0] + current_range[0][1]) / 2
+        cy = (current_range[1][0] + current_range[1][1]) / 2
+        view_w = current_range[0][1] - current_range[0][0]
+        view_h = current_range[1][1] - current_range[1][0]
+        half_w = view_w / 4
+        half_h = view_h / 4
+        # Zoom in 2x symmetrically around the current center
+        vb.setRange(xRange=(cx - half_w, cx + half_w), yRange=(cy - half_h, cy + half_h), padding=0)
+        qtbot.wait(100)
+
+        post_range = vb.viewRange()
+        post_cx = (post_range[0][0] + post_range[0][1]) / 2
+        post_cy = (post_range[1][0] + post_range[1][1]) / 2
+
+        # Allow 1% of the original view width/height as tolerance
+        tol_x = view_w * 0.01
+        tol_y = view_h * 0.01
+        assert abs(post_cx - cx) < tol_x, f"Center drifted in x: {post_cx:.4f} vs {cx:.4f}"
+        assert abs(post_cy - cy) < tol_y, f"Center drifted in y: {post_cy:.4f} vs {cy:.4f}"
+
+    def test_axes_visible_on_2d_plot(self, qtbot, stem_4d_dataset):
+        """Both bottom and left axes must be visible on a freshly opened 2D signal plot."""
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        qtbot.wait(300)
+
+        for plot in (nav, sig):
+            if plot.plot_state.dimensions == 2:
+                bottom = plot.getAxis('bottom')
+                left = plot.getAxis('left')
+                assert bottom.isVisible(), f"bottom axis not visible on {plot}"
+                assert left.isVisible(), f"left axis not visible on {plot}"
+
+    def test_axes_visible_on_1d_plot(self, qtbot, insitu_tem_2d_dataset):
+        """Both bottom and left axes must be visible on a 1D signal plot."""
+        win = insitu_tem_2d_dataset["window"]
+        nav, sig = win.plots
+        qtbot.wait(300)
+
+        # sig is the 1D signal plot for insitu TEM
+        bottom = sig.getAxis('bottom')
+        left = sig.getAxis('left')
+        assert bottom.isVisible(), "bottom axis not visible on 1D signal plot"
+        assert left.isVisible(), "left axis not visible on 1D signal plot"

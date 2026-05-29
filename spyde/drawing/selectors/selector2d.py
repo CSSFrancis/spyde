@@ -44,11 +44,15 @@ class CrosshairSelector(BaseSelector):
             *args,
             **kwargs,
         )
-        # auto position and size
-        # 20 % of the image size and bottom left corner
-        transform = parent.current_plot_item.image_item.transform()
-        pos = transform.map(QtCore.QPointF(0, 0))
-        width = parent.current_plot_item.image_item.width() // 5
+        # auto position and size — centered on the image FOV, 1% of image width
+        # CrosshairROI pos is its lower-left corner, so subtract half the size to center it
+        image_item = parent.current_plot_item.image_item
+        transform = image_item.transform()
+        img_w = image_item.width()
+        img_h = image_item.height()
+        center = transform.map(QtCore.QPointF(img_w / 2, img_h / 2))
+        width = max(1, img_w // 100)
+        pos = center - QtCore.QPointF(width / 2, width / 2)
         self.roi = CrosshairROI(
             pos=pos,
             pixel_size=width,
@@ -124,11 +128,15 @@ class RectangleSelector(BaseSelector):
         print("Creating Rectangle Selector")
         print(args, kwargs)
 
-        # auto position and size
-        # 10 % of the image size and bottom left corner
-        transform = self.current_plot.image_item.transform()
-        pos = transform.map(QtCore.QPointF(0, 0))
-        width = self.current_plot.image_item.width() // 10
+        # auto position and size — centered on the image FOV, 10% of image width
+        # RectROI pos is its lower-left corner, so subtract half the size to center it
+        image_item = self.current_plot.image_item
+        transform = image_item.transform()
+        img_w = image_item.width()
+        img_h = image_item.height()
+        center = transform.map(QtCore.QPointF(img_w / 2, img_h / 2))
+        width = max(1, img_w // 10)
+        pos = center - QtCore.QPointF(width / 2, width / 2)
 
         self.roi = RectROI(
             pos=pos,
