@@ -7,6 +7,9 @@ called on the move or change events of a selector.
 """
 
 import numpy as np
+import dask
+import dask.array as da
+import distributed
 from distributed import Future
 
 from scipy import fft
@@ -169,3 +172,36 @@ def get_fft(selector: "BaseSelector", child: "Plot", indices, get_result: bool =
     sliced_img = img[slice_x, slice_y]
     fft_img = fft.fftshift(fft.fft2(sliced_img))
     return fft_img.real
+
+
+def compute_virtual_image_kernel(
+    data: da.Array,
+    mask: np.ndarray,
+    client: distributed.Client,
+    gpu_worker_address: "str | None",
+) -> distributed.Future:
+    """
+    Compute a virtual image by contracting the last two axes of data with mask.
+
+    Works for any number of navigation axes (3D, 4D, 5D, 6D datasets).
+    Signal axes must be the last two (HyperSpy convention).
+
+    Parameters
+    ----------
+    data : dask array, shape (...nav..., nkx, nky)
+    mask : float32 numpy array, shape (nkx, nky)
+    client : dask distributed Client
+    gpu_worker_address : str or None
+        GPU worker address; None means CPU-only fallback.
+
+    Returns
+    -------
+    distributed.Future resolving to np.ndarray of shape (...nav...)
+    """
+    ndim = data.ndim
+    sig_axes = [ndim - 2, ndim - 1]
+    da_mask = da.from_array(mask, chunks=mask.shape)
+    resources = {"GPU": 1} if gpu_worker_address else {}
+    with dask.annotate(resources=resources):
+        result = da.tensordot(data, da_mask, axes=(sig_axes, [0, 1]))
+    return client.compute(result)
