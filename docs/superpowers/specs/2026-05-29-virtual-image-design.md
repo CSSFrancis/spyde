@@ -8,7 +8,16 @@
 
 ## 1. Overview
 
-A 4D STEM dataset has shape `(nx, ny, nkx, nky)`. A virtual image integrates the diffraction-space intensity inside a detector ROI (disk, annular, rectangle) across every navigation position, producing a `(nx, ny)` image. This design adds the complete workflow:
+SpyDE supports datasets with varying numbers of navigation axes. HyperSpy always places signal axes last, so the general layout is `(...nav..., nkx, nky)`. Common cases:
+
+| Dataset | Shape | Navigation | Signal |
+|---------|-------|-----------|--------|
+| 3D STEM | `(nkx, nky)` with 1 nav | `(nx,)` | `(nkx, nky)` |
+| 4D STEM | `(nx, ny, nkx, nky)` | `(nx, ny)` | `(nkx, nky)` |
+| 5D (in-situ) | `(t, nx, ny, nkx, nky)` | `(t, nx, ny)` | `(nkx, nky)` |
+| 6D (tilt series) | `(α, β, nx, ny, nkx, nky)` | `(α, β, nx, ny)` | `(nkx, nky)` |
+
+A virtual image integrates diffraction-space intensity inside a detector ROI across every navigation position, producing an array of shape `(...nav...)`. This design adds the complete workflow:
 
 1. User places one or more colored ROIs on the diffraction pattern
 2. Each ROI immediately spawns a paired plot window showing the live virtual image
@@ -32,7 +41,7 @@ add_virtual_image()
     └── sigRegionChangeFinished →
             compute_virtual_image_kernel(data, mask, client, gpu_worker)
                 │
-                ├── da.tensordot(data, da_mask, axes=([2,3],[0,1]))  → (nx,ny)
+                ├── da.tensordot(data, da_mask, axes=(sig_axes, [0,1]))  → (...nav...)
                 ├── dask.annotate(resources={"GPU": 1})  if gpu available
                 ├── client.compute(result) → Future
                 │
@@ -141,14 +150,16 @@ def compute_virtual_image_kernel(
     gpu_worker_address: str | None,
 ) -> distributed.Future:
     """
-    Compute a virtual image by contracting data over diffraction axes with mask.
+    Compute a virtual image by contracting data over the last two (signal/diffraction)
+    axes with mask, for any number of navigation axes.
 
     Uses da.tensordot for memory-efficient contraction — no intermediate
-    (nx, ny, nkx, nky) array is materialised.
+    full-shape array is materialised.
 
     Parameters
     ----------
-    data : dask array, shape (nx, ny, nkx, nky)
+    data : dask array, shape (...nav..., nkx, nky)
+        HyperSpy convention: signal axes are the last two axes.
     mask : float32 numpy array, shape (nkx, nky)
     client : dask distributed Client
     gpu_worker_address : str or None
@@ -156,25 +167,30 @@ def compute_virtual_image_kernel(
 
     Returns
     -------
-    distributed.Future resolving to np.ndarray shape (nx, ny)
+    distributed.Future resolving to np.ndarray shape (...nav...)
     """
 ```
 
 ### 5.2 Computation
 
 ```python
+ndim = data.ndim
+sig_axes = [ndim - 2, ndim - 1]   # always the last two
+mask_axes = [0, 1]
 da_mask = da.from_array(mask, chunks=mask.shape)  # never split
 with dask.annotate(resources={"GPU": 1} if gpu_worker_address else {}):
-    result = da.tensordot(data, da_mask, axes=([2, 3], [0, 1]))  # → (nx, ny)
+    result = da.tensordot(data, da_mask, axes=(sig_axes, mask_axes))
 future = client.compute(result)
 return future
 ```
 
 `da.tensordot` with a single-chunk mask fuses multiply and sum into one kernel call per navigation chunk. Peak memory per worker = one navigation chunk + mask. The mask is broadcast, not replicated per chunk.
 
-### 5.3 Data must be `(nx, ny, nkx, nky)`
+Output shape is `(...nav...)` for any number of navigation axes: `(nx,)` for 3D, `(nx, ny)` for 4D, `(t, nx, ny)` for 5D, `(α, β, nx, ny)` for 6D.
 
-If the signal has a different axis order, the kernel caller is responsible for transposing `signal.data` before passing it in. `signal.axes_manager` gives the canonical axis order.
+### 5.3 Axis Order Convention
+
+HyperSpy signals always place signal axes last. `signal.data` can be passed directly to the kernel without any transposition. `signal.axes_manager.navigation_axes` gives the leading axes in the same order.
 
 ### 5.4 GPU Execution
 
@@ -246,7 +262,7 @@ def on_commit_clicked():
             )
             return
         vdf = VirtualDarkFieldImage(result)
-        # copy navigation axes
+        # copy all navigation axes (works for any nav dimensionality)
         for i, ax in enumerate(signal.axes_manager.navigation_axes):
             vdf.axes_manager.navigation_axes[i].scale = ax.scale
             vdf.axes_manager.navigation_axes[i].offset = ax.offset
@@ -267,6 +283,7 @@ def on_commit_clicked():
 ### 7.3 Result
 
 - A new `BaseSignalTree` rooted at `VirtualDarkFieldImage` is added to `main_window.signal_trees`
+- The committed signal has shape `(...nav...)` matching the source signal's navigation dimensionality (1D for 3D source, 2D for 4D, 3D for 5D, 4D for 6D)
 - The live preview plot window remains open and independent
 - Committing again creates a second independent signal tree
 - The commit future shares the same `ComputeStatusIndicator` as the live preview
@@ -336,11 +353,14 @@ Extends `test_actions.py`:
 
 ### 9.2 `TestVirtualImageKernel`
 
-- CPU path: `(4,4,8,8)` synthetic dask array, known mask → output matches `np.tensordot` reference
+- CPU path: `(4,4,8,8)` synthetic dask array (4D), known mask → output matches `np.tensordot` reference, shape `(4,4)`
+- 3D input `(4,8,8)` → output shape `(4,)` 
+- 5D input `(2,4,4,8,8)` → output shape `(2,4,4)`
+- 6D input `(2,3,4,4,8,8)` → output shape `(2,3,4,4)`
 - Non-lazy (numpy) array input works
 - `gpu_worker_address=None` → no error, CPU result correct
 - Return type is `distributed.Future`
-- Output shape is `(nx, ny)` regardless of chunking
+- Output shape is `(...nav...)` regardless of chunking or nav dimensionality
 
 ### 9.3 `TestVirtualImageLivePreview`
 
@@ -379,8 +399,8 @@ No real GPU required (mock `nvidia-smi`):
 
 Runs only when `nvidia-smi` detects a GPU at collection time (session-scoped `gpu_available` fixture):
 
-- Same `(4,4,8,8)` array routed through GPU worker
-- Output matches CPU reference to `float32` precision
+- 4D `(4,4,8,8)` array routed through GPU worker → output matches CPU reference to `float32` precision
+- 5D `(2,4,4,8,8)` array → output shape `(2,4,4)`, matches CPU reference
 - GPU worker `processed` count increases after computation
 - Progress arc angle advances during computation (200ms poll)
 
