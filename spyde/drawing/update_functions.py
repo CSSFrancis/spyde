@@ -198,10 +198,13 @@ def compute_virtual_image_kernel(
     -------
     distributed.Future resolving to np.ndarray of shape (...nav...)
     """
+    mask = np.asarray(mask, dtype=np.float32)
     ndim = data.ndim
     sig_axes = [ndim - 2, ndim - 1]
     da_mask = da.from_array(mask, chunks=mask.shape)
-    resources = {"GPU": 1} if gpu_worker_address else {}
-    with dask.annotate(resources=resources):
+    if gpu_worker_address:
+        with dask.annotate(resources={"GPU": 1}):
+            result = da.tensordot(data, da_mask, axes=(sig_axes, [0, 1]))
+    else:
         result = da.tensordot(data, da_mask, axes=(sig_axes, [0, 1]))
     return client.compute(result)

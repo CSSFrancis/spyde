@@ -70,9 +70,13 @@ class TestVirtualImageKernel:
         result = future.result()
         assert result.shape == (4, 4)
 
-    def test_returns_future(self):
+    def test_gpu_annotation_branch_returns_future(self):
         from spyde.drawing.update_functions import compute_virtual_image_kernel
         data = da.ones((4, 4, 8, 8), dtype=np.float32, chunks=(2, 2, 8, 8))
         mask = self._mask()
-        future = compute_virtual_image_kernel(data, mask, self.client, None)
+        # Pass a fake address — annotation is set on the graph but scheduling
+        # falls through to CPU workers when no GPU worker matches.
+        future = compute_virtual_image_kernel(data, mask, self.client, "tcp://fake:8786")
         assert isinstance(future, Future)
+        result = future.result()
+        assert result.shape == (4, 4)
