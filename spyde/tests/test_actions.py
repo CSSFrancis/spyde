@@ -1,9 +1,13 @@
+import numpy as np
+import hyperspy.api as hs
+import dask.array as da
 from PySide6 import QtWidgets
 from pyqtgraph import CircleROI, RectROI
 
 from spyde.drawing.toolbars.caret_group import CaretParams
 from spyde.drawing.toolbars.toolbar import RoundedToolBar
 from spyde.drawing.toolbars.popout_toolbar import PopoutToolBar
+from spyde.external.pyqtgraph.ring_roi import RingROI
 
 
 class TestActions:
@@ -217,13 +221,6 @@ class TestActions:
         )[0]
         assert isinstance(roi, RectROI)
         qtbot.wait(500)
-
-
-import numpy as np
-import hyperspy.api as hs
-import dask.array as da
-from pyqtgraph import CircleROI, RectROI
-from spyde.external.pyqtgraph.ring_roi import RingROI
 
 
 class TestVirtualImageROI:

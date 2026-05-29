@@ -34,13 +34,11 @@ def roi_to_mask(roi, signal) -> np.ndarray:
     if isinstance(roi, RingROI):
         inner_roi = roi.rois[0]
         outer_roi = roi.rois[1]
-        inner_pos = inner_roi.pos()
-        inner_size = inner_roi.size()
         outer_pos = outer_roi.pos()
         outer_size = outer_roi.size()
         cx = outer_pos.x() + outer_size.x() / 2
         cy = outer_pos.y() + outer_size.y() / 2
-        inner_r = inner_size.x() / 2
+        inner_r = inner_roi.size().x() / 2
         outer_r = outer_size.x() / 2
         dist2 = (x_data - cx) ** 2 + (y_data - cy) ** 2
         mask_bool = (dist2 >= inner_r ** 2) & (dist2 <= outer_r ** 2)
