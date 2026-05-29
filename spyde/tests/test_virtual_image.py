@@ -80,3 +80,28 @@ class TestVirtualImageKernel:
         assert isinstance(future, Future)
         result = future.result()
         assert result.shape == (4, 4)
+
+
+class TestComputeStatusIndicator:
+    def test_import(self):
+        from spyde.qt.compute_status_indicator import ComputeStatusIndicator
+        assert ComputeStatusIndicator is not None
+
+    def test_states(self, qtbot):
+        from spyde.qt.compute_status_indicator import ComputeStatusIndicator
+        w = ComputeStatusIndicator()
+        qtbot.addWidget(w)
+        w.show()
+
+        w.set_idle()
+        assert w._state == "idle"
+
+        w.set_computing(total_tasks=10)
+        assert w._state == "computing"
+        assert w._total_tasks == 10
+
+        w.update_progress(5)
+        assert w._completed_tasks == 5
+
+        w.set_done()
+        assert w._state == "done"
