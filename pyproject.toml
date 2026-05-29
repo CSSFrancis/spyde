@@ -122,3 +122,8 @@ Source = "https://github.com/directelectron/spyde"
 
 [project.scripts]
 spyde = "spyde.__main__:main"
+
+[tool.pytest.ini_options]
+markers = [
+    "gpu: tests requiring a physical NVIDIA GPU",
+]

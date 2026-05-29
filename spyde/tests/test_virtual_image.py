@@ -82,6 +82,47 @@ class TestVirtualImageKernel:
         assert result.shape == (4, 4)
 
 
+class TestGPUWorkerSetup:
+    def test_probe_gpus_returns_zero_when_absent(self):
+        """_probe_gpus returns 0 when nvidia-smi is not found."""
+        import unittest.mock as mock
+        from spyde.__main__ import _probe_gpus
+        with mock.patch("subprocess.run", side_effect=FileNotFoundError):
+            assert _probe_gpus() == 0
+
+    def test_probe_gpus_returns_zero_on_timeout(self):
+        import unittest.mock as mock
+        import subprocess
+        from spyde.__main__ import _probe_gpus
+        with mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired("nvidia-smi", 3)):
+            assert _probe_gpus() == 0
+
+    def test_probe_gpus_returns_count_from_mocked_output(self):
+        import unittest.mock as mock
+        from spyde.__main__ import _probe_gpus
+        fake_result = mock.Mock()
+        fake_result.returncode = 0
+        fake_result.stdout = b"NVIDIA GeForce RTX 3080\nNVIDIA GeForce RTX 3080\n"
+        with mock.patch("subprocess.run", return_value=fake_result):
+            assert _probe_gpus() == 2
+
+    def test_gpu_worker_address_is_none_when_no_gpu(self, stem_4d_dataset):
+        """_gpu_worker_address is None when no GPU is present (default on CI)."""
+        win = stem_4d_dataset["window"]
+        assert hasattr(win, "_gpu_worker_address")
+        import subprocess
+        try:
+            r = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                capture_output=True, timeout=3,
+            )
+            has_gpu = r.returncode == 0 and r.stdout.strip()
+        except Exception:
+            has_gpu = False
+        if not has_gpu:
+            assert win._gpu_worker_address is None
+
+
 class TestComputeStatusIndicator:
     def test_import(self):
         from spyde.qt.compute_status_indicator import ComputeStatusIndicator

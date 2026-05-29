@@ -1,6 +1,7 @@
 from __future__ import annotations
 import sys
 import os
+import subprocess
 from typing import Union
 from functools import partial
 import webbrowser
@@ -54,8 +55,24 @@ COLORMAPS = {
 SUPPORTED_EXTS = (".hspy", ".mrc", ".tif", ".tiff", ".de5")  # extend as needed
 
 
+def _probe_gpus() -> int:
+    """Return the number of NVIDIA GPUs detected via nvidia-smi. Returns 0 on any failure."""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True,
+            timeout=3,
+        )
+        if result.returncode != 0:
+            return 0
+        lines = [l for l in result.stdout.decode().strip().splitlines() if l.strip()]
+        return len(lines)
+    except Exception:
+        return 0
+
+
 class DaskClusterWorker(QtCore.QObject):
-    finished = QtCore.Signal(object, object)  # cluster_or_none, client_or_none
+    finished = QtCore.Signal(object, object, object)  # cluster, client, gpu_worker_address
     error = QtCore.Signal(Exception)
 
     def __init__(self, n_workers: int, threads_per_worker: int, parent=None):
@@ -72,11 +89,11 @@ class DaskClusterWorker(QtCore.QObject):
             cluster = LocalCluster(
                 n_workers=self.n_workers,
                 threads_per_worker=self.threads_per_worker,
-
             )
             client = Client(cluster)
-
-            self.finished.emit(cluster, client)
+            n_gpus = _probe_gpus()
+            gpu_worker_address = "gpu_available" if n_gpus > 0 else None
+            self.finished.emit(cluster, client, gpu_worker_address)
         except Exception as e:
             self.error.emit(e)
 
@@ -148,6 +165,7 @@ class MainWindow(QMainWindow):
             self.screen_size.width() * 3 // 4, self.screen_size.height() * 3 // 4
         )
         self.histogram = None
+        self._gpu_worker_address: str | None = None
         self._histogram_image_item = None  # track bound ImageItem to avoid LUT resets
 
         # center the main window on the screen
@@ -296,11 +314,12 @@ class MainWindow(QMainWindow):
         self.app.aboutToQuit.connect(self._shutdown_dask)
         self.app.aboutToQuit.connect(self._shutdown_update_thread)
 
-    @QtCore.Slot(object, object)
-    def _on_dask_ready(self, cluster, client):
+    @QtCore.Slot(object, object, object)
+    def _on_dask_ready(self, cluster, client, gpu_worker_address=None):
         # store both client and cluster so we can close cleanly
         self.cluster = cluster
         self.client = client
+        self._gpu_worker_address = gpu_worker_address
         print(f"Dask cluster ready. Dashboard: {client.dashboard_link}")
 
         self._worker_keys = list(self.client.scheduler_info()['workers'].keys())
@@ -688,6 +707,11 @@ class MainWindow(QMainWindow):
             for key, item in signal.metadata.General.virtual_images:
                 print("Adding virtual image navigator signal:", key)
                 signal_tree.add_navigator_signal(key, item)
+
+    @QtCore.Slot(object)
+    def _add_signal_from_thread(self, signal):
+        """Thread-safe slot to add a committed virtual image signal."""
+        self.add_signal(signal)
 
     def load_example_data(self, name):
         """

@@ -1,4 +1,5 @@
 import pytest
+import subprocess
 from typing import Dict, Union, List, Iterator
 
 from spyde.qt.shared import open_window as _open_window
@@ -102,3 +103,16 @@ def window(
         }
     finally:
         _close_window(qtbot, win)
+
+
+@pytest.fixture(scope="session")
+def gpu_available() -> bool:
+    """True if nvidia-smi detects at least one GPU."""
+    try:
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True, timeout=3,
+        )
+        return r.returncode == 0 and bool(r.stdout.strip())
+    except Exception:
+        return False
