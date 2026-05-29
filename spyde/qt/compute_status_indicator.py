@@ -42,6 +42,8 @@ class ComputeStatusIndicator(QtWidgets.QWidget):
         self._done_timer.start(500)
 
     def update_progress(self, completed: int):
+        if self._state != "computing":
+            return
         self._completed_tasks = completed
         self.update()
 
