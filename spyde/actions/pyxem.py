@@ -10,6 +10,89 @@ from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
 from spyde.external.pyqtgraph.ring_roi import RingROI
 
 
+def roi_to_mask(roi, signal) -> np.ndarray:
+    """Convert a PyQtGraph ROI to a float32 mask over the signal axes.
+
+    Uses the signal axes scale/offset to build a pixel coordinate grid.
+    Returns shape (nkx, nky), dtype float32, values 0.0 or 1.0.
+    """
+    sig_axes = signal.axes_manager.signal_axes  # [kx_axis, ky_axis] — last two
+    nkx = sig_axes[1].size
+    nky = sig_axes[0].size
+    scale_x = sig_axes[1].scale
+    scale_y = sig_axes[0].scale
+    offset_x = sig_axes[1].offset
+    offset_y = sig_axes[0].offset
+
+    rows = np.arange(nkx)
+    cols = np.arange(nky)
+    col_grid, row_grid = np.meshgrid(cols, rows)
+
+    x_data = col_grid * scale_x + offset_x
+    y_data = row_grid * scale_y + offset_y
+
+    if isinstance(roi, RingROI):
+        inner_roi = roi.rois[0]
+        outer_roi = roi.rois[1]
+        inner_pos = inner_roi.pos()
+        inner_size = inner_roi.size()
+        outer_pos = outer_roi.pos()
+        outer_size = outer_roi.size()
+        cx = outer_pos.x() + outer_size.x() / 2
+        cy = outer_pos.y() + outer_size.y() / 2
+        inner_r = inner_size.x() / 2
+        outer_r = outer_size.x() / 2
+        dist2 = (x_data - cx) ** 2 + (y_data - cy) ** 2
+        mask_bool = (dist2 >= inner_r ** 2) & (dist2 <= outer_r ** 2)
+
+    elif isinstance(roi, CircleROI):
+        pos = roi.pos()
+        size = roi.size()
+        cx = pos.x() + size.x() / 2
+        cy = pos.y() + size.y() / 2
+        r = size.x() / 2
+        dist2 = (x_data - cx) ** 2 + (y_data - cy) ** 2
+        mask_bool = dist2 <= r ** 2
+
+    elif isinstance(roi, RectROI):
+        pos = roi.pos()
+        size = roi.size()
+        x0, x1 = pos.x(), pos.x() + size.x()
+        y0, y1 = pos.y(), pos.y() + size.y()
+        mask_bool = (x_data >= x0) & (x_data <= x1) & (y_data >= y0) & (y_data <= y1)
+
+    else:
+        raise TypeError(f"Unsupported ROI type: {type(roi)}")
+
+    return mask_bool.astype(np.float32)
+
+
+def _roi_metadata(roi) -> dict:
+    """Extract ROI geometry as a plain dict for signal metadata storage."""
+    if isinstance(roi, RingROI):
+        return {
+            "type": "ring",
+            "center": (roi.rois[1].pos().x() + roi.rois[1].size().x() / 2,
+                       roi.rois[1].pos().y() + roi.rois[1].size().y() / 2),
+            "inner_radius": roi.rois[0].size().x() / 2,
+            "outer_radius": roi.rois[1].size().x() / 2,
+        }
+    elif isinstance(roi, CircleROI):
+        return {
+            "type": "disk",
+            "center": (roi.pos().x() + roi.size().x() / 2,
+                       roi.pos().y() + roi.size().y() / 2),
+            "radius": roi.size().x() / 2,
+        }
+    elif isinstance(roi, RectROI):
+        return {
+            "type": "rectangle",
+            "pos": (roi.pos().x(), roi.pos().y()),
+            "size": (roi.size().x(), roi.size().y()),
+        }
+    return {}
+
+
 def center_zero_beam(
     toolbar: RoundedToolBar,
     make_flat_field: bool = False,

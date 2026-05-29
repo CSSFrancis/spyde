@@ -217,3 +217,82 @@ class TestActions:
         )[0]
         assert isinstance(roi, RectROI)
         qtbot.wait(500)
+
+
+import numpy as np
+import hyperspy.api as hs
+import dask.array as da
+from pyqtgraph import CircleROI, RectROI
+from spyde.external.pyqtgraph.ring_roi import RingROI
+
+
+class TestVirtualImageROI:
+    """Tests for roi_to_mask."""
+
+    def _make_signal(self):
+        """4D STEM signal with known signal axes."""
+        data = da.zeros((4, 4, 8, 8), dtype=np.float32)
+        sig = hs.signals.Signal2D(data)
+        sig.axes_manager.signal_axes[0].scale = 1.0
+        sig.axes_manager.signal_axes[0].offset = 0.0
+        sig.axes_manager.signal_axes[1].scale = 1.0
+        sig.axes_manager.signal_axes[1].offset = 0.0
+        return sig
+
+    def test_circle_roi_mask_shape(self, qapp):
+        from spyde.actions.pyxem import roi_to_mask
+        sig = self._make_signal()
+        roi = CircleROI(pos=(2, 2), size=(4, 4))
+        mask = roi_to_mask(roi, sig)
+        assert mask.shape == (8, 8)
+
+    def test_circle_roi_mask_dtype(self, qapp):
+        from spyde.actions.pyxem import roi_to_mask
+        sig = self._make_signal()
+        roi = CircleROI(pos=(2, 2), size=(4, 4))
+        mask = roi_to_mask(roi, sig)
+        assert mask.dtype == np.float32
+
+    def test_circle_roi_center_pixel_is_one(self, qapp):
+        from spyde.actions.pyxem import roi_to_mask
+        sig = self._make_signal()
+        # Circle centered at pixel (4,4), radius 2 pixels
+        roi = CircleROI(pos=(2, 2), size=(4, 4))
+        mask = roi_to_mask(roi, sig)
+        assert mask[4, 4] == 1.0, f"Center pixel should be 1.0, got {mask[4,4]}"
+
+    def test_circle_roi_outside_is_zero(self, qapp):
+        from spyde.actions.pyxem import roi_to_mask
+        sig = self._make_signal()
+        roi = CircleROI(pos=(2, 2), size=(4, 4))
+        mask = roi_to_mask(roi, sig)
+        assert mask[0, 0] == 0.0, f"Corner pixel should be 0.0, got {mask[0,0]}"
+
+    def test_rect_roi_mask_shape(self, qapp):
+        from spyde.actions.pyxem import roi_to_mask
+        sig = self._make_signal()
+        roi = RectROI(pos=(1, 1), size=(4, 4))
+        mask = roi_to_mask(roi, sig)
+        assert mask.shape == (8, 8)
+
+    def test_rect_roi_dtype(self, qapp):
+        from spyde.actions.pyxem import roi_to_mask
+        sig = self._make_signal()
+        roi = RectROI(pos=(1, 1), size=(4, 4))
+        mask = roi_to_mask(roi, sig)
+        assert mask.dtype == np.float32
+
+    def test_ring_roi_mask_shape(self, qapp):
+        from spyde.actions.pyxem import roi_to_mask
+        sig = self._make_signal()
+        roi = RingROI(center=(2, 2), inner_rad=1, outer_rad=3)
+        mask = roi_to_mask(roi, sig)
+        assert mask.shape == (8, 8)
+
+    def test_ring_roi_center_excluded(self, qapp):
+        from spyde.actions.pyxem import roi_to_mask
+        sig = self._make_signal()
+        # inner_rad=2, outer_rad=3 → center pixel (4,4) is inside inner radius
+        roi = RingROI(center=(2, 2), inner_rad=2, outer_rad=3)
+        mask = roi_to_mask(roi, sig)
+        assert mask[4, 4] == 0.0, f"Center pixel should be 0.0 for ring ROI, got {mask[4,4]}"
