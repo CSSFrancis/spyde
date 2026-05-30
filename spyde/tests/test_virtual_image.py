@@ -146,3 +146,140 @@ class TestComputeStatusIndicator:
 
         w.set_done()
         assert w._state == "done"
+
+
+class TestVirtualImageLivePreview:
+
+    def _get_vi_action(self, sig_plot):
+        tb = sig_plot.plot_state.toolbar_bottom
+        for a in tb.actions():
+            if a.text() == "Virtual Imaging":
+                return a, tb
+        raise AssertionError("Virtual Imaging action not found")
+
+    def _add_detector(self, qtbot, win):
+        nav, sig = win.plots
+        vi_action, tb = self._get_vi_action(sig)
+        vi_action.trigger()
+        qtbot.wait(200)
+        vi_widget = tb.action_widgets["Virtual Imaging"]["widget"]
+        for a in vi_widget.actions():
+            if a.text() == "Add Virtual Image":
+                a.trigger()
+                break
+        qtbot.wait(300)
+        new_action = vi_widget.actions()[-1]
+        new_action.trigger()
+        qtbot.wait(300)
+        return tb, vi_widget
+
+    def test_add_virtual_image_spawns_plot_window(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        n_before = len(win.plot_subwindows)
+        self._add_detector(qtbot, win)
+        assert len(win.plot_subwindows) == n_before + 1
+
+    def test_roi_move_triggers_computation(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        tb, vi_widget = self._add_detector(qtbot, win)
+        roi = list(tb.action_widgets["Virtual Imaging"]["plot_items"].values())[0]
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.wait(5000)
+        child_plot = win.plot_subwindows[-1].plots[0]
+        assert child_plot.current_data is not None
+        assert not isinstance(child_plot.current_data, __import__('distributed').Future)
+
+    def test_virtual_imaging_toggle_hides_plot_window(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots[:2]
+        tb, vi_widget = self._add_detector(qtbot, win)
+        vi_action, _ = self._get_vi_action(sig)
+        child_window = win.plot_subwindows[-1]
+        roi = list(tb.action_widgets["Virtual Imaging"]["plot_items"].values())[0]
+
+        assert roi.isVisible()
+        assert child_window.isVisible()
+
+        vi_action.trigger()
+        qtbot.wait(200)
+        assert not roi.isVisible()
+        assert not child_window.isVisible()
+
+        vi_action.trigger()
+        qtbot.wait(200)
+        assert roi.isVisible()
+        assert child_window.isVisible()
+
+
+class TestVirtualImageCommit:
+
+    def _setup(self, qtbot, win):
+        nav, sig = win.plots
+        tb = sig.plot_state.toolbar_bottom
+        for a in tb.actions():
+            if a.text() == "Virtual Imaging":
+                vi_action = a
+                break
+        vi_action.trigger()
+        qtbot.wait(200)
+        vi_widget = tb.action_widgets["Virtual Imaging"]["widget"]
+        for a in vi_widget.actions():
+            if a.text() == "Add Virtual Image":
+                a.trigger()
+                break
+        qtbot.wait(300)
+        new_action = vi_widget.actions()[-1]
+        new_action.trigger()
+        qtbot.wait(300)
+        action_name = new_action.text()
+        caret_box = vi_widget.action_widgets[action_name]["widget"]
+
+        roi = list(tb.action_widgets["Virtual Imaging"]["plot_items"].values())[0]
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.wait(5000)
+        return caret_box
+
+    def test_commit_button_disabled_before_computation(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        tb = sig.plot_state.toolbar_bottom
+        for a in tb.actions():
+            if a.text() == "Virtual Imaging":
+                vi_action = a
+                break
+        vi_action.trigger()
+        qtbot.wait(200)
+        vi_widget = tb.action_widgets["Virtual Imaging"]["widget"]
+        for a in vi_widget.actions():
+            if a.text() == "Add Virtual Image":
+                a.trigger()
+                break
+        qtbot.wait(300)
+        new_action = vi_widget.actions()[-1]
+        new_action.trigger()
+        qtbot.wait(300)
+        action_name = new_action.text()
+        caret_box = vi_widget.action_widgets[action_name]["widget"]
+        commit_btn = caret_box.get_parameter_widget("commit_button")
+        assert not commit_btn.isEnabled()
+
+    def test_commit_adds_signal_tree(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        n_before = len(win.signal_trees)
+        caret_box = self._setup(qtbot, win)
+        commit_btn = caret_box.get_parameter_widget("commit_button")
+        assert commit_btn.isEnabled(), "Commit button should be enabled after first computation"
+        commit_btn.click()
+        qtbot.wait(8000)
+        assert len(win.signal_trees) == n_before + 1
+
+    def test_committed_signal_is_virtual_dark_field(self, qtbot, stem_4d_dataset):
+        from pyxem.signals import VirtualDarkFieldImage
+        win = stem_4d_dataset["window"]
+        n_before = len(win.signal_trees)
+        caret_box = self._setup(qtbot, win)
+        commit_btn = caret_box.get_parameter_widget("commit_button")
+        commit_btn.click()
+        qtbot.wait(8000)
+        new_tree = win.signal_trees[n_before]
+        assert isinstance(new_tree.root, VirtualDarkFieldImage)

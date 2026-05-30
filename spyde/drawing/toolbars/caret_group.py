@@ -365,6 +365,12 @@ class CaretParams(CaretGroup):
                 editor.addItems([str(opt) for opt in options])
                 if default in options:
                     editor.setCurrentText(str(default))
+            elif dtype == "button":
+                editor = QtWidgets.QPushButton(item.get("label", name), row_widget)
+                editor.setStyleSheet("QPushButton { color: white; background-color: rgba(255,255,255,30); border: 1px solid black; }")
+                callback = item.get("callback")
+                if callable(callback):
+                    editor.clicked.connect(callback)
             elif dtype == "RectangleSelector":
                 # Add a rectangle ROI to the associated plot; visible only when action toggled.
                 editor = QtWidgets.QLabel("Use selection on plot", row_widget)

@@ -184,6 +184,7 @@ class MainWindow(QMainWindow):
         self.recent_menu = None
 
         self.plot_subwindows = []  # type: list[PlotWindow]
+        self._pending_signal_queue = []  # thread-safe list for cross-thread signal delivery
 
         self.mdi_area.subWindowActivated.connect(self.on_subwindow_activated)
         self.create_menu()
@@ -714,6 +715,13 @@ class MainWindow(QMainWindow):
         """Thread-safe slot to add a committed virtual image signal."""
         self.add_signal(signal)
 
+    @QtCore.Slot()
+    def _flush_pending_signals(self):
+        """Drain the thread-safe pending-signal queue on the GUI thread."""
+        while self._pending_signal_queue:
+            sig = self._pending_signal_queue.pop(0)
+            self.add_signal(sig)
+
     def load_example_data(self, name):
         """
         Load example data for testing purposes.
@@ -859,7 +867,7 @@ class MainWindow(QMainWindow):
                 del item
 
         # Add new axes information
-        if hasattr(window, "signal_tree"):
+        if hasattr(window, "signal_tree") and window.signal_tree is not None:
             plot_state = window.plot_state
             print("Updating axes widget, plot state:", plot_state)
             if plot_state is None:
@@ -903,7 +911,7 @@ class MainWindow(QMainWindow):
 
         # hide all toolbar from other plots in the same window except toolbars from
         # the active signal tree
-        if window.signal_tree.navigator_plot_manager is not None:
+        if window.signal_tree is not None and window.signal_tree.navigator_plot_manager is not None:
             active_plots = [win.current_plot_item for
                             win in window.signal_tree.navigator_plot_manager.all_plot_windows
                             if win.isVisible()]
@@ -911,15 +919,18 @@ class MainWindow(QMainWindow):
             active_plots = [plot]
 
         for plt in active_plots:
-            plt.plot_state.show_toolbars()
-            plt.show_selector_control_widget()
+            if getattr(plt, "plot_state", None) is not None:
+                plt.plot_state.show_toolbars()
+            if hasattr(plt, "show_selector_control_widget"):
+                plt.show_selector_control_widget()
 
         for win in self.plot_subwindows:
             for plt in win.plots:
                 if plt in active_plots:
                     continue
                 else:
-                    plt.plot_state.hide_toolbars()
+                    if getattr(plt, "plot_state", None) is not None:
+                        plt.plot_state.hide_toolbars()
                     #plt.remove_selector_control_widgets()
 
         # Histogram binding: use the image_item on the inner widget / plot

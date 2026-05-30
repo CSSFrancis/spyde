@@ -643,6 +643,19 @@ class Plot(PlotItem):
             " with type:",
             type(self.current_data),
         )
+        # If no plot_state (e.g. virtual preview plot), display raw 2D data directly.
+        if self.plot_state is None:
+            if self.current_data is not None and self.image_item is not None:
+                img = (
+                    np.asarray(self.current_data)
+                    if isinstance(self.current_data, da.Array)
+                    else self.current_data
+                )
+                if img.dtype == np.int16:
+                    img = img.astype(np.uint16)
+                self.image_item.setImage(img, autoLevels=True, autoDownsample=True)
+                self.update_range()
+            return
         if self.plot_state.dimensions == 1:
             current_data = (
                 np.asarray(self.current_data)

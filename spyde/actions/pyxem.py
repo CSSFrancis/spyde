@@ -91,6 +91,45 @@ def _roi_metadata(roi) -> dict:
     return {}
 
 
+def _start_progress_poll(future, indicator, client, timer_holder: list):
+    """Poll dask task progress every 200 ms; update indicator; stop when done."""
+    from PySide6 import QtCore as _QtCore
+
+    try:
+        graph = dict(future.__dask_graph__()) if hasattr(future, '__dask_graph__') else {}
+        task_keys = list(graph.keys())
+    except Exception:
+        task_keys = []
+
+    total = max(len(task_keys), 1)
+    indicator.set_computing(total_tasks=total)
+
+    timer = _QtCore.QTimer()
+    timer.setInterval(200)
+    timer_holder.append(timer)
+
+    def _poll():
+        if future.done():
+            timer.stop()
+            indicator.set_done()
+            return
+        if not task_keys:
+            return
+        try:
+            info = client.scheduler_info()
+            all_tasks = info.get("tasks", {})
+            completed = sum(
+                1 for k in task_keys
+                if all_tasks.get(str(k), {}).get("state") in ("memory", "released", "forgotten")
+            )
+            indicator.update_progress(completed)
+        except Exception:
+            pass
+
+    timer.timeout.connect(_poll)
+    timer.start()
+
+
 def center_zero_beam(
     toolbar: RoundedToolBar,
     make_flat_field: bool = False,
@@ -178,18 +217,13 @@ def add_virtual_image(
     num = toolbar.num_actions()
     color = colors[num % len(colors)]
 
-    # Create base icon pixmap
     base_icon = QIcon(icon_path)
-
-    # Match the toolbar's icon size and HiDPI scaling
     icon_size = toolbar.iconSize()
     dpr = getattr(toolbar, "devicePixelRatioF", lambda: 1.0)()
     req_w = max(1, int(icon_size.width() * dpr))
     req_h = max(1, int(icon_size.height() * dpr))
-
     base_pixmap = base_icon.pixmap(req_w, req_h)
 
-    # Recolor icon via SourceIn composition without changing size
     colored_pixmap = QPixmap(base_pixmap.size())
     colored_pixmap.setDevicePixelRatio(dpr)
     colored_pixmap.fill(Qt.GlobalColor.transparent)
@@ -199,13 +233,22 @@ def add_virtual_image(
     painter.fillRect(colored_pixmap.rect(), QColor(color))
     painter.end()
 
-    pen = mkPen(
-        color=color,
-        width=6,
-    )  # type: pg.mkPen
-
+    pen = mkPen(color=color, width=6)
     icon = QIcon()
     icon.addPixmap(colored_pixmap)
+
+    # Mutable state captured in closures
+    _live_enabled = [True]
+    _cached_mask = [None]
+    _timer_holder = []  # keeps QTimer refs alive
+
+    action_name = f"Virtual Image ({color})"
+
+    def _on_compute_clicked():
+        _trigger_computation()
+
+    def _on_commit_clicked():
+        _do_commit()
 
     params = {
         "type": {
@@ -220,12 +263,26 @@ def add_virtual_image(
             "default": "mean",
             "options": ["mean", "FEM Omega", "COM"],
         },
+        "live_button": {
+            "name": "Live",
+            "type": "button",
+            "label": "Live (ON)",
+            "callback": lambda: _toggle_live(),
+        },
+        "compute_button": {
+            "name": "Compute",
+            "type": "button",
+            "label": "Compute",
+            "callback": _on_compute_clicked,
+        },
+        "commit_button": {
+            "name": "Commit",
+            "type": "button",
+            "label": "Commit",
+            "callback": _on_commit_clicked,
+        },
     }
 
-    # Create a parameter caret box as the action widget.
-    # This returns a QAction and the associated CaretParams instance.
-    # need to give each action a unique name (if the colors repeat)
-    action_name = f"Virtual Image ({color})"
     action, params_caret_box = toolbar.add_action(
         name=action_name,
         icon_path=icon,
@@ -234,45 +291,64 @@ def add_virtual_image(
         parameters=params,
     )
 
-    # For some call sites (including this one), the first time the popout is
-    # shown it was being clipped because sizeHint hadn't fully accounted for
-    # its children yet. Force a layout finalization here as a safeguard,
-    # in addition to CaretParams.finalize_layout being called in __init__.
     try:
         if hasattr(params_caret_box, "finalize_layout"):
             params_caret_box.finalize_layout()
     except Exception:
         pass
 
-    # Access parameter widgets as before (e.g. to wire type-dependent behavior)
     type_widget = params_caret_box.kwargs["type"]
+    commit_btn = params_caret_box.get_parameter_widget("commit_button")
+    if commit_btn is not None:
+        commit_btn.setEnabled(False)
 
-    # add a roi.  These should be based on the type selected in the caret box
-    # all of them should be the same color as the icon and only the one that is
-    # selected should be movable. The rest should be opaque and not movable.
-
+    # Get signal/client/GPU info
     plot = toolbar.parent_toolbar.plot
-    center, inner_rad, outer_rad = plot.get_annular_roi_parameters()
+    signal = plot.plot_state.current_signal
+    main_window = plot.main_window
+    client = main_window.client
+    gpu_worker = getattr(main_window, "_gpu_worker_address", None)
 
+    # Create the virtual image preview PlotWindow
+    from spyde.drawing.plots.plot_window import PlotWindow as _PlotWindow
+    from spyde.qt.compute_status_indicator import ComputeStatusIndicator
+
+    virtual_plot_window = _PlotWindow(
+        is_navigator=False,
+        main_window=main_window,
+    )
+    virtual_plot = virtual_plot_window.add_new_plot()
+    main_window.mdi_area.addSubWindow(virtual_plot_window)
+    virtual_plot_window.show()
+    virtual_plot_window.resize(300, 300)
+    main_window.plot_subwindows.append(virtual_plot_window)
+
+    indicator = ComputeStatusIndicator()
+    virtual_plot_window.set_compute_indicator(indicator)
+
+    # Register plot window with the parent toolbar so visibility toggles with "Virtual Imaging"
+    toolbar.parent_toolbar.register_action_plot_window(
+        action_name="Virtual Imaging",
+        plot_window=virtual_plot_window,
+        key=action_name,
+    )
+
+    # Build the ROI
+    center, inner_rad, outer_rad = plot.get_annular_roi_parameters()
     if params_caret_box.kwargs["type"].currentText() == "annular":
-        # make an annular roi
-        roi = RingROI(center, inner_radius=inner_rad, outer_radius=outer_rad, pen=pen)
+        roi = RingROI(center=center, inner_rad=inner_rad, outer_rad=outer_rad, pen=pen)
     elif params_caret_box.kwargs["type"].currentText() == "disk":
         roi = CircleROI(center, inner_rad, pen=pen)
-    else:  # params_caret_box.kwargs["type"].currentText() == "rectangle":
+    else:
         roi = RectROI(center, inner_rad, pen=pen)
 
-    # add to the parent toolbar so that all the rois are shown on the same plot
     toolbar.parent_toolbar.register_action_plot_item(
         action_name="Virtual Imaging", item=roi, key=action_name
     )
 
-    # arrange the z values of the rois based on their size
     def arrange_widgets_on_move():
         rois = list(
-            toolbar.parent_toolbar.action_widgets["Virtual Imaging"][
-                "plot_items"
-            ].values()
+            toolbar.parent_toolbar.action_widgets["Virtual Imaging"]["plot_items"].values()
         )
         sizes = [r.size().x() for r in rois]
         sorted_index = np.argsort(sizes)
@@ -282,10 +358,93 @@ def add_virtual_image(
 
     roi.sigRegionChangeFinished.connect(arrange_widgets_on_move)
 
+    def _trigger_computation(_roi=None):
+        if _roi is None:
+            _roi = roi
+        from spyde.drawing.update_functions import compute_virtual_image_kernel
+        mask = roi_to_mask(_roi, signal)
+        _cached_mask[0] = mask
+        future = compute_virtual_image_kernel(signal.data, mask, client, gpu_worker)
+        virtual_plot.current_data = future
+        _start_progress_poll(future, indicator, client, _timer_holder)
+        if commit_btn is not None:
+            commit_btn.setEnabled(False)
+
+        def _on_preview_done(fut):
+            from PySide6 import QtCore as _QtCore
+            if commit_btn is not None:
+                _QtCore.QMetaObject.invokeMethod(
+                    commit_btn, "setEnabled",
+                    _QtCore.Qt.ConnectionType.QueuedConnection,
+                    _QtCore.Q_ARG(bool, True),
+                )
+
+        future.add_done_callback(_on_preview_done)
+
+    def _on_roi_finished(_roi=None):
+        if not _live_enabled[0]:
+            return
+        _trigger_computation(_roi)
+
+    roi.sigRegionChangeFinished.connect(_on_roi_finished)
+
+    def _toggle_live():
+        live_btn = params_caret_box.get_parameter_widget("live_button")
+        _live_enabled[0] = not _live_enabled[0]
+        if live_btn is not None:
+            live_btn.setText("Live (ON)" if _live_enabled[0] else "Live (OFF)")
+
+    def _do_commit():
+        if _cached_mask[0] is None:
+            return
+        from spyde.drawing.update_functions import compute_virtual_image_kernel
+        from pyxem.signals import VirtualDarkFieldImage
+        from PySide6 import QtCore as _QtCore
+
+        if commit_btn is not None:
+            commit_btn.setEnabled(False)
+        indicator.set_computing()
+        future = compute_virtual_image_kernel(signal.data, _cached_mask[0], client, gpu_worker)
+
+        def _on_done(fut):
+            try:
+                result = fut.result()
+            except Exception as e:
+                print(f"Commit failed: {e}")
+                if commit_btn is not None:
+                    _QtCore.QMetaObject.invokeMethod(
+                        commit_btn, "setEnabled",
+                        _QtCore.Qt.ConnectionType.QueuedConnection,
+                        _QtCore.Q_ARG(bool, True),
+                    )
+                return
+            vdf = VirtualDarkFieldImage(result)
+            # Copy scale/offset/units from source navigation axes to VDF signal axes
+            # (source nav dims become the VDF's signal dims)
+            nav_axes = list(signal.axes_manager.navigation_axes)
+            sig_axes = list(vdf.axes_manager.signal_axes)
+            for i, ax in enumerate(nav_axes):
+                if i < len(sig_axes):
+                    sig_axes[i].scale = ax.scale
+                    sig_axes[i].offset = ax.offset
+                    sig_axes[i].units = ax.units
+                    sig_axes[i].name = ax.name
+            vdf.metadata.Signal.virtual_detector = _roi_metadata(roi)
+            main_window._pending_signal_queue.append(vdf)
+            _QtCore.QMetaObject.invokeMethod(
+                main_window, "_flush_pending_signals",
+                _QtCore.Qt.ConnectionType.QueuedConnection,
+            )
+            if commit_btn is not None:
+                _QtCore.QMetaObject.invokeMethod(
+                    commit_btn, "setEnabled",
+                    _QtCore.Qt.ConnectionType.QueuedConnection,
+                    _QtCore.Q_ARG(bool, True),
+                )
+
+        future.add_done_callback(_on_done)
+
     def on_type_change(new_type: str) -> None:
-        print("Type changed to:", new_type)
-        # Remove existing ROI
-        # Create new ROI based on selected type
         old_roi = toolbar.parent_toolbar.unregister_action_plot_item(
             action_name="Virtual Imaging", key=action_name
         )
@@ -297,15 +456,14 @@ def add_virtual_image(
         if new_type == "annular":
             roi = RingROI(center=pos, inner_rad=inner_r, outer_rad=outer_r, pen=pen)
         elif new_type == "disk":
-
             roi = CircleROI(pos=pos, size=size, pen=pen)
-        else:  # "rectangle"
+        else:
             roi = RectROI(pos=pos, size=size, pen=pen)
-        # Add new ROI to the toolbar
-
         toolbar.parent_toolbar.register_action_plot_item(
             action_name="Virtual Imaging", item=roi, key=action_name
         )
+        roi.sigRegionChangeFinished.connect(arrange_widgets_on_move)
+        roi.sigRegionChangeFinished.connect(_on_roi_finished)
 
     if hasattr(type_widget, "currentTextChanged"):
         type_widget.currentTextChanged.connect(on_type_change)
