@@ -208,6 +208,26 @@ class TestVirtualImageLivePreview:
             "Preview PlotWindow was not appended to main_window.plot_subwindows"
         )
 
+    def test_subwindow_activation_with_preview_window_does_not_crash(self, qtbot, stem_4d_dataset):
+        """Activating any subwindow after adding a virtual detector must not raise AttributeError.
+
+        Regression test for: all_plot_windows iterating the preview PlotWindow
+        (which has current_plot_state=None) and calling .toolbar_right on None.
+        """
+        win = stem_4d_dataset["window"]
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+
+        subwindows = win.mdi_area.subWindowList()
+        assert len(subwindows) >= 3, "Expected at least 3 subwindows (nav, sig, preview)"
+
+        # Activate each subwindow in turn — this triggers on_subwindow_activated →
+        # all_plot_windows, which previously crashed when it hit the preview window.
+        for sw in subwindows:
+            win.mdi_area.setActiveSubWindow(sw)
+            qtbot.wait(100)  # let Qt process the activation event
+
+        # If we reach here without an exception, the fix is working.
+
     def test_roi_is_on_signal_diffraction_plot(self, qtbot, stem_4d_dataset):
         """The virtual ROI must be on the signal (diffraction pattern) plot, not the navigator."""
         win = stem_4d_dataset["window"]

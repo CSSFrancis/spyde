@@ -275,11 +275,12 @@ class MultiplotManager:
         # Collect all navigation plot windows
         collect_windows(self.plot_windows)
 
-        # Collect toolbar plot windows from signal tree
-        print("Collecting toolbars for windows:", windows)
-        for win in windows:
-            print("Collecting toolbars for window:", win)
-
+        # Collect toolbar plot windows from signal tree.
+        # Iterate over a snapshot to avoid mutating the list mid-loop;
+        # guard against windows that have no PlotState (e.g. virtual preview windows).
+        for win in list(windows):
+            if win.current_plot_state is None:
+                continue
             tr = win.current_plot_state.toolbar_right
             tl = win.current_plot_state.toolbar_left
             tb = win.current_plot_state.toolbar_bottom
@@ -287,7 +288,7 @@ class MultiplotManager:
             for toolbar in [tr, tl, tb, tt]:
                 if toolbar is not None and toolbar.plot_windows is not None:
                     for item in toolbar.plot_windows:
-                        # toolbar.plot_windows contains (name, window) tuples Ugly and should be fixed
+                        # toolbar.plot_windows contains (name, window) tuples
                         if isinstance(item, tuple):
                             windows.append(item[1])
                         else:
