@@ -282,4 +282,49 @@ class TestVirtualImageCommit:
         commit_btn.click()
         qtbot.wait(8000)
         new_tree = win.signal_trees[n_before]
-        assert isinstance(new_tree.root, VirtualDarkFieldImage)
+        assert isinstance(new_tree.root_signal, VirtualDarkFieldImage)
+
+
+@pytest.mark.gpu
+class TestVirtualImageKernelGPU:
+
+    @pytest.fixture(autouse=True)
+    def skip_if_no_gpu(self, gpu_available):
+        if not gpu_available:
+            pytest.skip("No NVIDIA GPU detected")
+
+    @pytest.fixture(autouse=True)
+    def client(self, stem_4d_dataset):
+        self.win = stem_4d_dataset["window"]
+        self.client = self.win.client
+        self.gpu_address = self.win._gpu_worker_address
+
+    def _mask(self):
+        mask = np.zeros((8, 8), dtype=np.float32)
+        mask[2:6, 2:6] = 1.0
+        return mask
+
+    def test_4d_gpu_matches_cpu(self):
+        from spyde.drawing.update_functions import compute_virtual_image_kernel
+        rng = np.random.default_rng(1)
+        data_np = rng.random((4, 4, 8, 8)).astype(np.float32)
+        mask = self._mask()
+        data = da.from_array(data_np, chunks=(2, 2, 8, 8))
+
+        cpu_result = compute_virtual_image_kernel(data, mask, self.client, None).result()
+        gpu_result = compute_virtual_image_kernel(data, mask, self.client, self.gpu_address).result()
+
+        np.testing.assert_allclose(cpu_result, gpu_result, rtol=1e-4)
+
+    def test_5d_gpu_matches_cpu(self):
+        from spyde.drawing.update_functions import compute_virtual_image_kernel
+        rng = np.random.default_rng(2)
+        data_np = rng.random((2, 4, 4, 8, 8)).astype(np.float32)
+        mask = self._mask()
+        data = da.from_array(data_np, chunks=(1, 2, 2, 8, 8))
+
+        cpu_result = compute_virtual_image_kernel(data, mask, self.client, None).result()
+        gpu_result = compute_virtual_image_kernel(data, mask, self.client, self.gpu_address).result()
+
+        np.testing.assert_allclose(cpu_result, gpu_result, rtol=1e-4)
+        assert gpu_result.shape == (2, 4, 4)
