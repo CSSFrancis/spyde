@@ -392,7 +392,7 @@ class RoundedToolBar(StylizedToolBar):
         _bind_action_to_plot_item(act, item)
 
     def unregister_action_plot_item(self, action_name: str, key: str) -> None:
-        """Deregister all QGraphicsItems associated with an action."""
+        """Deregister a QGraphicsItem associated with an action and remove it from the plot."""
         if (
                 action_name in self.action_widgets
                 and "plot_items" in self.action_widgets[action_name]
@@ -400,7 +400,7 @@ class RoundedToolBar(StylizedToolBar):
         ):
             item = self.action_widgets[action_name]["plot_items"].pop(key)
             try:
-                if self.plot_window is not None and hasattr(self.plot_state, "plot_item"):
+                if self.plot is not None:
                     self.plot.removeItem(item)
             except Exception:
                 pass

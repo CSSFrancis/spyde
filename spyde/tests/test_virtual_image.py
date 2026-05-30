@@ -147,6 +147,34 @@ class TestComputeStatusIndicator:
         w.set_done()
         assert w._state == "done"
 
+    def test_color_matches_roi_color(self, qtbot):
+        """Indicator color must match the color string passed at construction."""
+        from PySide6.QtGui import QColor
+        from spyde.qt.compute_status_indicator import ComputeStatusIndicator
+        w = ComputeStatusIndicator(color="red")
+        qtbot.addWidget(w)
+        assert w._color == QColor("red")
+
+        w2 = ComputeStatusIndicator(color="cyan")
+        qtbot.addWidget(w2)
+        assert w2._color == QColor("cyan")
+
+    def test_indicator_on_preview_window_has_roi_color(self, qtbot, stem_4d_dataset):
+        """The indicator attached to a virtual preview window must use the ROI's color."""
+        from PySide6.QtGui import QColor
+        win = stem_4d_dataset["window"]
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+
+        assert preview_window is not None
+        indicator = preview_window._compute_indicator
+        assert indicator is not None
+
+        # The action name encodes the color: "Virtual Image (red)", "Virtual Image (green)", etc.
+        color_name = action_name.split("(")[1].rstrip(")")
+        assert indicator._color == QColor(color_name), (
+            f"Indicator color {indicator._color.name()} does not match ROI color {color_name}"
+        )
+
 
 def _add_virtual_detector(qtbot, win):
     """
@@ -400,6 +428,49 @@ class TestVirtualImageLivePreview:
         img = preview_plot.image_item.image
         assert img is not None, "No image rendered after pressing Compute"
         assert img.ndim == 2
+
+    def test_live_and_compute_buttons_are_in_same_row(self, qtbot, stem_4d_dataset):
+        """Live and Compute buttons must be side-by-side in the same parent widget."""
+        from PySide6.QtWidgets import QPushButton
+        win = stem_4d_dataset["window"]
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+
+        live_btn = caret_box.get_parameter_widget("live_button")
+        compute_btn = caret_box.get_parameter_widget("compute_button")
+        assert live_btn is not None, "live_button not found in caret box"
+        assert compute_btn is not None, "compute_button not found in caret box"
+        assert isinstance(live_btn, QPushButton)
+        assert isinstance(compute_btn, QPushButton)
+        assert live_btn.parent() is compute_btn.parent(), (
+            "Live and Compute buttons are not in the same row widget"
+        )
+
+    def test_roi_type_switch_removes_old_roi_from_plot(self, qtbot, stem_4d_dataset):
+        """Switching detector type must remove the old ROI from the signal plot scene."""
+        from pyqtgraph import CircleROI, RectROI
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+
+        # Initial ROI is a CircleROI (disk is the default)
+        assert isinstance(roi, CircleROI), f"Expected CircleROI, got {type(roi)}"
+        assert roi in sig.items, "Initial CircleROI not in signal plot"
+
+        old_roi = roi
+
+        # Switch to rectangle
+        type_widget = caret_box.get_parameter_widget("type")
+        type_widget.setCurrentText("rectangle")
+        qtbot.wait(200)
+
+        # Old CircleROI must be gone from the scene
+        assert old_roi not in sig.items, (
+            "Old CircleROI is still in the signal plot after switching to rectangle"
+        )
+        # New RectROI must be in the scene
+        new_roi = tb.action_widgets["Virtual Imaging"]["plot_items"][action_name]
+        assert isinstance(new_roi, RectROI), f"Expected RectROI after switch, got {type(new_roi)}"
+        assert new_roi in sig.items, "New RectROI not in signal plot after type switch"
 
 
 class TestVirtualImageCommit:

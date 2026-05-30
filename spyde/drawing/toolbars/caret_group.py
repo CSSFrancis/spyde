@@ -371,6 +371,23 @@ class CaretParams(CaretGroup):
                 callback = item.get("callback")
                 if callable(callback):
                     editor.clicked.connect(callback)
+            elif dtype == "button_row":
+                # Two buttons side-by-side in one row; no label.
+                # "buttons": [{"key": k, "label": l, "callback": fn}, ...]
+                buttons_def = item.get("buttons", [])
+                for btn_def in buttons_def:
+                    btn = QtWidgets.QPushButton(btn_def.get("label", btn_def.get("key", "")), row_widget)
+                    btn.setStyleSheet("QPushButton { color: white; background-color: rgba(255,255,255,30); border: 1px solid black; }")
+                    cb = btn_def.get("callback")
+                    if callable(cb):
+                        btn.clicked.connect(cb)
+                    h_layout.addWidget(btn, 1)
+                    bkey = btn_def.get("key", btn_def.get("label", ""))
+                    self.kwargs[bkey] = btn
+                    self._param_types[bkey] = "button"
+                self._rows[key] = row_widget
+                self.layout().addWidget(row_widget)
+                continue
             elif dtype == "RectangleSelector":
                 # Add a rectangle ROI to the associated plot; visible only when action toggled.
                 editor = QtWidgets.QLabel("Use selection on plot", row_widget)

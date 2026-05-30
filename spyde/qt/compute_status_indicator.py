@@ -5,18 +5,19 @@ class ComputeStatusIndicator(QtWidgets.QWidget):
     """24×24 px transparent overlay showing computation progress.
 
     States:
-      idle      — small filled green circle
-      computing — grey ring; clockwise arc fills proportional to completed/total tasks
-      done      — fully filled green circle; auto-transitions to idle after 500 ms
+      idle      — small filled circle (ROI color)
+      computing — grey ring; clockwise arc fills proportional to completed/total tasks (ROI color)
+      done      — fully filled circle (ROI color); auto-transitions to idle after 500 ms
     """
 
     SIZE = 24
 
-    def __init__(self, parent=None):
+    def __init__(self, color: str = "green", parent=None):
         super().__init__(parent)
         self.setFixedSize(self.SIZE, self.SIZE)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._color = QtGui.QColor(color)
         self._state = "idle"
         self._total_tasks = 1
         self._completed_tasks = 0
@@ -54,7 +55,7 @@ class ComputeStatusIndicator(QtWidgets.QWidget):
 
         if self._state == "idle":
             small_r = r * 0.4
-            painter.setBrush(QtGui.QColor(0, 200, 0))
+            painter.setBrush(self._color)
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
             painter.drawEllipse(
                 QtCore.QRectF(cx - small_r, cy - small_r, small_r * 2, small_r * 2)
@@ -69,12 +70,12 @@ class ComputeStatusIndicator(QtWidgets.QWidget):
             frac = self._completed_tasks / self._total_tasks
             span = int(frac * 360 * 16)
             if span > 0:
-                arc_pen = QtGui.QPen(QtGui.QColor(0, 200, 0), 3)
+                arc_pen = QtGui.QPen(self._color, 3)
                 painter.setPen(arc_pen)
                 painter.drawArc(rect, 90 * 16, -span)  # negative = clockwise
 
         elif self._state == "done":
-            painter.setBrush(QtGui.QColor(0, 200, 0))
+            painter.setBrush(self._color)
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
             painter.drawEllipse(QtCore.QRectF(cx - r, cy - r, r * 2, r * 2))
 

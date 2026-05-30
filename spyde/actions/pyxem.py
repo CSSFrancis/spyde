@@ -264,17 +264,13 @@ def add_virtual_image(
             "default": "mean",
             "options": ["mean", "FEM Omega", "COM"],
         },
-        "live_button": {
-            "name": "Live",
-            "type": "button",
-            "label": "Live (ON)",
-            "callback": lambda: _toggle_live(),
-        },
-        "compute_button": {
-            "name": "Compute",
-            "type": "button",
-            "label": "Compute",
-            "callback": _on_compute_clicked,
+        "live_compute_row": {
+            "name": "",
+            "type": "button_row",
+            "buttons": [
+                {"key": "live_button", "label": "Live (ON)", "callback": lambda: _toggle_live()},
+                {"key": "compute_button", "label": "Compute", "callback": _on_compute_clicked},
+            ],
         },
         "commit_button": {
             "name": "Commit",
@@ -324,7 +320,7 @@ def add_virtual_image(
     if virtual_plot.image_item not in virtual_plot.items:
         virtual_plot.addItem(virtual_plot.image_item)
 
-    indicator = ComputeStatusIndicator()
+    indicator = ComputeStatusIndicator(color=color)
     virtual_plot_window.set_compute_indicator(indicator)
 
     # Register plot window with the parent toolbar so visibility toggles with "Virtual Imaging"
