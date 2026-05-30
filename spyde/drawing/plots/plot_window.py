@@ -101,6 +101,15 @@ class PlotWindow(FramelessSubWindow):
         # Explicitly store the main window reference provided at construction.
         self.main_window = main_window  # type: "MainWindow"
         self.timer = None
+        self._compute_indicator = None  # type: ComputeStatusIndicator | None
+
+    def set_compute_indicator(self, indicator):
+        """Attach a ComputeStatusIndicator and keep it at (8, 8)."""
+        self._compute_indicator = indicator
+        indicator.setParent(self)
+        indicator.move(8, 8)
+        indicator.raise_()
+        indicator.show()
 
     def hideEvent(self, ev: QtGui.QHideEvent) -> None:
         """Called when the widget is hidden."""
@@ -486,6 +495,9 @@ class PlotWindow(FramelessSubWindow):
     def resizeEvent(self, ev: QtGui.QResizeEvent) -> None:
         super().resizeEvent(ev)
         self.reposition_toolbars()
+        if self._compute_indicator is not None:
+            self._compute_indicator.move(8, 8)
+            self._compute_indicator.raise_()
 
     def keyPressEvent(self, ev: QtGui.QKeyEvent):
         """Handle arrow keys to move the active selector."""
