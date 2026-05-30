@@ -57,14 +57,17 @@ class CrosshairROI(ROI):
         center_x = old_pos.x() + old_size[0] / 2
         center_y = old_pos.y() + old_size[1] / 2
 
-        # Resize and reposition without triggering signal recomputation
+        # Resize and reposition without triggering signal recomputation.
+        # prepareGeometryChange() tells the scene to repaint the OLD bounding rect
+        # before we update size_value, preventing afterimage artifacts.
         self._zoom_resize = True
         self.blockSignals(True)
+        self.prepareGeometryChange()
+        self.size_value = scene_size
         self.setSize([scene_size, scene_size], finish=False)
         self.setPos([center_x - scene_size / 2, center_y - scene_size / 2], finish=False)
         self.blockSignals(False)
         self._zoom_resize = False
-        self.size_value = scene_size
 
     def paint(self, p, *args):
         """Draw a + shape with a small square in the center."""
