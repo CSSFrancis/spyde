@@ -2,6 +2,7 @@ from __future__ import annotations
 import sys
 import os
 import subprocess
+from collections import deque
 from typing import Union
 from functools import partial
 import webbrowser
@@ -184,7 +185,7 @@ class MainWindow(QMainWindow):
         self.recent_menu = None
 
         self.plot_subwindows = []  # type: list[PlotWindow]
-        self._pending_signal_queue = []  # thread-safe list for cross-thread signal delivery
+        self._pending_signal_queue: deque = deque()  # thread-safe deque for cross-thread signal delivery
 
         self.mdi_area.subWindowActivated.connect(self.on_subwindow_activated)
         self.create_menu()
@@ -719,7 +720,7 @@ class MainWindow(QMainWindow):
     def _flush_pending_signals(self):
         """Drain the thread-safe pending-signal queue on the GUI thread."""
         while self._pending_signal_queue:
-            sig = self._pending_signal_queue.pop(0)
+            sig = self._pending_signal_queue.popleft()
             self.add_signal(sig)
 
     def load_example_data(self, name):

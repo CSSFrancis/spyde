@@ -240,6 +240,7 @@ def add_virtual_image(
     # Mutable state captured in closures
     _live_enabled = [True]
     _cached_mask = [None]
+    _cached_roi = [None]  # ROI that produced _cached_mask — kept in sync
     _timer_holder = []  # keeps QTimer refs alive
 
     action_name = f"Virtual Image ({color})"
@@ -362,8 +363,10 @@ def add_virtual_image(
         if _roi is None:
             _roi = roi
         from spyde.drawing.update_functions import compute_virtual_image_kernel
+        _timer_holder.clear()  # drop refs to stopped timers from prior computations
         mask = roi_to_mask(_roi, signal)
         _cached_mask[0] = mask
+        _cached_roi[0] = _roi
         future = compute_virtual_image_kernel(signal.data, mask, client, gpu_worker)
         virtual_plot.current_data = future
         _start_progress_poll(future, indicator, client, _timer_holder)
@@ -429,7 +432,7 @@ def add_virtual_image(
                     sig_axes[i].offset = ax.offset
                     sig_axes[i].units = ax.units
                     sig_axes[i].name = ax.name
-            vdf.metadata.Signal.virtual_detector = _roi_metadata(roi)
+            vdf.metadata.Signal.virtual_detector = _roi_metadata(_cached_roi[0] or roi)
             main_window._pending_signal_queue.append(vdf)
             _QtCore.QMetaObject.invokeMethod(
                 main_window, "_flush_pending_signals",
