@@ -148,141 +148,389 @@ class TestComputeStatusIndicator:
         assert w._state == "done"
 
 
+def _add_virtual_detector(qtbot, win):
+    """
+    Shared helper: enable Virtual Imaging, add one detector, return
+    (toolbar_bottom, vi_widget, new_action_name, caret_box, roi, preview_plot_window).
+    """
+    nav, sig = win.plots
+    tb = sig.plot_state.toolbar_bottom
+    vi_action = None
+    for a in tb.actions():
+        if a.text() == "Virtual Imaging":
+            vi_action = a
+            break
+    assert vi_action is not None, "Virtual Imaging action not found in toolbar"
+
+    vi_action.trigger()
+    qtbot.wait(200)
+
+    vi_widget = tb.action_widgets["Virtual Imaging"]["widget"]
+    for a in vi_widget.actions():
+        if a.text() == "Add Virtual Image":
+            a.trigger()
+            break
+    qtbot.wait(300)
+
+    new_action = vi_widget.actions()[-1]
+    new_action.trigger()
+    qtbot.wait(300)
+
+    action_name = new_action.text()
+    caret_box = vi_widget.action_widgets[action_name]["widget"]
+    roi = tb.action_widgets["Virtual Imaging"]["plot_items"][action_name]
+    preview_window = tb.action_widgets["Virtual Imaging"].get("plot_windows", {}).get(action_name)
+
+    return tb, vi_widget, action_name, caret_box, roi, preview_window
+
+
 class TestVirtualImageLivePreview:
+    """End-to-end tests: ROI placement → preview window → live update → indicator."""
 
-    def _get_vi_action(self, sig_plot):
-        tb = sig_plot.plot_state.toolbar_bottom
-        for a in tb.actions():
-            if a.text() == "Virtual Imaging":
-                return a, tb
-        raise AssertionError("Virtual Imaging action not found")
+    def test_preview_window_is_frameless(self, qtbot, stem_4d_dataset):
+        """The virtual preview PlotWindow must use FramelessWindowHint (no Qt border)."""
+        from PySide6.QtCore import Qt
+        win = stem_4d_dataset["window"]
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
 
-    def _add_detector(self, qtbot, win):
-        nav, sig = win.plots
-        vi_action, tb = self._get_vi_action(sig)
-        vi_action.trigger()
-        qtbot.wait(200)
-        vi_widget = tb.action_widgets["Virtual Imaging"]["widget"]
-        for a in vi_widget.actions():
-            if a.text() == "Add Virtual Image":
-                a.trigger()
-                break
-        qtbot.wait(300)
-        new_action = vi_widget.actions()[-1]
-        new_action.trigger()
-        qtbot.wait(300)
-        return tb, vi_widget
+        assert preview_window is not None, "No preview PlotWindow registered with the toolbar"
+        flags = preview_window.windowFlags()
+        assert flags & Qt.WindowType.FramelessWindowHint, (
+            "Preview PlotWindow does not have FramelessWindowHint — Qt border will be shown"
+        )
 
-    def test_add_virtual_image_spawns_plot_window(self, qtbot, stem_4d_dataset):
+    def test_preview_window_added_to_plot_subwindows(self, qtbot, stem_4d_dataset):
+        """The preview window must appear in main_window.plot_subwindows."""
         win = stem_4d_dataset["window"]
         n_before = len(win.plot_subwindows)
-        self._add_detector(qtbot, win)
-        assert len(win.plot_subwindows) == n_before + 1
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+        assert len(win.plot_subwindows) == n_before + 1, (
+            "Preview PlotWindow was not appended to main_window.plot_subwindows"
+        )
 
-    def test_roi_move_triggers_computation(self, qtbot, stem_4d_dataset):
+    def test_roi_is_on_signal_diffraction_plot(self, qtbot, stem_4d_dataset):
+        """The virtual ROI must be on the signal (diffraction pattern) plot, not the navigator."""
         win = stem_4d_dataset["window"]
-        tb, vi_widget = self._add_detector(qtbot, win)
-        roi = list(tb.action_widgets["Virtual Imaging"]["plot_items"].values())[0]
+        nav, sig = win.plots
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+
+        assert roi in sig.items, (
+            "ROI is not on the diffraction (signal) plot — it may be on the wrong plot"
+        )
+        assert roi not in nav.items, "ROI should not be on the navigator plot"
+
+    def test_roi_move_updates_preview_image(self, qtbot, stem_4d_dataset):
+        """Moving the ROI must produce a rendered image in the preview plot's image_item."""
+        win = stem_4d_dataset["window"]
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+
+        assert preview_window is not None
+        preview_plot = preview_window.plots[0]
+
+        # Trigger computation by emitting sigRegionChangeFinished
         roi.sigRegionChangeFinished.emit(roi)
-        qtbot.wait(5000)
-        child_plot = win.plot_subwindows[-1].plots[0]
-        assert child_plot.current_data is not None
-        assert not isinstance(child_plot.current_data, __import__('distributed').Future)
 
-    def test_virtual_imaging_toggle_hides_plot_window(self, qtbot, stem_4d_dataset):
+        # Wait until the future resolves and the image is rendered
+        qtbot.waitUntil(
+            lambda: (
+                preview_plot.current_data is not None
+                and not isinstance(preview_plot.current_data, Future)
+            ),
+            timeout=10000,
+        )
+
+        img = preview_plot.image_item.image
+        assert img is not None, "image_item.image is None — image was never rendered to the scene"
+        assert img.ndim == 2, f"Expected 2D image, got shape {img.shape}"
+        assert img.shape[0] > 0 and img.shape[1] > 0, "Image has zero-size dimension"
+
+    def test_different_roi_positions_produce_different_images(self, qtbot, stem_4d_dataset):
+        """Moving the ROI to a different position must produce a different virtual image."""
         win = stem_4d_dataset["window"]
-        nav, sig = win.plots[:2]
-        tb, vi_widget = self._add_detector(qtbot, win)
-        vi_action, _ = self._get_vi_action(sig)
-        child_window = win.plot_subwindows[-1]
-        roi = list(tb.action_widgets["Virtual Imaging"]["plot_items"].values())[0]
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
 
-        assert roi.isVisible()
-        assert child_window.isVisible()
+        assert preview_window is not None
+        preview_plot = preview_window.plots[0]
 
+        # First position — emit and wait for result
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.waitUntil(
+            lambda: (
+                preview_plot.current_data is not None
+                and not isinstance(preview_plot.current_data, Future)
+            ),
+            timeout=10000,
+        )
+        first_image = preview_plot.image_item.image.copy()
+
+        # Move ROI to a substantially different position and trigger again
+        old_pos = roi.pos()
+        sig_plot = win.plots[1]  # diffraction plot
+        image_item = sig_plot.image_item
+        # Move ~30% of image width
+        shift = image_item.width() * 0.3
+        roi.setPos(old_pos.x() + shift, old_pos.y() + shift)
+        roi.sigRegionChangeFinished.emit(roi)
+
+        qtbot.waitUntil(
+            lambda: (
+                preview_plot.current_data is not None
+                and not isinstance(preview_plot.current_data, Future)
+                and not np.array_equal(preview_plot.image_item.image, first_image)
+            ),
+            timeout=10000,
+        )
+
+        second_image = preview_plot.image_item.image
+        assert not np.array_equal(first_image, second_image), (
+            "Virtual image did not change after moving the ROI"
+        )
+
+    def test_indicator_transitions_idle_computing_done(self, qtbot, stem_4d_dataset):
+        """ComputeStatusIndicator must go idle→computing after ROI emit, then done."""
+        win = stem_4d_dataset["window"]
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+
+        assert preview_window is not None
+        indicator = preview_window._compute_indicator
+        assert indicator is not None, "No ComputeStatusIndicator attached to preview window"
+
+        assert indicator._state == "idle", f"Expected idle before computation, got {indicator._state}"
+
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.waitUntil(lambda: indicator._state == "computing", timeout=2000)
+
+        qtbot.waitUntil(lambda: indicator._state in ("done", "idle"), timeout=10000)
+
+    def test_virtual_imaging_toggle_hides_roi_and_preview(self, qtbot, stem_4d_dataset):
+        """Toggling the Virtual Imaging toolbar button hides ROI and preview window together."""
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+
+        vi_action = None
+        for a in tb.actions():
+            if a.text() == "Virtual Imaging":
+                vi_action = a
+                break
+
+        assert roi.isVisible(), "ROI should be visible after adding detector"
+        assert preview_window.isVisible(), "Preview window should be visible after adding detector"
+
+        # Toggle OFF
         vi_action.trigger()
         qtbot.wait(200)
-        assert not roi.isVisible()
-        assert not child_window.isVisible()
+        assert not roi.isVisible(), "ROI should be hidden after toggling Virtual Imaging OFF"
+        assert not preview_window.isVisible(), "Preview window should be hidden after toggling OFF"
 
+        # Toggle ON
         vi_action.trigger()
         qtbot.wait(200)
-        assert roi.isVisible()
-        assert child_window.isVisible()
+        assert roi.isVisible(), "ROI should be visible after toggling Virtual Imaging ON again"
+        assert preview_window.isVisible(), "Preview window should be visible after toggling ON again"
+
+    def test_live_off_roi_move_does_not_trigger_computation(self, qtbot, stem_4d_dataset):
+        """With Live toggled OFF, moving the ROI must NOT trigger a new computation."""
+        win = stem_4d_dataset["window"]
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+
+        assert preview_window is not None
+        preview_plot = preview_window.plots[0]
+
+        # Toggle live off
+        live_btn = caret_box.get_parameter_widget("live_button")
+        live_btn.click()
+        qtbot.wait(100)
+
+        initial_data = preview_plot.current_data  # None — no computation yet
+
+        # Move ROI and emit
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.wait(2000)
+
+        assert preview_plot.current_data is initial_data, (
+            "Computation was triggered even though Live mode is OFF"
+        )
+
+    def test_compute_button_triggers_one_computation_when_live_off(self, qtbot, stem_4d_dataset):
+        """With Live OFF, the Compute button must trigger exactly one computation."""
+        win = stem_4d_dataset["window"]
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+
+        assert preview_window is not None
+        preview_plot = preview_window.plots[0]
+
+        # Toggle live off first
+        live_btn = caret_box.get_parameter_widget("live_button")
+        live_btn.click()
+        qtbot.wait(100)
+
+        # Click Compute
+        compute_btn = caret_box.get_parameter_widget("compute_button")
+        compute_btn.click()
+
+        qtbot.waitUntil(
+            lambda: (
+                preview_plot.current_data is not None
+                and not isinstance(preview_plot.current_data, Future)
+            ),
+            timeout=10000,
+        )
+
+        img = preview_plot.image_item.image
+        assert img is not None, "No image rendered after pressing Compute"
+        assert img.ndim == 2
 
 
 class TestVirtualImageCommit:
+    """End-to-end commit tests: compute → commit button gating → VirtualDarkFieldImage tree."""
 
-    def _setup(self, qtbot, win):
-        nav, sig = win.plots
-        tb = sig.plot_state.toolbar_bottom
-        for a in tb.actions():
-            if a.text() == "Virtual Imaging":
-                vi_action = a
-                break
-        vi_action.trigger()
-        qtbot.wait(200)
-        vi_widget = tb.action_widgets["Virtual Imaging"]["widget"]
-        for a in vi_widget.actions():
-            if a.text() == "Add Virtual Image":
-                a.trigger()
-                break
-        qtbot.wait(300)
-        new_action = vi_widget.actions()[-1]
-        new_action.trigger()
-        qtbot.wait(300)
-        action_name = new_action.text()
-        caret_box = vi_widget.action_widgets[action_name]["widget"]
+    def _setup_with_preview(self, qtbot, win):
+        """Add detector, trigger first computation, wait for preview image."""
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+        preview_plot = preview_window.plots[0]
 
-        roi = list(tb.action_widgets["Virtual Imaging"]["plot_items"].values())[0]
         roi.sigRegionChangeFinished.emit(roi)
-        qtbot.wait(5000)
-        return caret_box
+        qtbot.waitUntil(
+            lambda: (
+                preview_plot.current_data is not None
+                and not isinstance(preview_plot.current_data, Future)
+            ),
+            timeout=10000,
+        )
+        return caret_box, roi, preview_plot, preview_window
 
-    def test_commit_button_disabled_before_computation(self, qtbot, stem_4d_dataset):
+    def test_commit_button_disabled_before_first_computation(self, qtbot, stem_4d_dataset):
+        """Commit button must be disabled immediately after adding a detector."""
         win = stem_4d_dataset["window"]
-        nav, sig = win.plots
-        tb = sig.plot_state.toolbar_bottom
-        for a in tb.actions():
-            if a.text() == "Virtual Imaging":
-                vi_action = a
-                break
-        vi_action.trigger()
-        qtbot.wait(200)
-        vi_widget = tb.action_widgets["Virtual Imaging"]["widget"]
-        for a in vi_widget.actions():
-            if a.text() == "Add Virtual Image":
-                a.trigger()
-                break
-        qtbot.wait(300)
-        new_action = vi_widget.actions()[-1]
-        new_action.trigger()
-        qtbot.wait(300)
-        action_name = new_action.text()
-        caret_box = vi_widget.action_widgets[action_name]["widget"]
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
         commit_btn = caret_box.get_parameter_widget("commit_button")
-        assert not commit_btn.isEnabled()
+        assert not commit_btn.isEnabled(), "Commit button should be disabled before any computation"
 
-    def test_commit_adds_signal_tree(self, qtbot, stem_4d_dataset):
+    def test_commit_button_enabled_after_preview_completes(self, qtbot, stem_4d_dataset):
+        """Commit button must become enabled once the first preview computation finishes."""
+        win = stem_4d_dataset["window"]
+        caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
+        commit_btn = caret_box.get_parameter_widget("commit_button")
+        assert commit_btn.isEnabled(), "Commit button should be enabled after preview computation"
+
+    def test_commit_adds_new_signal_tree(self, qtbot, stem_4d_dataset):
+        """Committing must add exactly one new root to main_window.signal_trees."""
         win = stem_4d_dataset["window"]
         n_before = len(win.signal_trees)
-        caret_box = self._setup(qtbot, win)
+        caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
+
         commit_btn = caret_box.get_parameter_widget("commit_button")
-        assert commit_btn.isEnabled(), "Commit button should be enabled after first computation"
         commit_btn.click()
-        qtbot.wait(8000)
+
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=10000)
         assert len(win.signal_trees) == n_before + 1
 
     def test_committed_signal_is_virtual_dark_field(self, qtbot, stem_4d_dataset):
+        """The committed signal tree root must be a VirtualDarkFieldImage."""
         from pyxem.signals import VirtualDarkFieldImage
         win = stem_4d_dataset["window"]
         n_before = len(win.signal_trees)
-        caret_box = self._setup(qtbot, win)
+        caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
+
         commit_btn = caret_box.get_parameter_widget("commit_button")
         commit_btn.click()
-        qtbot.wait(8000)
-        new_tree = win.signal_trees[n_before]
-        assert isinstance(new_tree.root_signal, VirtualDarkFieldImage)
+
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=10000)
+        new_signal = win.signal_trees[n_before].root
+        assert isinstance(new_signal, VirtualDarkFieldImage), (
+            f"Expected VirtualDarkFieldImage, got {type(new_signal)}"
+        )
+
+    def test_committed_signal_axes_match_parent_nav(self, qtbot, stem_4d_dataset):
+        """The VDF signal axes must carry the scale/offset of the source navigation axes.
+
+        VirtualDarkFieldImage(result) where result.shape == (nx, ny) has 2 signal axes and
+        0 navigation axes. The source's navigation axes become the VDF's signal axes.
+        """
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        source_signal = sig.plot_state.current_signal
+
+        n_before = len(win.signal_trees)
+        caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
+
+        commit_btn = caret_box.get_parameter_widget("commit_button")
+        commit_btn.click()
+
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=10000)
+        vdf = win.signal_trees[n_before].root
+
+        src_nav = list(source_signal.axes_manager.navigation_axes)
+        vdf_sig = list(vdf.axes_manager.signal_axes)
+        assert len(vdf_sig) == len(src_nav), (
+            f"VDF has {len(vdf_sig)} signal axes but source has {len(src_nav)} navigation axes"
+        )
+        for i, src_ax in enumerate(src_nav):
+            vdf_ax = vdf_sig[i]
+            assert abs(vdf_ax.scale - src_ax.scale) < 1e-9, (
+                f"Scale mismatch on axis {i}: VDF {vdf_ax.scale} vs source {src_ax.scale}"
+            )
+            assert abs(vdf_ax.offset - src_ax.offset) < 1e-9, (
+                f"Offset mismatch on axis {i}: VDF {vdf_ax.offset} vs source {src_ax.offset}"
+            )
+
+    def test_committed_signal_has_roi_metadata(self, qtbot, stem_4d_dataset):
+        """The committed VDF must carry ROI geometry in metadata.Signal.virtual_detector."""
+        win = stem_4d_dataset["window"]
+        n_before = len(win.signal_trees)
+        caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
+
+        commit_btn = caret_box.get_parameter_widget("commit_button")
+        commit_btn.click()
+
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=10000)
+        vdf = win.signal_trees[n_before].root
+
+        assert vdf.metadata.Signal.virtual_detector is not None, (
+            "metadata.Signal.virtual_detector not set on committed VDF"
+        )
+        assert "type" in vdf.metadata.Signal.virtual_detector, (
+            "ROI metadata dict missing 'type' key"
+        )
+
+    def test_preview_window_remains_open_after_commit(self, qtbot, stem_4d_dataset):
+        """The live preview PlotWindow must stay open after committing."""
+        win = stem_4d_dataset["window"]
+        caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
+
+        commit_btn = caret_box.get_parameter_widget("commit_button")
+        commit_btn.click()
+
+        n_trees = len(win.signal_trees)
+        qtbot.waitUntil(lambda: len(win.signal_trees) > n_trees - 1, timeout=10000)
+        qtbot.wait(500)
+
+        assert preview_window.isVisible(), (
+            "Preview PlotWindow was closed after commit — it should remain open"
+        )
+
+    def test_two_commits_produce_two_independent_trees(self, qtbot, stem_4d_dataset):
+        """Committing twice must produce two independent signal trees."""
+        win = stem_4d_dataset["window"]
+        n_before = len(win.signal_trees)
+        caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
+
+        commit_btn = caret_box.get_parameter_widget("commit_button")
+
+        # First commit
+        commit_btn.click()
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=10000)
+        qtbot.waitUntil(lambda: commit_btn.isEnabled(), timeout=5000)
+
+        # Second commit
+        commit_btn.click()
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 2, timeout=10000)
+
+        tree1 = win.signal_trees[n_before]
+        tree2 = win.signal_trees[n_before + 1]
+        assert tree1 is not tree2, "Two commits produced the same tree object"
+        assert tree1.root is not tree2.root, "Two commits share the same root signal"
 
 
 @pytest.mark.gpu

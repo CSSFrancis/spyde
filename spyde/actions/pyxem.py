@@ -310,19 +310,19 @@ def add_virtual_image(
     client = main_window.client
     gpu_worker = getattr(main_window, "_gpu_worker_address", None)
 
-    # Create the virtual image preview PlotWindow
-    from spyde.drawing.plots.plot_window import PlotWindow as _PlotWindow
+    # Create the virtual image preview PlotWindow using the same factory as all other
+    # plot windows — this applies FramelessWindowHint and removes the Qt border.
     from spyde.qt.compute_status_indicator import ComputeStatusIndicator
 
-    virtual_plot_window = _PlotWindow(
+    virtual_plot_window = main_window.add_plot_window(
         is_navigator=False,
-        main_window=main_window,
+        signal_tree=None,
     )
     virtual_plot = virtual_plot_window.add_new_plot()
-    main_window.mdi_area.addSubWindow(virtual_plot_window)
-    virtual_plot_window.show()
-    virtual_plot_window.resize(300, 300)
-    main_window.plot_subwindows.append(virtual_plot_window)
+    # Add image_item to the scene so update() can render into it.
+    # Normally set_plot_state() does this, but the virtual preview has no PlotState.
+    if virtual_plot.image_item not in virtual_plot.items:
+        virtual_plot.addItem(virtual_plot.image_item)
 
     indicator = ComputeStatusIndicator()
     virtual_plot_window.set_compute_indicator(indicator)
