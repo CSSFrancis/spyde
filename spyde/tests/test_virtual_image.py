@@ -87,14 +87,14 @@ class TestGPUWorkerSetup:
         """_probe_gpus returns 0 when nvidia-smi is not found."""
         import unittest.mock as mock
         from spyde.__main__ import _probe_gpus
-        with mock.patch("subprocess.run", side_effect=FileNotFoundError):
+        with mock.patch("spyde.__main__.subprocess.run", side_effect=FileNotFoundError):
             assert _probe_gpus() == 0
 
     def test_probe_gpus_returns_zero_on_timeout(self):
         import unittest.mock as mock
         import subprocess
         from spyde.__main__ import _probe_gpus
-        with mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired("nvidia-smi", 3)):
+        with mock.patch("spyde.__main__.subprocess.run", side_effect=subprocess.TimeoutExpired("nvidia-smi", 3)):
             assert _probe_gpus() == 0
 
     def test_probe_gpus_returns_count_from_mocked_output(self):
@@ -103,7 +103,7 @@ class TestGPUWorkerSetup:
         fake_result = mock.Mock()
         fake_result.returncode = 0
         fake_result.stdout = b"NVIDIA GeForce RTX 3080\nNVIDIA GeForce RTX 3080\n"
-        with mock.patch("subprocess.run", return_value=fake_result):
+        with mock.patch("spyde.__main__.subprocess.run", return_value=fake_result):
             assert _probe_gpus() == 2
 
     def test_gpu_worker_address_is_none_when_no_gpu(self, stem_4d_dataset):

@@ -65,7 +65,7 @@ def _probe_gpus() -> int:
         )
         if result.returncode != 0:
             return 0
-        lines = [l for l in result.stdout.decode().strip().splitlines() if l.strip()]
+        lines = [line for line in result.stdout.decode().strip().splitlines() if line.strip()]
         return len(lines)
     except Exception:
         return 0
@@ -92,6 +92,7 @@ class DaskClusterWorker(QtCore.QObject):
             )
             client = Client(cluster)
             n_gpus = _probe_gpus()
+            # Sentinel: truthy = GPU annotation enabled; actual worker provisioning deferred to future iteration
             gpu_worker_address = "gpu_available" if n_gpus > 0 else None
             self.finished.emit(cluster, client, gpu_worker_address)
         except Exception as e:
