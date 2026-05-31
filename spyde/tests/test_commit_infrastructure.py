@@ -51,3 +51,26 @@ class TestCommitInfrastructure:
         pw.set_commit_enabled(False)
         assert not pw.title_bar.commit_button.isEnabled()
         win.close()
+
+    def test_plot_update_1d_no_plotstate(self, qtbot):
+        """Plot.update() with plot_state=None and 1D current_data must call line_item.setData."""
+        import numpy as np
+        from spyde.qt.shared import open_window
+        win = open_window()
+        qtbot.addWidget(win)
+        pw = win.add_plot_window(is_navigator=False, signal_tree=None)
+        plot = pw.add_new_plot()
+
+        # Add line_item to scene (same as the virtual preview fix)
+        if plot.line_item not in plot.items:
+            plot.addItem(plot.line_item)
+
+        assert plot.plot_state is None
+
+        data_1d = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        plot.current_data = data_1d
+        plot.update()
+
+        assert plot.line_item.yData is not None, "1D data not rendered: line_item.yData is None"
+        np.testing.assert_array_equal(plot.line_item.yData, data_1d)
+        win.close()
