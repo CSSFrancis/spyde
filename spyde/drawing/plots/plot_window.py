@@ -106,12 +106,17 @@ class PlotWindow(FramelessSubWindow):
         self._commit_connection = None  # type: QtCore.QMetaObject.Connection | None
         self.owner_plot_window = None  # type: "PlotWindow | None"
 
-    def set_compute_indicator(self, indicator):
-        """Attach a ComputeStatusIndicator and keep it at (8, 8)."""
+    def set_compute_indicator(self, indicator) -> None:
+        """Insert the ComputeStatusIndicator into the title bar left zone."""
         self._compute_indicator = indicator
-        indicator.setParent(self)
-        indicator.move(8, 8)
-        indicator.raise_()
+        layout = self.title_bar_layout
+        old = self._status_placeholder
+        idx = layout.indexOf(old)
+        layout.removeWidget(old)
+        old.deleteLater()
+        self._status_placeholder = indicator
+        indicator.setParent(self.title_bar)
+        layout.insertWidget(idx, indicator)
         indicator.show()
 
     def set_commit_fn(self, fn: callable, label: str = "Commit") -> None:
@@ -525,9 +530,6 @@ class PlotWindow(FramelessSubWindow):
     def resizeEvent(self, ev: QtGui.QResizeEvent) -> None:
         super().resizeEvent(ev)
         self.reposition_toolbars()
-        if self._compute_indicator is not None:
-            self._compute_indicator.move(8, 8)
-            self._compute_indicator.raise_()
 
     def keyPressEvent(self, ev: QtGui.QKeyEvent):
         """Handle arrow keys to move the active selector."""

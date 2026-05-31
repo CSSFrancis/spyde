@@ -48,22 +48,29 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
             "}"
         )
         self.title_bar_layout = QtWidgets.QHBoxLayout(self.title_bar)
+        self.title_bar_layout.setContentsMargins(5, 5, 5, 5)
+        self.title_bar_layout.setSpacing(4)
 
-        self.title_label = QtWidgets.QLabel("", self.title_bar)
-        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.title_label.setStyleSheet("color: #ffffff;")
-        self.title_bar_layout.addWidget(self.title_label)
+        self._status_placeholder = QtWidgets.QWidget(self.title_bar)
+        self._status_placeholder.setFixedSize(24, 24)
+        self.title_bar_layout.addWidget(self._status_placeholder)
 
         self.title_bar.commit_button = QtWidgets.QPushButton("Commit", self.title_bar)
-        self.title_bar.commit_button.setFixedHeight(20)
+        self.title_bar.commit_button.setFixedHeight(18)
         self.title_bar.commit_button.setStyleSheet(
             "QPushButton { color: white; background-color: rgba(80,160,80,180); "
-            "border: 1px solid rgba(255,255,255,60); border-radius: 3px; padding: 0 6px; }"
+            "border: 1px solid rgba(255,255,255,60); border-radius: 8px; padding: 0 4px; "
+            "font-size: 11px; }"
             "QPushButton:disabled { background-color: rgba(80,80,80,120); color: rgba(255,255,255,80); }"
             "QPushButton:hover { background-color: rgba(100,200,100,200); }"
         )
         self.title_bar.commit_button.hide()
-        self.title_bar_layout.insertWidget(1, self.title_bar.commit_button)
+        self.title_bar_layout.addWidget(self.title_bar.commit_button)
+
+        self.title_label = QtWidgets.QLabel("", self.title_bar)
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_label.setStyleSheet("color: #ffffff;")
+        self.title_bar_layout.addWidget(self.title_label, stretch=1)
 
         self.minimize_button = QtWidgets.QPushButton(self.title_bar)
         self._icon_minimize = QIcon(resolve_icon_path("qt/assets/icons/minimize.svg"))
@@ -99,7 +106,6 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self.title_bar_layout.addWidget(self.minimize_button)
         self.title_bar_layout.addWidget(self.maximize_button)
         self.title_bar_layout.addWidget(self.close_button)
-        self.title_bar_layout.setContentsMargins(5, 5, 5, 5)
 
         self.setLayout(QtWidgets.QVBoxLayout())
 
@@ -155,6 +161,7 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
             self.showNormal()
         else:
             self.showMaximized()
+
 
     @property
     def resizing(self):

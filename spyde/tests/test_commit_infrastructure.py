@@ -74,3 +74,24 @@ class TestCommitInfrastructure:
         assert plot.line_item.yData is not None, "1D data not rendered: line_item.yData is None"
         np.testing.assert_array_equal(plot.line_item.yData, data_1d)
         win.close()
+
+
+def test_commit_button_is_left_of_title(qtbot, window):
+    """Commit button must appear before the title label in the title bar layout."""
+    pw = window["window"].add_plot_window(is_navigator=False, signal_tree=None)
+    layout = pw.title_bar.layout()
+    commit_idx = None
+    title_idx = None
+    for i in range(layout.count()):
+        item = layout.itemAt(i)
+        if item and item.widget():
+            w = item.widget()
+            if w is pw.title_bar.commit_button:
+                commit_idx = i
+            elif hasattr(pw, 'title_label') and w is pw.title_label:
+                title_idx = i
+    assert commit_idx is not None, "Commit button not found in title bar layout"
+    assert title_idx is not None, "Title label not found in title bar layout"
+    assert commit_idx < title_idx, (
+        f"Commit button (idx {commit_idx}) should come before title (idx {title_idx})"
+    )
