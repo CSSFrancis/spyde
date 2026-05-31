@@ -102,6 +102,8 @@ class PlotWindow(FramelessSubWindow):
         self.main_window = main_window  # type: "MainWindow"
         self.timer = None
         self._compute_indicator = None  # type: ComputeStatusIndicator | None
+        self._commit_fn = None  # type: callable | None
+        self._commit_connection = None  # type: QtCore.QMetaObject.Connection | None
 
     def set_compute_indicator(self, indicator):
         """Attach a ComputeStatusIndicator and keep it at (8, 8)."""
@@ -110,6 +112,33 @@ class PlotWindow(FramelessSubWindow):
         indicator.move(8, 8)
         indicator.raise_()
         indicator.show()
+
+    def set_commit_fn(self, fn: callable, label: str = "Commit") -> None:
+        """Wire a commit function and show the title-bar Commit button.
+
+        The button starts disabled — call set_commit_enabled(True) once
+        the first data is ready.
+        """
+        btn = self.title_bar.commit_button
+        btn.setText(label)
+        # Disconnect the previous function if one was connected
+        if self._commit_connection is not None:
+            btn.clicked.disconnect(self._commit_connection)
+        # Store the function and connect it
+        self._commit_fn = fn
+        self._commit_connection = btn.clicked.connect(self._commit_fn)
+        btn.setEnabled(False)
+        btn.show()
+
+    @QtCore.Slot(bool)
+    def set_commit_enabled(self, enabled: bool) -> None:
+        """Enable or disable the title-bar Commit button.
+
+        Decorated as a Slot(bool) so it can be called safely from dask
+        callback threads via QMetaObject.invokeMethod(..., QueuedConnection).
+        """
+        btn = self.title_bar.commit_button
+        btn.setEnabled(enabled)
 
     def hideEvent(self, ev: QtGui.QHideEvent) -> None:
         """Called when the widget is hidden."""
