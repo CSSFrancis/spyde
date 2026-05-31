@@ -525,13 +525,18 @@ def test_core_windows_background_opacity_when_other_tree_active(qtbot, stem_4d_d
     win.add_signal(sig2)
     qtbot.wait(200)
     other_window = win.plot_subwindows[-1]
-    win.mdi_area.setActiveSubWindow(other_window)
-    qtbot.wait(100)
+    # Explicitly trigger 3-state visibility with the other window's tree as active
+    win.on_subwindow_activated(other_window)
 
     # nav_window belongs to first signal tree — should be dimmed, not hidden
+    from PySide6.QtWidgets import QGraphicsOpacityEffect
     assert nav_window.isVisible(), "Core window must remain visible (just dimmed)"
-    assert abs(nav_window.windowOpacity() - 0.65) < 0.01, (
-        f"Expected 65% opacity, got {nav_window.windowOpacity()}"
+    effect = nav_window.graphicsEffect()
+    assert isinstance(effect, QGraphicsOpacityEffect), (
+        f"Expected QGraphicsOpacityEffect on nav_window, got {effect}"
+    )
+    assert abs(effect.opacity() - 0.65) < 0.01, (
+        f"Expected 65% opacity effect, got {effect.opacity()}"
     )
 
 

@@ -898,6 +898,16 @@ class MainWindow(QMainWindow):
 
     def on_subwindow_activated(self, window: "PlotWindow") -> None:
         """MDI activation handler: update toolbars, metadata, histogram binding, and colormap selector."""
+        if getattr(self, '_in_subwindow_activated', False):
+            return
+        self._in_subwindow_activated = True
+        try:
+            self._on_subwindow_activated_impl(window)
+        finally:
+            self._in_subwindow_activated = False
+
+    def _on_subwindow_activated_impl(self, window: "PlotWindow") -> None:
+        """Implementation of on_subwindow_activated — never call directly."""
         print("Subwindow activated:", window)
         if window is None or not isinstance(window, PlotWindow):
             return
@@ -930,14 +940,8 @@ class MainWindow(QMainWindow):
                     plt.plot_state.hide_toolbars()
 
         # ── 3-state visibility ───────────────────────────────────────────────────
-        # Use the MDI area's actual active subwindow to determine the active tree,
-        # falling back to `window` when on_subwindow_activated is called directly
-        # (e.g. from set_plot_state) rather than via the MDI activation signal.
-        mdi_active = self.mdi_area.activeSubWindow()
-        if isinstance(mdi_active, PlotWindow) and mdi_active.signal_tree is not None:
-            active_tree = mdi_active.signal_tree
-        else:
-            active_tree = window.signal_tree
+        from PySide6.QtWidgets import QGraphicsOpacityEffect
+        active_tree = window.signal_tree
         for pw in self.plot_subwindows:
             same_tree = (pw.signal_tree is active_tree)
             is_action_preview = (pw.owner_plot_window is not None)
@@ -945,13 +949,15 @@ class MainWindow(QMainWindow):
             if same_tree:
                 if not pw.isVisible():
                     pw.show()
-                pw.setWindowOpacity(1.0)
+                pw.setGraphicsEffect(None)
             elif is_action_preview:
                 pw.hide()
             else:
                 if not pw.isVisible():
                     pw.show()
-                pw.setWindowOpacity(0.65)
+                effect = QGraphicsOpacityEffect(pw)
+                effect.setOpacity(0.65)
+                pw.setGraphicsEffect(effect)
         # ── end 3-state visibility ───────────────────────────────────────────────
 
         # Histogram binding: use the image_item on the inner widget / plot
