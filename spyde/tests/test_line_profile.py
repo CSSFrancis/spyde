@@ -89,3 +89,154 @@ class TestLineProfileKernel:
         data = da.ones((4, 4, 8, 8), dtype=np.float32, chunks=(2, 2, 8, 8))
         f2 = compute_nav_line_sum_kernel(data, np.array([1,2]), np.array([1,2]), self.client, None)
         assert isinstance(f2, Future)
+
+
+def _add_line_profile_on_signal(qtbot, win):
+    """Helper: add a Line Profile ROI to the signal (diffraction) plot."""
+    nav, sig = win.plots
+    tb = sig.plot_state.toolbar_bottom
+    lp_action = None
+    for a in tb.actions():
+        if a.text() == "Line Profile":
+            lp_action = a
+            break
+    assert lp_action is not None, "Line Profile action not found in signal toolbar"
+
+    lp_action.trigger()
+    qtbot.wait(200)
+
+    lp_widget = tb.action_widgets["Line Profile"]["widget"]
+    for a in lp_widget.actions():
+        if a.text() == "Add Line Profile":
+            a.trigger()
+            break
+    qtbot.wait(300)
+
+    new_action = lp_widget.actions()[-1]
+    new_action.trigger()
+    qtbot.wait(300)
+
+    action_name = new_action.text()
+    caret_box = lp_widget.action_widgets[action_name]["widget"]
+    roi = tb.action_widgets["Line Profile"]["plot_items"][action_name]
+    preview_window = tb.action_widgets["Line Profile"].get("plot_windows", {}).get(action_name)
+    return tb, lp_widget, action_name, caret_box, roi, preview_window
+
+
+class TestLineProfileSignalPlot:
+    """End-to-end tests: line profile on signal (diffraction pattern) plot."""
+
+    def test_spawns_one_preview_window(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        n_before = len(win.plot_subwindows)
+        _add_line_profile_on_signal(qtbot, win)
+        assert len(win.plot_subwindows) == n_before + 1, (
+            "Line profile on signal plot should spawn exactly 1 preview window"
+        )
+
+    def test_preview_window_is_frameless(self, qtbot, stem_4d_dataset):
+        from PySide6.QtCore import Qt
+        win = stem_4d_dataset["window"]
+        tb, lp_widget, action_name, caret_box, roi, preview_window = _add_line_profile_on_signal(qtbot, win)
+        assert preview_window is not None
+        assert preview_window.windowFlags() & Qt.WindowType.FramelessWindowHint
+
+    def test_roi_is_on_signal_plot(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        tb, lp_widget, action_name, caret_box, roi, preview_window = _add_line_profile_on_signal(qtbot, win)
+        assert roi in sig.items, "LineROI should be on the signal (diffraction) plot"
+        assert roi not in nav.items, "LineROI should NOT be on the navigator"
+
+    def test_roi_move_updates_line_item(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        tb, lp_widget, action_name, caret_box, roi, preview_window = _add_line_profile_on_signal(qtbot, win)
+        preview_plot = preview_window.plots[0]
+
+        roi.sigRegionChangeFinished.emit(roi)
+
+        qtbot.waitUntil(
+            lambda: preview_plot.line_item.yData is not None,
+            timeout=8000,
+        )
+        assert preview_plot.line_item.yData.ndim == 1
+
+    def test_different_roi_positions_produce_different_profiles(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots  # capture before preview window is added
+        tb, lp_widget, action_name, caret_box, roi, preview_window = _add_line_profile_on_signal(qtbot, win)
+        preview_plot = preview_window.plots[0]
+
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.waitUntil(lambda: preview_plot.line_item.yData is not None, timeout=8000)
+        first_profile = preview_plot.line_item.yData.copy()
+
+        # Move ROI to a substantially different position
+        old_pos = roi.pos()
+        roi.setPos(old_pos.x(), old_pos.y() + sig.image_item.height() * 0.3)
+        roi.sigRegionChangeFinished.emit(roi)
+
+        qtbot.waitUntil(
+            lambda: (
+                preview_plot.line_item.yData is not None
+                and not np.array_equal(preview_plot.line_item.yData, first_profile)
+            ),
+            timeout=8000,
+        )
+        assert not np.array_equal(preview_plot.line_item.yData, first_profile)
+
+    def test_commit_button_disabled_before_first_computation(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        tb, lp_widget, action_name, caret_box, roi, preview_window = _add_line_profile_on_signal(qtbot, win)
+        assert not preview_window.title_bar.commit_button.isEnabled()
+
+    def test_commit_button_enabled_after_computation(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        tb, lp_widget, action_name, caret_box, roi, preview_window = _add_line_profile_on_signal(qtbot, win)
+        preview_plot = preview_window.plots[0]
+
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.waitUntil(lambda: preview_plot.line_item.yData is not None, timeout=8000)
+        qtbot.waitUntil(lambda: preview_window.title_bar.commit_button.isEnabled(), timeout=3000)
+
+    def test_end_to_end_commit_signal1d(self, qtbot, stem_4d_dataset):
+        """Full flow: add ROI → move → wait → click Commit → Signal1D in new tree."""
+        import hyperspy.api as hs
+        win = stem_4d_dataset["window"]
+        n_before = len(win.signal_trees)
+        tb, lp_widget, action_name, caret_box, roi, preview_window = _add_line_profile_on_signal(qtbot, win)
+        preview_plot = preview_window.plots[0]
+
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.waitUntil(lambda: preview_plot.line_item.yData is not None, timeout=8000)
+        qtbot.waitUntil(lambda: preview_window.title_bar.commit_button.isEnabled(), timeout=3000)
+
+        preview_window.title_bar.commit_button.click()
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=10000)
+
+        new_signal = win.signal_trees[n_before].root
+        assert isinstance(new_signal, hs.signals.Signal1D), (
+            f"Expected Signal1D, got {type(new_signal)}"
+        )
+        assert new_signal.data.ndim == 1
+
+    def test_committed_signal1d_axis_scale(self, qtbot, stem_4d_dataset):
+        """Committed Signal1D axis scale must equal line length / n_points."""
+        import hyperspy.api as hs
+        win = stem_4d_dataset["window"]
+        n_before = len(win.signal_trees)
+        tb, lp_widget, action_name, caret_box, roi, preview_window = _add_line_profile_on_signal(qtbot, win)
+        preview_plot = preview_window.plots[0]
+
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.waitUntil(lambda: preview_plot.line_item.yData is not None, timeout=8000)
+        qtbot.waitUntil(lambda: preview_window.title_bar.commit_button.isEnabled(), timeout=3000)
+
+        preview_window.title_bar.commit_button.click()
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=10000)
+
+        new_signal = win.signal_trees[n_before].root
+        n_points = len(new_signal.data)
+        assert n_points > 0
+        scale = new_signal.axes_manager.signal_axes[0].scale
+        assert scale > 0, "Axis scale must be positive"

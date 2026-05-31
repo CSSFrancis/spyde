@@ -127,3 +127,17 @@ functions:
         description: Adds a virtual image from the 4D-STEM data.
         icon: drawing/toolbars/icons/zoom.svg
         function: spyde.actions.pyxem.add_virtual_image
+  Line Profile:
+    description: Extract a 1D line profile from the current 2D plot.
+    icon: drawing/toolbars/icons/virtual_imaging.svg
+    function: spyde.actions.line_profile.line_profile_action
+    plot_dim: [2]
+    toolbar_side: bottom
+    toggle: True
+    submenu: True
+    subfunctions:
+      add_line_profile:
+        name: Add Line Profile
+        description: Add a line profile ROI to the plot.
+        icon: drawing/toolbars/icons/zoom.svg
+        function: spyde.actions.line_profile.add_line_profile
