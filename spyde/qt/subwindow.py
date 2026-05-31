@@ -54,6 +54,17 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self.title_label.setStyleSheet("color: #ffffff;")
         self.title_bar_layout.addWidget(self.title_label)
 
+        self.title_bar.commit_button = QtWidgets.QPushButton("Commit", self.title_bar)
+        self.title_bar.commit_button.setFixedHeight(20)
+        self.title_bar.commit_button.setStyleSheet(
+            "QPushButton { color: white; background-color: rgba(80,160,80,180); "
+            "border: 1px solid rgba(255,255,255,60); border-radius: 3px; padding: 0 6px; }"
+            "QPushButton:disabled { background-color: rgba(80,80,80,120); color: rgba(255,255,255,80); }"
+            "QPushButton:hover { background-color: rgba(100,200,100,200); }"
+        )
+        self.title_bar.commit_button.hide()
+        self.title_bar_layout.insertWidget(1, self.title_bar.commit_button)
+
         self.minimize_button = QtWidgets.QPushButton(self.title_bar)
         self._icon_minimize = QIcon(resolve_icon_path("qt/assets/icons/minimize.svg"))
         self._icon_maximize = QIcon(resolve_icon_path("qt/assets/icons/maximize.svg"))
