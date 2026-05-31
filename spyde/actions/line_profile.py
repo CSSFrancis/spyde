@@ -160,7 +160,10 @@ def add_line_profile(
     # ── Branch: signal plot vs navigator plot ────────────────────────────────
     if not plot.is_navigator:
         # Signal plot: 1 preview window, Signal1D commit
-        preview_window = main_window.add_plot_window(is_navigator=False, signal_tree=None)
+        preview_window = main_window.add_plot_window(
+            is_navigator=False, signal_tree=plot.signal_tree
+        )
+        preview_window.owner_plot_window = plot.plot_window
         preview_plot = preview_window.add_new_plot()
         if preview_plot.line_item not in preview_plot.items:
             preview_plot.addItem(preview_plot.line_item)
@@ -240,7 +243,10 @@ def add_line_profile(
         _cached_line_info = [None]  # (line_ys, line_xs, N, coords)
 
         # Window 1: instant 1D profile from rendered nav image
-        profile_window = main_window.add_plot_window(is_navigator=False, signal_tree=None)
+        profile_window = main_window.add_plot_window(
+            is_navigator=False, signal_tree=plot.signal_tree
+        )
+        profile_window.owner_plot_window = plot.plot_window
         profile_plot = profile_window.add_new_plot()
         if profile_plot.line_item not in profile_plot.items:
             profile_plot.addItem(profile_plot.line_item)
@@ -251,7 +257,10 @@ def add_line_profile(
 
         # Window 2: lazy dask sum of diffraction patterns in strip
         sum_indicator = ComputeStatusIndicator(color=color)
-        sum_window = main_window.add_plot_window(is_navigator=False, signal_tree=None)
+        sum_window = main_window.add_plot_window(
+            is_navigator=False, signal_tree=plot.signal_tree
+        )
+        sum_window.owner_plot_window = plot.plot_window
         sum_plot = sum_window.add_new_plot()
         if sum_plot.image_item not in sum_plot.items:
             sum_plot.addItem(sum_plot.image_item)

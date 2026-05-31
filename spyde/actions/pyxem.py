@@ -301,8 +301,9 @@ def add_virtual_image(
 
     virtual_plot_window = main_window.add_plot_window(
         is_navigator=False,
-        signal_tree=None,
+        signal_tree=plot.signal_tree,
     )
+    virtual_plot_window.owner_plot_window = plot.plot_window
     virtual_plot = virtual_plot_window.add_new_plot()
     # Add image_item to the scene so update() can render into it.
     # Normally set_plot_state() does this, but the virtual preview has no PlotState.

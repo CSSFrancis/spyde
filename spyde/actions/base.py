@@ -109,7 +109,10 @@ def add_fft_selector(toolbar: "RoundedToolBar",
         m_window = plot.main_window
         signal_tree = plot.signal_tree
         plot_window = m_window.add_plot_window(
-            is_navigator=False, signal_tree=signal_tree)
+            is_navigator=False,
+            signal_tree=getattr(plot, 'signal_tree', None),
+        )
+        plot_window.owner_plot_window = plot.plot_window
 
         fft_plot = plot_window.add_new_plot()
         place_holder_signal = hs.signals.Signal2D(
