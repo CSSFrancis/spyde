@@ -110,7 +110,7 @@ def add_fft_selector(toolbar: "RoundedToolBar",
         signal_tree = plot.signal_tree
         plot_window = m_window.add_plot_window(
             is_navigator=False,
-            signal_tree=getattr(plot, 'signal_tree', None),
+            signal_tree=signal_tree,
         )
         plot_window.owner_plot_window = plot.plot_window
 
