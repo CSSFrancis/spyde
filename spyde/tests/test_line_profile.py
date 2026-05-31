@@ -459,6 +459,19 @@ class TestLineProfileNavPlot:
         assert new_signal.data.ndim == 3, "Width > 1 must still produce 3D signal"
 
 
+def test_preview_window_has_owner_plot_window(qtbot, stem_4d_dataset):
+    """Preview windows created by line profile must have owner_plot_window set."""
+    win = stem_4d_dataset["window"]
+    n_before = len(win.plot_subwindows)
+    _add_line_profile_on_signal(qtbot, win)
+    new_windows = win.plot_subwindows[n_before:]
+    assert len(new_windows) > 0, "Expected at least one new preview window"
+    for pw in new_windows:
+        assert pw.owner_plot_window is not None, (
+            f"Preview window {pw} missing owner_plot_window"
+        )
+
+
 class TestLineProfileAxisScale:
     """Dedicated axis scale/units correctness with synthetic data having known axes."""
 

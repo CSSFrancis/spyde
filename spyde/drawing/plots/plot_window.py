@@ -104,6 +104,7 @@ class PlotWindow(FramelessSubWindow):
         self._compute_indicator = None  # type: ComputeStatusIndicator | None
         self._commit_fn = None  # type: callable | None
         self._commit_connection = None  # type: QtCore.QMetaObject.Connection | None
+        self.owner_plot_window = None  # type: "PlotWindow | None"
 
     def set_compute_indicator(self, indicator):
         """Attach a ComputeStatusIndicator and keep it at (8, 8)."""
