@@ -660,3 +660,24 @@ class TestLineProfileAxisScale:
         assert sig_axes[0].units == "1/nm"
 
         win.close()
+
+
+def test_tile_active_windows_fills_mdi(qtbot, stem_4d_dataset):
+    """tile_active_windows lays out Shown windows in a grid within MDI bounds."""
+    win = stem_4d_dataset["window"]
+    subwindows = stem_4d_dataset["subwindows"]
+    win.mdi_area.setActiveSubWindow(subwindows[0])
+    qtbot.wait(100)
+    active_tree = subwindows[0].signal_tree
+    shown = [pw for pw in win.plot_subwindows if pw.signal_tree is active_tree]
+    assert len(shown) >= 1
+
+    win.tile_active_windows()
+    qtbot.wait(50)
+
+    mdi_rect = win.mdi_area.rect()
+    for pw in shown:
+        assert pw.x() >= 0
+        assert pw.y() >= 0
+        assert pw.x() + pw.width() <= mdi_rect.width() + 1
+        assert pw.y() + pw.height() <= mdi_rect.height() + 1

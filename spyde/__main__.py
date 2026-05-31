@@ -470,6 +470,11 @@ class MainWindow(QMainWindow):
         view_camera_control_action.triggered.connect(self.toggle_camera_control_dock)
         view_menu.addAction(view_camera_control_action)
 
+        tile_action = QAction("Tile Active Windows", self)
+        tile_action.triggered.connect(self.tile_active_windows)
+        tile_action.setShortcut("Ctrl+T")
+        view_menu.addAction(tile_action)
+
     def toggle_plot_control_dock(self) -> None:
         """
         Toggle the visibility of the plot control dock widget.
@@ -754,6 +759,33 @@ class MainWindow(QMainWindow):
         x = min(x, max(0, mdi_rect.width() - pw.width()))
         y = min(y, max(0, mdi_rect.height() - pw.height()))
         pw.move(x, y)
+
+    def tile_active_windows(self) -> None:
+        """Tile all Shown PlotWindows (active SignalTree) in an even grid."""
+        import math
+        active = self.mdi_area.activeSubWindow()
+        if not isinstance(active, PlotWindow):
+            return
+        active_tree = active.signal_tree
+        shown = [
+            pw for pw in self.plot_subwindows
+            if pw.signal_tree is active_tree and pw.isVisible()
+        ]
+        n = len(shown)
+        if n == 0:
+            return
+        cols = math.ceil(math.sqrt(n))
+        rows = math.ceil(n / cols)
+        mdi_rect = self.mdi_area.rect()
+        margin = 6
+        cell_w = (mdi_rect.width() - margin * (cols + 1)) // cols
+        cell_h = (mdi_rect.height() - margin * (rows + 1)) // rows
+        for i, pw in enumerate(shown):
+            row = i // cols
+            col = i % cols
+            x = margin + col * (cell_w + margin)
+            y = margin + row * (cell_h + margin)
+            pw.setGeometry(x, y, cell_w, cell_h)
 
     def add_plot_window(
         self,
