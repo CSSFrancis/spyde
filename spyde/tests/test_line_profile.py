@@ -459,6 +459,82 @@ class TestLineProfileNavPlot:
         assert new_signal.data.ndim == 3, "Width > 1 must still produce 3D signal"
 
 
+def test_preview_window_hidden_when_other_signal_tree_active(qtbot, stem_4d_dataset):
+    """Preview windows are hidden when a different SignalTree's window is active."""
+    win = stem_4d_dataset["window"]
+    nav_window = stem_4d_dataset["subwindows"][0]
+    win.mdi_area.setActiveSubWindow(nav_window)
+    qtbot.wait(100)
+    n_before = len(win.plot_subwindows)
+    _add_line_profile_on_signal(qtbot, win)
+    qtbot.wait(100)
+    preview_windows = [pw for pw in win.plot_subwindows[n_before:]]
+
+    # Create a second signal tree so there's an "other" active window
+    import hyperspy.api as hs
+    import numpy as np
+    sig2 = hs.signals.Signal2D(np.zeros((64, 64)))
+    win.add_signal(sig2)
+    qtbot.wait(200)
+    # activate the new signal's window
+    other_window = win.plot_subwindows[-1]
+    win.mdi_area.setActiveSubWindow(other_window)
+    qtbot.wait(100)
+
+    for pw in preview_windows:
+        assert not pw.isVisible(), f"Preview window {pw} should be hidden"
+
+
+def test_preview_window_shown_when_owner_signal_tree_active(qtbot, stem_4d_dataset):
+    """Preview windows reappear when their SignalTree becomes active again."""
+    win = stem_4d_dataset["window"]
+    nav_window = stem_4d_dataset["subwindows"][0]
+    win.mdi_area.setActiveSubWindow(nav_window)
+    qtbot.wait(100)
+    n_before = len(win.plot_subwindows)
+    _add_line_profile_on_signal(qtbot, win)
+    qtbot.wait(100)
+    preview_windows = [pw for pw in win.plot_subwindows[n_before:]]
+
+    # Switch away
+    import hyperspy.api as hs
+    import numpy as np
+    sig2 = hs.signals.Signal2D(np.zeros((64, 64)))
+    win.add_signal(sig2)
+    qtbot.wait(200)
+    other_window = win.plot_subwindows[-1]
+    win.mdi_area.setActiveSubWindow(other_window)
+    qtbot.wait(100)
+
+    # Switch back
+    win.mdi_area.setActiveSubWindow(nav_window)
+    qtbot.wait(100)
+
+    for pw in preview_windows:
+        assert pw.isVisible(), f"Preview window {pw} should be visible"
+
+
+def test_core_windows_background_opacity_when_other_tree_active(qtbot, stem_4d_dataset):
+    """Core/nav windows of inactive SignalTree get 65% opacity, not hidden."""
+    win = stem_4d_dataset["window"]
+    nav_window = stem_4d_dataset["subwindows"][0]
+
+    import hyperspy.api as hs
+    import numpy as np
+    sig2 = hs.signals.Signal2D(np.zeros((64, 64)))
+    win.add_signal(sig2)
+    qtbot.wait(200)
+    other_window = win.plot_subwindows[-1]
+    win.mdi_area.setActiveSubWindow(other_window)
+    qtbot.wait(100)
+
+    # nav_window belongs to first signal tree — should be dimmed, not hidden
+    assert nav_window.isVisible(), "Core window must remain visible (just dimmed)"
+    assert abs(nav_window.windowOpacity() - 0.65) < 0.01, (
+        f"Expected 65% opacity, got {nav_window.windowOpacity()}"
+    )
+
+
 def test_preview_window_has_owner_plot_window(qtbot, stem_4d_dataset):
     """Preview windows created by line profile must have owner_plot_window set."""
     win = stem_4d_dataset["window"]

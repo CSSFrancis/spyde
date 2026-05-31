@@ -898,9 +898,6 @@ class MainWindow(QMainWindow):
 
     def on_subwindow_activated(self, window: "PlotWindow") -> None:
         """MDI activation handler: update toolbars, metadata, histogram binding, and colormap selector."""
-        # Guard against re-entry
-
-
         print("Subwindow activated:", window)
         if window is None or not isinstance(window, PlotWindow):
             return
@@ -913,9 +910,9 @@ class MainWindow(QMainWindow):
         # hide all toolbar from other plots in the same window except toolbars from
         # the active signal tree
         if window.signal_tree is not None and window.signal_tree.navigator_plot_manager is not None:
-            active_plots = [win.current_plot_item for
-                            win in window.signal_tree.navigator_plot_manager.all_plot_windows
-                            if win.isVisible()]
+            active_plots = [w.current_plot_item for
+                            w in window.signal_tree.navigator_plot_manager.all_plot_windows
+                            if w.isVisible()]
         else:
             active_plots = [plot]
 
@@ -925,14 +922,37 @@ class MainWindow(QMainWindow):
             if hasattr(plt, "show_selector_control_widget"):
                 plt.show_selector_control_widget()
 
-        for win in self.plot_subwindows:
-            for plt in win.plots:
+        for pw in self.plot_subwindows:
+            for plt in pw.plots:
                 if plt in active_plots:
                     continue
-                else:
-                    if getattr(plt, "plot_state", None) is not None:
-                        plt.plot_state.hide_toolbars()
-                    #plt.remove_selector_control_widgets()
+                if getattr(plt, "plot_state", None) is not None:
+                    plt.plot_state.hide_toolbars()
+
+        # ── 3-state visibility ───────────────────────────────────────────────────
+        # Use the MDI area's actual active subwindow to determine the active tree,
+        # falling back to `window` when on_subwindow_activated is called directly
+        # (e.g. from set_plot_state) rather than via the MDI activation signal.
+        mdi_active = self.mdi_area.activeSubWindow()
+        if isinstance(mdi_active, PlotWindow) and mdi_active.signal_tree is not None:
+            active_tree = mdi_active.signal_tree
+        else:
+            active_tree = window.signal_tree
+        for pw in self.plot_subwindows:
+            same_tree = (pw.signal_tree is active_tree)
+            is_action_preview = (pw.owner_plot_window is not None)
+
+            if same_tree:
+                if not pw.isVisible():
+                    pw.show()
+                pw.setWindowOpacity(1.0)
+            elif is_action_preview:
+                pw.hide()
+            else:
+                if not pw.isVisible():
+                    pw.show()
+                pw.setWindowOpacity(0.65)
+        # ── end 3-state visibility ───────────────────────────────────────────────
 
         # Histogram binding: use the image_item on the inner widget / plot
         img_item = plot.image_item
