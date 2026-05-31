@@ -208,3 +208,66 @@ def compute_virtual_image_kernel(
     else:
         result = da.tensordot(data, da_mask, axes=(sig_axes, [0, 1]))
     return client.compute(result)
+
+
+def compute_line_profile_kernel(
+    image: np.ndarray,
+    roi,
+    image_item,
+    client: distributed.Client,
+) -> distributed.Future:
+    """Extract a 1D line profile from a 2D image via LineROI.getArrayRegion.
+
+    Parameters
+    ----------
+    image : np.ndarray, shape (ny, nx)
+        The currently displayed image (plot.image_item.image).
+    roi : pyqtgraph.LineROI
+    image_item : pyqtgraph.ImageItem
+    client : dask distributed Client
+
+    Returns
+    -------
+    distributed.Future resolving to np.ndarray shape (length_px,)
+
+    Notes
+    -----
+    LineROI.getArrayRegion returns shape (length_px, width_px).
+    nanmean over axis=1 collapses the perpendicular width to give the profile.
+    """
+    region = roi.getArrayRegion(image, image_item)   # (length_px, width_px)
+    profile = np.nanmean(region, axis=1)             # (length_px,)
+    return client.submit(lambda p=profile: p)
+
+
+def compute_nav_line_sum_kernel(
+    data: da.Array,
+    ys: np.ndarray,
+    xs: np.ndarray,
+    client: distributed.Client,
+    gpu_worker_address: "str | None",
+) -> distributed.Future:
+    """Compute the mean diffraction pattern over all nav pixels in a line strip.
+
+    Parameters
+    ----------
+    data : dask array, shape (...nav..., nkx, nky)
+        HyperSpy convention: last two axes are signal.
+    ys : np.ndarray, shape (N,)
+        Row (y) pixel indices of all nav pixels inside the strip.
+    xs : np.ndarray, shape (N,)
+        Column (x) pixel indices of all nav pixels inside the strip.
+    client : dask distributed Client
+    gpu_worker_address : str or None
+
+    Returns
+    -------
+    distributed.Future resolving to np.ndarray shape (nkx, nky)
+    """
+    # Dask doesn't support multi-dimensional fancy indexing, so loop and vstack
+    slices = [data[int(y), int(x)] for y, x in zip(ys, xs)]
+    nav_slices = da.stack(slices, axis=0)  # (N, nkx, nky)
+    resources = {"GPU": 1} if gpu_worker_address else {}
+    with dask.annotate(resources=resources):
+        result = da.mean(nav_slices, axis=0)
+    return client.compute(result)
