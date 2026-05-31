@@ -77,9 +77,6 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self._icon_maximize = QIcon(resolve_icon_path("qt/assets/icons/maximize.svg"))
         self._icon_close = QIcon(resolve_icon_path("qt/assets/icons/close.svg"))
 
-        print("resolved icons", resolve_icon_path("qt/assets/icons/minimize.svg"))
-        print(self._icon_minimize.isNull())
-
         self.minimize_button.setFixedSize(20, 20)
         self.minimize_button.clicked.connect(self.toggle_minimize)
         self.minimize_button.setIcon(self._icon_minimize)
