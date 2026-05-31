@@ -432,6 +432,28 @@ class TestLineProfileNavPlot:
             f"Units mismatch: committed='{committed_units}', source='{src_units}'"
         )
 
+
+def test_preview_window_positioned_near_owner(qtbot, stem_4d_dataset):
+    """Preview windows should be placed near their owner, not overlapping it."""
+    win = stem_4d_dataset["window"]
+    nav_window = stem_4d_dataset["subwindows"][0]
+    win.mdi_area.setActiveSubWindow(nav_window)
+    qtbot.wait(100)
+    n_before = len(win.plot_subwindows)
+    _add_line_profile_on_signal(qtbot, win)
+    qtbot.wait(100)
+    preview_windows = win.plot_subwindows[n_before:]
+    owner = win.plot_subwindows[1]  # signal window (index 1 for 4D STEM)
+
+    mdi_rect = win.mdi_area.rect()
+    for pw in preview_windows:
+        assert pw.x() >= 0, f"Preview x={pw.x()} is out of bounds"
+        assert pw.y() >= 0, f"Preview y={pw.y()} is out of bounds"
+        assert pw.x() + pw.width() <= mdi_rect.width() + 1, "Preview overflows MDI right"
+        assert pw.y() + pw.height() <= mdi_rect.height() + 1, "Preview overflows MDI bottom"
+        overlap = (pw.x() == owner.x() and pw.y() == owner.y())
+        assert not overlap, "Preview window was not repositioned from owner position"
+
     def test_width_gt_1_committed_signal_shape_unchanged(self, qtbot, stem_4d_dataset):
         """Width > 1 changes the strip averaged but not the output shape (N, nkx, nky)."""
         win = stem_4d_dataset["window"]

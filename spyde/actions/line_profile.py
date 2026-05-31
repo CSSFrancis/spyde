@@ -164,6 +164,7 @@ def add_line_profile(
             is_navigator=False, signal_tree=plot.signal_tree
         )
         preview_window.owner_plot_window = plot.plot_window
+        main_window._auto_position_near_owner(preview_window)
         preview_plot = preview_window.add_new_plot()
         if preview_plot.line_item not in preview_plot.items:
             preview_plot.addItem(preview_plot.line_item)
@@ -247,6 +248,7 @@ def add_line_profile(
             is_navigator=False, signal_tree=plot.signal_tree
         )
         profile_window.owner_plot_window = plot.plot_window
+        main_window._auto_position_near_owner(profile_window)
         profile_plot = profile_window.add_new_plot()
         if profile_plot.line_item not in profile_plot.items:
             profile_plot.addItem(profile_plot.line_item)
@@ -261,6 +263,7 @@ def add_line_profile(
             is_navigator=False, signal_tree=plot.signal_tree
         )
         sum_window.owner_plot_window = plot.plot_window
+        main_window._auto_position_near_owner(sum_window)
         sum_plot = sum_window.add_new_plot()
         if sum_plot.image_item not in sum_plot.items:
             sum_plot.addItem(sum_plot.image_item)

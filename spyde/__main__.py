@@ -731,6 +731,30 @@ class MainWindow(QMainWindow):
         self.add_signal(signal)
         print("Example data loaded:", name)
 
+    def _auto_position_near_owner(self, pw: "PlotWindow") -> None:
+        """Position pw to the right of its owner, or below if no room."""
+        owner = pw.owner_plot_window
+        if owner is None:
+            return
+        mdi_rect = self.mdi_area.rect()
+        gap = 8
+        # Try right of owner
+        x = owner.x() + owner.width() + gap
+        y = owner.y()
+        if x + pw.width() <= mdi_rect.width():
+            pw.move(x, y)
+            return
+        # Try below owner
+        x = owner.x()
+        y = owner.y() + owner.height() + gap
+        if y + pw.height() <= mdi_rect.height():
+            pw.move(x, y)
+            return
+        # Clamp to MDI bounds as fallback
+        x = min(x, max(0, mdi_rect.width() - pw.width()))
+        y = min(y, max(0, mdi_rect.height() - pw.height()))
+        pw.move(x, y)
+
     def add_plot_window(
         self,
         is_navigator: bool = False,  # if navigator then it will share the navigation selectors
