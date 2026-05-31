@@ -32,6 +32,8 @@ class TestCommitInfrastructure:
         pw = win.add_plot_window(is_navigator=False, signal_tree=None)
         called = []
         pw.set_commit_fn(lambda: called.append(1))
+        # Enable before clicking — set_commit_fn starts disabled by design
+        pw.set_commit_enabled(True)
         pw.title_bar.commit_button.click()
         assert called == [1], "Commit button did not call the provided function"
         win.close()

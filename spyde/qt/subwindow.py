@@ -7,18 +7,6 @@ from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
 from PySide6 import QtGui
 
 
-class AlwaysClickablePushButton(QtWidgets.QPushButton):
-    """A push button that emits clicked signals even when disabled."""
-
-    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        # Emit clicked signal regardless of enabled state
-        self.clicked.emit()
-
-    def click(self) -> None:
-        # Override click() to emit signal regardless of enabled state
-        self.clicked.emit()
-
-
 class FramelessSubWindow(QtWidgets.QMdiSubWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -66,7 +54,7 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self.title_label.setStyleSheet("color: #ffffff;")
         self.title_bar_layout.addWidget(self.title_label)
 
-        self.title_bar.commit_button = AlwaysClickablePushButton("Commit", self.title_bar)
+        self.title_bar.commit_button = QtWidgets.QPushButton("Commit", self.title_bar)
         self.title_bar.commit_button.setFixedHeight(20)
         self.title_bar.commit_button.setStyleSheet(
             "QPushButton { color: white; background-color: rgba(80,160,80,180); "
