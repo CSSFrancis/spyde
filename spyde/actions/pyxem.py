@@ -248,9 +248,6 @@ def add_virtual_image(
     def _on_compute_clicked():
         _trigger_computation()
 
-    def _on_commit_clicked():
-        _do_commit()
-
     params = {
         "type": {
             "name": "Detector Type",
@@ -272,12 +269,7 @@ def add_virtual_image(
                 {"key": "compute_button", "label": "Compute", "callback": _on_compute_clicked},
             ],
         },
-        "commit_button": {
-            "name": "Commit",
-            "type": "button",
-            "label": "Commit",
-            "callback": _on_commit_clicked,
-        },
+        # commit_button REMOVED — now lives in the PlotWindow title bar
     }
 
     action, params_caret_box = toolbar.add_action(
@@ -295,9 +287,6 @@ def add_virtual_image(
         pass
 
     type_widget = params_caret_box.kwargs["type"]
-    commit_btn = params_caret_box.get_parameter_widget("commit_button")
-    if commit_btn is not None:
-        commit_btn.setEnabled(False)
 
     # Get signal/client/GPU info
     plot = toolbar.parent_toolbar.plot
@@ -359,24 +348,22 @@ def add_virtual_image(
         if _roi is None:
             _roi = roi
         from spyde.drawing.update_functions import compute_virtual_image_kernel
-        _timer_holder.clear()  # drop refs to stopped timers from prior computations
+        _timer_holder.clear()
         mask = roi_to_mask(_roi, signal)
         _cached_mask[0] = mask
         _cached_roi[0] = _roi
         future = compute_virtual_image_kernel(signal.data, mask, client, gpu_worker)
         virtual_plot.current_data = future
         _start_progress_poll(future, indicator, client, _timer_holder)
-        if commit_btn is not None:
-            commit_btn.setEnabled(False)
+        virtual_plot_window.set_commit_enabled(False)
 
         def _on_preview_done(fut):
             from PySide6 import QtCore as _QtCore
-            if commit_btn is not None:
-                _QtCore.QMetaObject.invokeMethod(
-                    commit_btn, "setEnabled",
-                    _QtCore.Qt.ConnectionType.QueuedConnection,
-                    _QtCore.Q_ARG(bool, True),
-                )
+            _QtCore.QMetaObject.invokeMethod(
+                virtual_plot_window, "set_commit_enabled",
+                _QtCore.Qt.ConnectionType.QueuedConnection,
+                _QtCore.Q_ARG(bool, True),
+            )
 
         future.add_done_callback(_on_preview_done)
 
@@ -400,8 +387,7 @@ def add_virtual_image(
         from pyxem.signals import VirtualDarkFieldImage
         from PySide6 import QtCore as _QtCore
 
-        if commit_btn is not None:
-            commit_btn.setEnabled(False)
+        virtual_plot_window.set_commit_enabled(False)
         indicator.set_computing()
         future = compute_virtual_image_kernel(signal.data, _cached_mask[0], client, gpu_worker)
 
@@ -410,16 +396,13 @@ def add_virtual_image(
                 result = fut.result()
             except Exception as e:
                 print(f"Commit failed: {e}")
-                if commit_btn is not None:
-                    _QtCore.QMetaObject.invokeMethod(
-                        commit_btn, "setEnabled",
-                        _QtCore.Qt.ConnectionType.QueuedConnection,
-                        _QtCore.Q_ARG(bool, True),
-                    )
+                _QtCore.QMetaObject.invokeMethod(
+                    virtual_plot_window, "set_commit_enabled",
+                    _QtCore.Qt.ConnectionType.QueuedConnection,
+                    _QtCore.Q_ARG(bool, True),
+                )
                 return
             vdf = VirtualDarkFieldImage(result)
-            # Copy scale/offset/units from source navigation axes to VDF signal axes
-            # (source nav dims become the VDF's signal dims)
             nav_axes = list(signal.axes_manager.navigation_axes)
             sig_axes = list(vdf.axes_manager.signal_axes)
             for i, ax in enumerate(nav_axes):
@@ -434,14 +417,15 @@ def add_virtual_image(
                 main_window, "_flush_pending_signals",
                 _QtCore.Qt.ConnectionType.QueuedConnection,
             )
-            if commit_btn is not None:
-                _QtCore.QMetaObject.invokeMethod(
-                    commit_btn, "setEnabled",
-                    _QtCore.Qt.ConnectionType.QueuedConnection,
-                    _QtCore.Q_ARG(bool, True),
-                )
+            _QtCore.QMetaObject.invokeMethod(
+                virtual_plot_window, "set_commit_enabled",
+                _QtCore.Qt.ConnectionType.QueuedConnection,
+                _QtCore.Q_ARG(bool, True),
+            )
 
         future.add_done_callback(_on_done)
+
+    virtual_plot_window.set_commit_fn(_do_commit)
 
     def on_type_change(new_type: str) -> None:
         old_roi = toolbar.parent_toolbar.unregister_action_plot_item(

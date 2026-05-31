@@ -166,6 +166,7 @@ def add_line_profile(
             preview_plot.addItem(preview_plot.line_item)
         indicator = ComputeStatusIndicator(color=color)
         preview_window.set_compute_indicator(indicator)
+
         toolbar.parent_toolbar.register_action_plot_window(
             action_name="Line Profile", plot_window=preview_window, key=action_name
         )
@@ -231,9 +232,161 @@ def add_line_profile(
         preview_window.set_commit_fn(_do_commit_signal)
 
     else:
-        # Navigator plot case — will be implemented in Task 7
-        # For now, raise to make Task 7 tests fail clearly
-        raise NotImplementedError("Navigator-plot line profile not yet implemented")
+        # ── Navigator plot: 2 preview windows ───────────────────────────────
+        # The navigator plot's current_signal is the 2D nav image (no nav dims).
+        # Use the signal tree root to get the full N-D signal with nav axes + data.
+        full_signal = plot.signal_tree.root
+
+        _cached_line_info = [None]  # (line_ys, line_xs, N, coords)
+
+        # Window 1: instant 1D profile from rendered nav image
+        profile_window = main_window.add_plot_window(is_navigator=False, signal_tree=None)
+        profile_plot = profile_window.add_new_plot()
+        if profile_plot.line_item not in profile_plot.items:
+            profile_plot.addItem(profile_plot.line_item)
+        toolbar.parent_toolbar.register_action_plot_window(
+            action_name="Line Profile", plot_window=profile_window,
+            key=action_name + "_profile"
+        )
+
+        # Window 2: lazy dask sum of diffraction patterns in strip
+        sum_indicator = ComputeStatusIndicator(color=color)
+        sum_window = main_window.add_plot_window(is_navigator=False, signal_tree=None)
+        sum_plot = sum_window.add_new_plot()
+        if sum_plot.image_item not in sum_plot.items:
+            sum_plot.addItem(sum_plot.image_item)
+        sum_window.set_compute_indicator(sum_indicator)
+        toolbar.parent_toolbar.register_action_plot_window(
+            action_name="Line Profile", plot_window=sum_window,
+            key=action_name + "_sum"
+        )
+
+        def _trigger_computation():
+            from spyde.drawing.update_functions import compute_nav_line_sum_kernel
+            # Instant profile from the rendered nav image (no dask needed)
+            image = plot.image_item.image
+            if image is not None:
+                region = roi.getArrayRegion(image, plot.image_item)
+                instant_profile = np.nanmean(region, axis=1)
+                profile_plot.current_data = instant_profile
+                profile_plot.update()
+
+            # Lazy dask sum for window 2
+            _timer_holder.clear()
+            # full_signal has navigation dims (ny, nx) for a 4D STEM signal
+            nav_shape = (full_signal.axes_manager.navigation_shape[1],
+                         full_signal.axes_manager.navigation_shape[0])  # (ny, nx)
+            line_ys, line_xs, strip_ys, strip_xs, N, coords = _get_line_nav_coords(
+                roi, plot.image_item, nav_shape
+            )
+            _cached_line_info[0] = (line_ys, line_xs, N, coords)
+            future = compute_nav_line_sum_kernel(
+                full_signal.data, strip_ys, strip_xs, client, gpu_worker
+            )
+            sum_plot.current_data = future
+            _start_progress_poll(future, sum_indicator, client, _timer_holder)
+            sum_window.set_commit_enabled(False)
+
+            def _on_sum_done(fut):
+                try:
+                    fut.result()
+                except Exception:
+                    pass
+                QtCore.QMetaObject.invokeMethod(
+                    sum_window, "set_commit_enabled",
+                    QtCore.Qt.ConnectionType.QueuedConnection,
+                    QtCore.Q_ARG(bool, True),
+                )
+
+            future.add_done_callback(_on_sum_done)
+
+        def _on_roi_finished(_roi=None):
+            if not _live_enabled[0]:
+                return
+            _trigger_computation()
+
+        roi.sigRegionChangeFinished.connect(_on_roi_finished)
+
+        def _do_commit_nav():
+            import hyperspy.api as hs
+            if _cached_line_info[0] is None:
+                return
+            line_ys, line_xs, N, coords = _cached_line_info[0]
+            sum_window.set_commit_enabled(False)
+
+            # Get current width from caret box
+            width_widget = params_caret_box.get_parameter_widget("width")
+            try:
+                width_val = int(width_widget.text()) if width_widget else 1
+            except (ValueError, TypeError):
+                width_val = 1
+
+            nav_shape = (full_signal.axes_manager.navigation_shape[1],
+                         full_signal.axes_manager.navigation_shape[0])  # (ny, nx)
+
+            # Build lazy stack: one diffraction pattern per line point
+            slices = []
+            for i in range(N):
+                if width_val <= 1:
+                    yi = int(np.clip(line_ys[i], 0, nav_shape[0] - 1))
+                    xi = int(np.clip(line_xs[i], 0, nav_shape[1] - 1))
+                    slices.append(full_signal.data[yi, xi])
+                else:
+                    col_xs = np.clip(
+                        np.round(coords[0, i, :]).astype(int), 0, nav_shape[1] - 1
+                    )
+                    col_ys = np.clip(
+                        np.round(coords[1, i, :]).astype(int), 0, nav_shape[0] - 1
+                    )
+                    # Dask does not support N-D fancy indexing; stack patterns
+                    # individually and take the mean.
+                    col_pats = da.stack(
+                        [full_signal.data[int(ry), int(rx)]
+                         for ry, rx in zip(col_ys, col_xs)],
+                        axis=0,
+                    )
+                    slices.append(da.mean(col_pats, axis=0))
+
+            result_lazy = da.stack(slices, axis=0)  # (N, nkx, nky)
+            future = client.compute(result_lazy)
+
+            def _on_done(fut):
+                try:
+                    arr = fut.result()
+                except Exception as e:
+                    print(f"Line profile commit failed: {e}")
+                    QtCore.QMetaObject.invokeMethod(
+                        sum_window, "set_commit_enabled",
+                        QtCore.Qt.ConnectionType.QueuedConnection,
+                        QtCore.Q_ARG(bool, True),
+                    )
+                    return
+                committed_sig = hs.signals.Signal2D(arr)
+                # Nav axis: position along line; use source nav pixel scale
+                src_nav_ax = full_signal.axes_manager.navigation_axes[0]
+                committed_sig.axes_manager.navigation_axes[0].scale = abs(src_nav_ax.scale)
+                committed_sig.axes_manager.navigation_axes[0].units = src_nav_ax.units
+                committed_sig.axes_manager.navigation_axes[0].name = "line position"
+                # Signal axes: copy from source
+                for i, ax in enumerate(full_signal.axes_manager.signal_axes):
+                    committed_sig.axes_manager.signal_axes[i].scale = ax.scale
+                    committed_sig.axes_manager.signal_axes[i].offset = ax.offset
+                    committed_sig.axes_manager.signal_axes[i].units = ax.units
+                    committed_sig.axes_manager.signal_axes[i].name = ax.name
+                main_window._pending_signal_queue.append(committed_sig)
+                QtCore.QMetaObject.invokeMethod(
+                    main_window, "_flush_pending_signals",
+                    QtCore.Qt.ConnectionType.QueuedConnection,
+                )
+                QtCore.QMetaObject.invokeMethod(
+                    sum_window, "set_commit_enabled",
+                    QtCore.Qt.ConnectionType.QueuedConnection,
+                    QtCore.Q_ARG(bool, True),
+                )
+
+            future.add_done_callback(_on_done)
+
+        sum_window.set_commit_fn(_do_commit_nav)
 
     def _toggle_live():
         live_btn = params_caret_box.get_parameter_widget("live_button")

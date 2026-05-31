@@ -240,3 +240,306 @@ class TestLineProfileSignalPlot:
         assert n_points > 0
         scale = new_signal.axes_manager.signal_axes[0].scale
         assert scale > 0, "Axis scale must be positive"
+
+
+def _add_line_profile_on_nav(qtbot, win):
+    """Helper: add a Line Profile ROI to the navigator plot."""
+    nav, sig = win.plots
+    tb = nav.plot_state.toolbar_bottom
+    lp_action = None
+    for a in tb.actions():
+        if a.text() == "Line Profile":
+            lp_action = a
+            break
+    assert lp_action is not None, "Line Profile action not found in navigator toolbar"
+
+    lp_action.trigger()
+    qtbot.wait(200)
+
+    lp_widget = tb.action_widgets["Line Profile"]["widget"]
+    for a in lp_widget.actions():
+        if a.text() == "Add Line Profile":
+            a.trigger()
+            break
+    qtbot.wait(300)
+
+    new_action = lp_widget.actions()[-1]
+    new_action.trigger()
+    qtbot.wait(300)
+
+    action_name = new_action.text()
+    caret_box = lp_widget.action_widgets[action_name]["widget"]
+    roi = tb.action_widgets["Line Profile"]["plot_items"][action_name]
+    plot_windows = tb.action_widgets["Line Profile"].get("plot_windows", {})
+    profile_window = plot_windows.get(action_name + "_profile")
+    sum_window = plot_windows.get(action_name + "_sum")
+    return tb, lp_widget, action_name, caret_box, roi, profile_window, sum_window
+
+
+class TestLineProfileNavPlot:
+    """End-to-end tests: line profile on navigator (real-space) plot."""
+
+    def test_spawns_two_preview_windows(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        n_before = len(win.plot_subwindows)
+        _add_line_profile_on_nav(qtbot, win)
+        assert len(win.plot_subwindows) == n_before + 2, (
+            "Line profile on navigator should spawn exactly 2 preview windows"
+        )
+
+    def test_both_windows_are_frameless(self, qtbot, stem_4d_dataset):
+        from PySide6.QtCore import Qt
+        win = stem_4d_dataset["window"]
+        tb, lp_widget, action_name, caret_box, roi, profile_window, sum_window = _add_line_profile_on_nav(qtbot, win)
+        assert profile_window is not None, "Profile window (1D) not registered"
+        assert sum_window is not None, "Sum window (2D) not registered"
+        assert profile_window.windowFlags() & Qt.WindowType.FramelessWindowHint
+        assert sum_window.windowFlags() & Qt.WindowType.FramelessWindowHint
+
+    def test_roi_is_on_navigator_plot(self, qtbot, stem_4d_dataset):
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        tb, lp_widget, action_name, caret_box, roi, profile_window, sum_window = _add_line_profile_on_nav(qtbot, win)
+        assert roi in nav.items, "LineROI should be on the navigator plot"
+        assert roi not in sig.items
+
+    def test_profile_window_updates_instantly(self, qtbot, stem_4d_dataset):
+        """Window 1 (1D profile) must update without waiting for dask."""
+        win = stem_4d_dataset["window"]
+        tb, lp_widget, action_name, caret_box, roi, profile_window, sum_window = _add_line_profile_on_nav(qtbot, win)
+        profile_plot = profile_window.plots[0]
+
+        roi.sigRegionChangeFinished.emit(roi)
+        # Give one Qt event loop cycle — no dask wait needed
+        qtbot.wait(300)
+
+        assert profile_plot.line_item.yData is not None, (
+            "1D profile window must update instantly from the rendered nav image"
+        )
+
+    def test_sum_window_updates_via_dask(self, qtbot, stem_4d_dataset):
+        """Window 2 (summed diffraction) must update via dask within timeout."""
+        win = stem_4d_dataset["window"]
+        tb, lp_widget, action_name, caret_box, roi, profile_window, sum_window = _add_line_profile_on_nav(qtbot, win)
+        sum_plot = sum_window.plots[0]
+
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.waitUntil(
+            lambda: (
+                sum_plot.current_data is not None
+                and not isinstance(sum_plot.current_data, __import__('distributed').Future)
+            ),
+            timeout=10000,
+        )
+        assert sum_plot.image_item.image is not None
+        assert sum_plot.image_item.image.ndim == 2
+
+    def test_commit_button_only_on_sum_window(self, qtbot, stem_4d_dataset):
+        """Commit button must appear on window 2 (sum), not window 1 (profile)."""
+        win = stem_4d_dataset["window"]
+        tb, lp_widget, action_name, caret_box, roi, profile_window, sum_window = _add_line_profile_on_nav(qtbot, win)
+        assert not profile_window.title_bar.commit_button.isVisible(), (
+            "Commit button should NOT be visible on the 1D profile window"
+        )
+        assert sum_window.title_bar.commit_button.isVisible(), (
+            "Commit button should be visible on the sum (2D) window"
+        )
+
+    def test_end_to_end_commit_signal2d(self, qtbot, stem_4d_dataset):
+        """Full flow: add nav ROI → wait → click Commit → Signal2D with shape (N, nkx, nky)."""
+        import hyperspy.api as hs
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        source_signal = sig.plot_state.current_signal
+        nkx, nky = source_signal.axes_manager.signal_shape
+
+        n_before = len(win.signal_trees)
+        tb, lp_widget, action_name, caret_box, roi, profile_window, sum_window = _add_line_profile_on_nav(qtbot, win)
+        sum_plot = sum_window.plots[0]
+
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.waitUntil(
+            lambda: (
+                sum_plot.current_data is not None
+                and not isinstance(sum_plot.current_data, __import__('distributed').Future)
+            ),
+            timeout=10000,
+        )
+        qtbot.waitUntil(lambda: sum_window.title_bar.commit_button.isEnabled(), timeout=3000)
+
+        sum_window.title_bar.commit_button.click()
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=15000)
+
+        new_signal = win.signal_trees[n_before].root
+        assert isinstance(new_signal, hs.signals.Signal2D), (
+            f"Expected Signal2D, got {type(new_signal)}"
+        )
+        assert new_signal.data.ndim == 3
+        assert new_signal.data.shape[1] == nky
+        assert new_signal.data.shape[2] == nkx
+
+    def test_committed_signal_nav_axis_scale(self, qtbot, stem_4d_dataset):
+        """Nav axis scale of committed signal must match source nav pixel scale."""
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        source_signal = sig.plot_state.current_signal
+
+        n_before = len(win.signal_trees)
+        tb, lp_widget, action_name, caret_box, roi, profile_window, sum_window = _add_line_profile_on_nav(qtbot, win)
+        sum_plot = sum_window.plots[0]
+
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.waitUntil(
+            lambda: sum_plot.current_data is not None
+            and not isinstance(sum_plot.current_data, __import__('distributed').Future),
+            timeout=10000,
+        )
+        qtbot.waitUntil(lambda: sum_window.title_bar.commit_button.isEnabled(), timeout=3000)
+        sum_window.title_bar.commit_button.click()
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=15000)
+
+        new_signal = win.signal_trees[n_before].root
+        src_scale = abs(source_signal.axes_manager.navigation_axes[0].scale)
+        committed_scale = abs(new_signal.axes_manager.navigation_axes[0].scale)
+        assert abs(committed_scale - src_scale) / max(src_scale, 1e-10) < 0.01, (
+            f"Nav axis scale mismatch: committed={committed_scale}, source={src_scale}"
+        )
+
+    def test_committed_signal_has_correct_nav_units(self, qtbot, stem_4d_dataset):
+        """Nav axis units of committed signal must match source nav axis units."""
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        source_signal = sig.plot_state.current_signal
+        src_units = source_signal.axes_manager.navigation_axes[0].units
+
+        n_before = len(win.signal_trees)
+        tb, lp_widget, action_name, caret_box, roi, profile_window, sum_window = _add_line_profile_on_nav(qtbot, win)
+        sum_plot = sum_window.plots[0]
+
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.waitUntil(
+            lambda: sum_plot.current_data is not None
+            and not isinstance(sum_plot.current_data, __import__('distributed').Future),
+            timeout=10000,
+        )
+        qtbot.waitUntil(lambda: sum_window.title_bar.commit_button.isEnabled(), timeout=3000)
+        sum_window.title_bar.commit_button.click()
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=15000)
+
+        new_signal = win.signal_trees[n_before].root
+        committed_units = new_signal.axes_manager.navigation_axes[0].units
+        assert committed_units == src_units, (
+            f"Units mismatch: committed='{committed_units}', source='{src_units}'"
+        )
+
+    def test_width_gt_1_committed_signal_shape_unchanged(self, qtbot, stem_4d_dataset):
+        """Width > 1 changes the strip averaged but not the output shape (N, nkx, nky)."""
+        win = stem_4d_dataset["window"]
+        n_before = len(win.plot_subwindows)
+        tb, lp_widget, action_name, caret_box, roi, profile_window, sum_window = _add_line_profile_on_nav(qtbot, win)
+        sum_plot = sum_window.plots[0]
+
+        # Set width > 1
+        width_widget = caret_box.get_parameter_widget("width")
+        width_widget.setText("3")
+
+        n_trees_before = len(win.signal_trees[0:1])
+        n_signal_trees = len(win.signal_trees)
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.waitUntil(
+            lambda: sum_plot.current_data is not None
+            and not isinstance(sum_plot.current_data, __import__('distributed').Future),
+            timeout=10000,
+        )
+        qtbot.waitUntil(lambda: sum_window.title_bar.commit_button.isEnabled(), timeout=3000)
+        sum_window.title_bar.commit_button.click()
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_signal_trees + 1, timeout=15000)
+
+        new_signal = win.signal_trees[n_signal_trees].root
+        assert new_signal.data.ndim == 3, "Width > 1 must still produce 3D signal"
+
+
+class TestLineProfileAxisScale:
+    """Dedicated axis scale/units correctness with synthetic data having known axes."""
+
+    def _make_4d_signal_with_known_axes(self):
+        """4D STEM signal with explicitly set nav and signal axes."""
+        import hyperspy.api as hs
+        data = np.ones((6, 6, 8, 8), dtype=np.float32)
+        sig = hs.signals.Signal2D(data)
+        sig.axes_manager.navigation_axes[0].scale = 0.5
+        sig.axes_manager.navigation_axes[0].units = "nm"
+        sig.axes_manager.navigation_axes[0].name = "x"
+        sig.axes_manager.navigation_axes[1].scale = 0.5
+        sig.axes_manager.navigation_axes[1].units = "nm"
+        sig.axes_manager.navigation_axes[1].name = "y"
+        sig.axes_manager.signal_axes[0].scale = 0.1
+        sig.axes_manager.signal_axes[0].units = "1/nm"
+        sig.axes_manager.signal_axes[1].scale = 0.1
+        sig.axes_manager.signal_axes[1].units = "1/nm"
+        return sig
+
+    def test_nav_line_committed_signal_axes_scale_and_units(self, qtbot):
+        """Committed nav-line signal: nav axis scale and units match source nav axes."""
+        import hyperspy.api as hs
+        from spyde.qt.shared import open_window
+        win = open_window()
+        qtbot.addWidget(win)
+
+        sig = self._make_4d_signal_with_known_axes()
+        win.add_signal(sig)
+        qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 2, timeout=5000)
+
+        nav, _ = win.plots
+        tb = nav.plot_state.toolbar_bottom
+        lp_action = None
+        for a in tb.actions():
+            if a.text() == "Line Profile":
+                lp_action = a
+                break
+        assert lp_action is not None, "Line Profile not in nav toolbar"
+        lp_action.trigger()
+        qtbot.wait(200)
+
+        lp_widget = tb.action_widgets["Line Profile"]["widget"]
+        for a in lp_widget.actions():
+            if a.text() == "Add Line Profile":
+                a.trigger()
+                break
+        qtbot.wait(300)
+        new_action = lp_widget.actions()[-1]
+        new_action.trigger()
+        qtbot.wait(300)
+
+        action_name = new_action.text()
+        roi = tb.action_widgets["Line Profile"]["plot_items"][action_name]
+        sum_window = tb.action_widgets["Line Profile"].get("plot_windows", {}).get(action_name + "_sum")
+        assert sum_window is not None
+        sum_plot = sum_window.plots[0]
+
+        roi.sigRegionChangeFinished.emit(roi)
+        qtbot.waitUntil(
+            lambda: sum_plot.current_data is not None
+            and not isinstance(sum_plot.current_data, __import__('distributed').Future),
+            timeout=10000,
+        )
+        qtbot.waitUntil(lambda: sum_window.title_bar.commit_button.isEnabled(), timeout=3000)
+
+        n_before = len(win.signal_trees)
+        sum_window.title_bar.commit_button.click()
+        qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=15000)
+
+        committed = win.signal_trees[n_before].root
+        nav_ax = committed.axes_manager.navigation_axes[0]
+        assert abs(nav_ax.scale - 0.5) < 1e-6, (
+            f"Expected nav scale 0.5 nm/px, got {nav_ax.scale}"
+        )
+        assert nav_ax.units == "nm", f"Expected units 'nm', got '{nav_ax.units}'"
+
+        sig_axes = committed.axes_manager.signal_axes
+        assert abs(sig_axes[0].scale - 0.1) < 1e-6, (
+            f"Expected signal scale 0.1 1/nm, got {sig_axes[0].scale}"
+        )
+        assert sig_axes[0].units == "1/nm"
+
+        win.close()

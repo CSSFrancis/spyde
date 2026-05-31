@@ -474,7 +474,7 @@ class TestVirtualImageLivePreview:
 
 
 class TestVirtualImageCommit:
-    """End-to-end commit tests: compute → commit button gating → VirtualDarkFieldImage tree."""
+    """End-to-end commit tests using the title-bar Commit button."""
 
     def _setup_with_preview(self, qtbot, win):
         """Add detector, trigger first computation, wait for preview image."""
@@ -492,27 +492,28 @@ class TestVirtualImageCommit:
         return caret_box, roi, preview_plot, preview_window
 
     def test_commit_button_disabled_before_first_computation(self, qtbot, stem_4d_dataset):
-        """Commit button must be disabled immediately after adding a detector."""
+        """Commit button in title bar must be disabled immediately after adding a detector."""
         win = stem_4d_dataset["window"]
         tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
-        commit_btn = caret_box.get_parameter_widget("commit_button")
-        assert not commit_btn.isEnabled(), "Commit button should be disabled before any computation"
+        assert not preview_window.title_bar.commit_button.isEnabled(), (
+            "Commit button should be disabled before any computation"
+        )
 
     def test_commit_button_enabled_after_preview_completes(self, qtbot, stem_4d_dataset):
         """Commit button must become enabled once the first preview computation finishes."""
         win = stem_4d_dataset["window"]
         caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
-        commit_btn = caret_box.get_parameter_widget("commit_button")
-        assert commit_btn.isEnabled(), "Commit button should be enabled after preview computation"
+        assert preview_window.title_bar.commit_button.isEnabled(), (
+            "Commit button should be enabled after preview computation"
+        )
 
     def test_commit_adds_new_signal_tree(self, qtbot, stem_4d_dataset):
-        """Committing must add exactly one new root to main_window.signal_trees."""
+        """Clicking title-bar Commit must add exactly one new root to main_window.signal_trees."""
         win = stem_4d_dataset["window"]
         n_before = len(win.signal_trees)
         caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
 
-        commit_btn = caret_box.get_parameter_widget("commit_button")
-        commit_btn.click()
+        preview_window.title_bar.commit_button.click()
 
         qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=10000)
         assert len(win.signal_trees) == n_before + 1
@@ -524,8 +525,7 @@ class TestVirtualImageCommit:
         n_before = len(win.signal_trees)
         caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
 
-        commit_btn = caret_box.get_parameter_widget("commit_button")
-        commit_btn.click()
+        preview_window.title_bar.commit_button.click()
 
         qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=10000)
         new_signal = win.signal_trees[n_before].root
@@ -534,11 +534,7 @@ class TestVirtualImageCommit:
         )
 
     def test_committed_signal_axes_match_parent_nav(self, qtbot, stem_4d_dataset):
-        """The VDF signal axes must carry the scale/offset of the source navigation axes.
-
-        VirtualDarkFieldImage(result) where result.shape == (nx, ny) has 2 signal axes and
-        0 navigation axes. The source's navigation axes become the VDF's signal axes.
-        """
+        """The VDF signal axes must carry the scale/offset of the source navigation axes."""
         win = stem_4d_dataset["window"]
         nav, sig = win.plots
         source_signal = sig.plot_state.current_signal
@@ -546,25 +542,18 @@ class TestVirtualImageCommit:
         n_before = len(win.signal_trees)
         caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
 
-        commit_btn = caret_box.get_parameter_widget("commit_button")
-        commit_btn.click()
+        preview_window.title_bar.commit_button.click()
 
         qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=10000)
         vdf = win.signal_trees[n_before].root
 
         src_nav = list(source_signal.axes_manager.navigation_axes)
         vdf_sig = list(vdf.axes_manager.signal_axes)
-        assert len(vdf_sig) == len(src_nav), (
-            f"VDF has {len(vdf_sig)} signal axes but source has {len(src_nav)} navigation axes"
-        )
+        assert len(vdf_sig) == len(src_nav)
         for i, src_ax in enumerate(src_nav):
             vdf_ax = vdf_sig[i]
-            assert abs(vdf_ax.scale - src_ax.scale) < 1e-9, (
-                f"Scale mismatch on axis {i}: VDF {vdf_ax.scale} vs source {src_ax.scale}"
-            )
-            assert abs(vdf_ax.offset - src_ax.offset) < 1e-9, (
-                f"Offset mismatch on axis {i}: VDF {vdf_ax.offset} vs source {src_ax.offset}"
-            )
+            assert abs(vdf_ax.scale - src_ax.scale) < 1e-9
+            assert abs(vdf_ax.offset - src_ax.offset) < 1e-9
 
     def test_committed_signal_has_roi_metadata(self, qtbot, stem_4d_dataset):
         """The committed VDF must carry ROI geometry in metadata.Signal.virtual_detector."""
@@ -572,34 +561,25 @@ class TestVirtualImageCommit:
         n_before = len(win.signal_trees)
         caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
 
-        commit_btn = caret_box.get_parameter_widget("commit_button")
-        commit_btn.click()
+        preview_window.title_bar.commit_button.click()
 
         qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=10000)
         vdf = win.signal_trees[n_before].root
 
-        assert vdf.metadata.Signal.virtual_detector is not None, (
-            "metadata.Signal.virtual_detector not set on committed VDF"
-        )
-        assert "type" in vdf.metadata.Signal.virtual_detector, (
-            "ROI metadata dict missing 'type' key"
-        )
+        assert vdf.metadata.Signal.virtual_detector is not None
+        assert "type" in vdf.metadata.Signal.virtual_detector
 
     def test_preview_window_remains_open_after_commit(self, qtbot, stem_4d_dataset):
         """The live preview PlotWindow must stay open after committing."""
         win = stem_4d_dataset["window"]
         caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
 
-        commit_btn = caret_box.get_parameter_widget("commit_button")
-        commit_btn.click()
-
         n_trees = len(win.signal_trees)
+        preview_window.title_bar.commit_button.click()
         qtbot.waitUntil(lambda: len(win.signal_trees) > n_trees - 1, timeout=10000)
         qtbot.wait(500)
 
-        assert preview_window.isVisible(), (
-            "Preview PlotWindow was closed after commit — it should remain open"
-        )
+        assert preview_window.isVisible()
 
     def test_two_commits_produce_two_independent_trees(self, qtbot, stem_4d_dataset):
         """Committing twice must produce two independent signal trees."""
@@ -607,21 +587,17 @@ class TestVirtualImageCommit:
         n_before = len(win.signal_trees)
         caret_box, roi, preview_plot, preview_window = self._setup_with_preview(qtbot, win)
 
-        commit_btn = caret_box.get_parameter_widget("commit_button")
-
-        # First commit
-        commit_btn.click()
+        preview_window.title_bar.commit_button.click()
         qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 1, timeout=10000)
-        qtbot.waitUntil(lambda: commit_btn.isEnabled(), timeout=5000)
+        qtbot.waitUntil(lambda: preview_window.title_bar.commit_button.isEnabled(), timeout=5000)
 
-        # Second commit
-        commit_btn.click()
+        preview_window.title_bar.commit_button.click()
         qtbot.waitUntil(lambda: len(win.signal_trees) == n_before + 2, timeout=10000)
 
         tree1 = win.signal_trees[n_before]
         tree2 = win.signal_trees[n_before + 1]
-        assert tree1 is not tree2, "Two commits produced the same tree object"
-        assert tree1.root is not tree2.root, "Two commits share the same root signal"
+        assert tree1 is not tree2
+        assert tree1.root is not tree2.root
 
 
 @pytest.mark.gpu
