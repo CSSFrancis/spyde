@@ -37,34 +37,47 @@ def _session_window():
 # ---------------------------------------------------------------------------
 
 def _reset_window(win: MainWindow) -> MainWindow:
-    """Close all MDI subwindows and clear signal/plot tracking. Returns win.
+    """Close all MDI subwindows and clear signal/plot tracking. Returns win."""
+    from PySide6.QtTest import QTest
 
-    Strategy:
-    1. Patch close_window() on all currently-tracked PlotWindows to a no-op.
-       This breaks the cascade re-close loop in PlotWindow.close_window()
-       without affecting the Qt-level close/hide logic (hideEvent still fires,
-       toolbars are properly hidden).
-    2. Clear the tracking lists so any deferred callbacks that escaped
-       the patch are harmless (ValueError is caught inside close_window()).
-    3. Use closeAllSubWindows() to close all MDI subwindows.  With
-       close_window() patched, no cascade fires.
-    4. Drain the event queue (processEvents) to flush deleteLater calls.
-    """
     def _noop(*args, **kwargs):
         pass
 
-    # Patch close_window on ALL MDI subwindows, not just plot_subwindows,
-    # to handle windows closed by the test body that are still in the MDI
-    # area's internal list but removed from plot_subwindows.
+    # Patch close_window on all subwindows to prevent cascade errors
     for sw in list(win.mdi_area.subWindowList()):
         try:
             sw.close_window = _noop
         except Exception:
             pass
 
+    # Also close any signal trees explicitly before clearing
+    for st in list(getattr(win, 'signal_trees', [])):
+        try:
+            st.close()
+        except Exception:
+            pass
+
     win.plot_subwindows.clear()
     win.signal_trees.clear()
+
+    # Explicitly remove each subwindow from the MDI area so subWindowList() empties
+    for sw in list(win.mdi_area.subWindowList()):
+        try:
+            win.mdi_area.removeSubWindow(sw)
+            sw.hide()
+        except Exception:
+            pass
+
     win.mdi_area.closeAllSubWindows()
+
+    # Wait up to 2s for all subwindows to actually close
+    deadline = 2000
+    elapsed = 0
+    while win.mdi_area.subWindowList() and elapsed < deadline:
+        QApplication.processEvents()
+        QTest.qWait(50)
+        elapsed += 50
+
     QApplication.processEvents()
     return win
 
