@@ -109,12 +109,7 @@ def update_from_navigation_selection(
     current_signal = child.plot_state.current_signal
 
     if not selector.is_integrating:
-        print("Not integrating, taking mean of indices")
         indices = np.mean(indices, axis=0).astype(int)
-
-    print("Updating child plot based on navigation selection with indices:", indices)
-    print("Current signal shape", current_signal.data.shape)
-    print("Cache in shared memory:", cache_in_shared_memory, "")
 
     if current_signal._lazy:
         if isinstance(current_signal.data[0], Future):

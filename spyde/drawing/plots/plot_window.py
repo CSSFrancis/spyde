@@ -107,6 +107,13 @@ class PlotWindow(FramelessSubWindow):
         self.owner_plot_window = None  # type: "PlotWindow | None"
         self.controlling_action = None  # type: QtGui.QAction | None
 
+        # Debounce toolbar repositioning: coalesce rapid moveEvent/resizeEvent
+        # calls (every pixel of drag) into a single reposition at the end.
+        self._reposition_timer = QtCore.QTimer(self)
+        self._reposition_timer.setInterval(16)  # ~1 frame at 60 Hz
+        self._reposition_timer.setSingleShot(True)
+        self._reposition_timer.timeout.connect(self.reposition_toolbars)
+
     def set_compute_indicator(self, indicator) -> None:
         """Insert the ComputeStatusIndicator into the title bar left zone."""
         self._compute_indicator = indicator
@@ -526,11 +533,11 @@ class PlotWindow(FramelessSubWindow):
 
     def moveEvent(self, ev: QtGui.QMoveEvent) -> None:
         super().moveEvent(ev)
-        self.reposition_toolbars()
+        self._reposition_timer.start()
 
     def resizeEvent(self, ev: QtGui.QResizeEvent) -> None:
         super().resizeEvent(ev)
-        self.reposition_toolbars()
+        self._reposition_timer.start()
 
     def keyPressEvent(self, ev: QtGui.QKeyEvent):
         """Handle arrow keys to move the active selector."""

@@ -117,22 +117,12 @@ class BaseSelector:
 
 
     def get_selected_indices(self):
-        """
-        Get the currently selected indices from the selector.
-        """
+        """Get the currently selected indices from the selector."""
         if self.multi_selector:
-            print("Multi Selector")
             upstream_indices = self._get_selected_indices_from_upstream()
-            print("Upstream Indices: ", upstream_indices)
             current_indices = self._get_selected_indices_and_clip()
-            combo = upstream_indices + [
-                current_indices,
-            ]
-            combined_indices = broadcast_rows_cartesian(*combo)
-
-            print("Combined Indices:", combined_indices)
-
-            return combined_indices
+            combo = upstream_indices + [current_indices]
+            return broadcast_rows_cartesian(*combo)
         else:
             return self._get_selected_indices_and_clip()
 
@@ -181,30 +171,19 @@ class BaseSelector:
         return selectors
 
     def update_data(self, ev=None):
-        """
-        Start the timer to delay the update.
-        """
-        print("Updating Data...", )
+        """Start the timer to delay the update."""
         if ev is None:
             self.delayed_update_data()
         else:
-            print("Restarting Timer")
             self.update_timer.start()
 
     def delayed_update_data(self, force: bool = False, update_contrast: bool = False):
-        """
-        Perform the actual update if the indices have not changed.
-        """
-        if self.timer is not None:
-            print(f"Starting Updating Data, timer took {(time.time() - self.timer)*1000:.2f} ms")
-
+        """Perform the actual update if the indices have not changed."""
         indices = self.get_selected_indices()
         if not np.array_equal(indices, self.current_indices) or force:
             for child in self.children:
                 new_data = self.children[child](self, child, indices)
-                child.update_data(
-                    new_data
-                )  # update the child plot data. If this is a future, then
+                child.update_data(new_data)
                 if update_contrast:
                     child.needs_auto_level = True
                 # update all plots downstream of the child
@@ -213,15 +192,11 @@ class BaseSelector:
                     and child.plot_window
                     in child.multiplot_manager.navigation_selectors
                 ):
-                    print("Updating Downstream Plots...")
                     for child_selector in child.multiplot_manager.navigation_selectors[
                         child.plot_window
                     ]:
                         child_selector.delayed_update_data()
-            # the plot will update when the future completes
             self.current_indices = indices
-        if self.timer is not None:
-            print(f"Finished Updating Data, took {(time.time() - self.timer)*1000:.2f} ms")
 
     # Helper: compute a compact signature of the current selector size
     def _size_signature(self):

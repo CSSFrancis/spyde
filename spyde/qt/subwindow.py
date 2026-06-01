@@ -136,12 +136,16 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self._snap_state = None  # 'top', 'bottom', 'left', 'right', 'top-left', etc.
 
     def eventFilter(self, obj, event):
-        if event.type() == QtCore.QEvent.Type.MouseMove:
-            self.mouseMoveEvent(event)
-        elif event.type() == QtCore.QEvent.Type.MouseButtonPress:
-            self.mousePressEvent(event)
-        elif event.type() == QtCore.QEvent.Type.MouseButtonRelease:
-            self.mouseReleaseEvent(event)
+        # Only forward mouse events from the subwindow frame itself or the title bar.
+        # Forwarding from every child widget causes O(n_children) dispatch per
+        # mouse-move which makes ROI drags and window drags visibly laggy.
+        if obj is self or obj is self.title_bar:
+            if event.type() == QtCore.QEvent.Type.MouseMove:
+                self.mouseMoveEvent(event)
+            elif event.type() == QtCore.QEvent.Type.MouseButtonPress:
+                self.mousePressEvent(event)
+            elif event.type() == QtCore.QEvent.Type.MouseButtonRelease:
+                self.mouseReleaseEvent(event)
         return super().eventFilter(obj, event)
 
     def toggle_minimize(self):
