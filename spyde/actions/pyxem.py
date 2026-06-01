@@ -344,6 +344,25 @@ def add_virtual_image(
         key=action_name,
     )
 
+    def _cleanup():
+        """Remove ROI from plot and action from toolbar when preview window closes."""
+        try:
+            toolbar.parent_toolbar.unregister_action_plot_item(
+                action_name="Virtual Imaging", key=action_name
+            )
+        except Exception:
+            pass
+        try:
+            toolbar.remove_action(action_name)
+        except Exception:
+            pass
+
+    _orig_close = virtual_plot_window.close_window
+    def _close_with_cleanup():
+        _cleanup()
+        _orig_close()
+    virtual_plot_window.close_window = _close_with_cleanup
+
     # Build the ROI
     center, inner_rad, outer_rad = plot.get_annular_roi_parameters()
     if params_caret_box.kwargs["type"].currentText() == "annular":

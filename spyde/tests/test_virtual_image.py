@@ -717,6 +717,35 @@ class TestVirtualImageCommit:
         assert tree1 is not tree2
         assert tree1.root is not tree2.root
 
+    def test_closing_preview_removes_roi_from_signal_plot(self, qtbot, stem_4d_dataset):
+        """Closing the virtual image preview window must remove the ROI from the diffraction plot."""
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+
+        assert roi in sig.items, "ROI should be on signal plot before close"
+
+        preview_window.close()
+        qtbot.wait(200)
+
+        assert roi not in sig.items, "ROI should be removed from signal plot after preview window closes"
+
+    def test_closing_preview_removes_action_from_toolbar(self, qtbot, stem_4d_dataset):
+        """Closing the virtual image preview window must remove its action from the Virtual Imaging toolbar."""
+        win = stem_4d_dataset["window"]
+        tb, vi_widget, action_name, caret_box, roi, preview_window = _add_virtual_detector(qtbot, win)
+
+        action_names_before = [a.text() for a in vi_widget.actions()]
+        assert action_name in action_names_before, "Action should exist in toolbar before close"
+
+        preview_window.close()
+        qtbot.wait(200)
+
+        action_names_after = [a.text() for a in vi_widget.actions()]
+        assert action_name not in action_names_after, (
+            "Action should be removed from Virtual Imaging toolbar after preview window closes"
+        )
+
 
 def test_action_preview_stays_hidden_when_action_unchecked(qtbot, stem_4d_dataset):
     """An action-preview window with controlling_action unchecked must stay hidden after activation."""
