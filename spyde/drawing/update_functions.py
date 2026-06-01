@@ -6,6 +6,7 @@ called on the move or change events of a selector.
 
 """
 
+import sys
 import numpy as np
 import dask
 import dask.array as da
@@ -20,6 +21,11 @@ if TYPE_CHECKING:
     from spyde.drawing.selectors import BaseSelector
     from spyde.drawing.plots.plot import Plot
 from multiprocessing import shared_memory
+
+# Shared memory IPC only works on non-Windows: on Windows, Dask workers are
+# separate processes and cannot open shared memory segments created by the GUI
+# process (OpenFileMapping fails with FileNotFoundError).
+_SHARED_MEMORY_SUPPORTED = sys.platform != "win32"
 
 def write_shared_array(data, shared_arr_name):
     dtype_bytes = data.dtype.str.encode('utf-8')
@@ -121,8 +127,10 @@ def update_from_navigation_selection(
             current_img = current_signal._get_cache_dask_chunk(
                 indices, get_result=get_result, return_future=True,
             )
-            if cache_in_shared_memory:
-                # Write to shared memory and return the name
+            if cache_in_shared_memory and _SHARED_MEMORY_SUPPORTED:
+                # Write to shared memory and return the name.
+                # Only used on non-Windows: Dask workers on Windows are separate
+                # processes and cannot open shared memory created by the GUI process.
                 shared_arr_name = f"plot_buffer{id(child)}"
                 current_img = child.main_window.dask_manager.client.submit(write_shared_array,
                                                 current_img,
