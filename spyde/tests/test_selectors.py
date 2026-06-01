@@ -236,8 +236,6 @@ class TestSelectors:
             qtbot.wait(1000)
             np.testing.assert_array_equal(sig.image_item.image, i)
 
-        win.close()
-
 
 class TestPlotBehavior:
 

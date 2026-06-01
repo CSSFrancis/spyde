@@ -102,34 +102,28 @@ class TestOpenExampleData:
             pixmap = win.grab()
             pixmap.save("test_open_example_data.png", "PNG")
 
-        # close the window
         finally:
-            win.close()
-            qtbot.waitUntil(lambda: not win.isVisible(), timeout=2000)
+            pass  # session window stays open; _reset_window handles cleanup
 
     def test_create_test_2d_data(self, qtbot, tem_2d_dataset):
         win = tem_2d_dataset["window"]
         subwindows = win.plots
         assert len(subwindows) == 1
-        win.close()
 
     def test_create_test_3d_data(self, qtbot, insitu_tem_2d_dataset):
         win = insitu_tem_2d_dataset["window"]
         subwindows = win.plots
         assert len(subwindows) == 2
-        win.close()
 
     def test_create_test_4d_data(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
         subwindows = win.plots
         assert len(subwindows) == 2
-        win.close()
 
     def test_create_test_5d_data(self, qtbot, stem_5d_dataset):
         win = stem_5d_dataset["window"]
         subwindows = win.plots
         assert len(subwindows) == 3
-        win.close()
 
     def test_navigator_moving_5d(self, qtbot, stem_5d_dataset):
         win = stem_5d_dataset["window"]

@@ -659,8 +659,6 @@ class TestLineProfileAxisScale:
         )
         assert sig_axes[0].units == "1/nm"
 
-        win.close()
-
 
 def test_tile_active_windows_fills_mdi(qtbot, stem_4d_dataset):
     """tile_active_windows lays out Shown windows in a grid within MDI bounds."""
