@@ -421,6 +421,8 @@ class RoundedToolBar(StylizedToolBar):
         act = self._find_action(action_name)
         _set_initial_item_visibility(plot_window, act)
         _bind_action_to_plot_item(act, plot_window)
+        if act is not None and hasattr(plot_window, 'controlling_action'):
+            plot_window.controlling_action = act
 
     def unregister_action_plot_window(self, action_name: str) -> None:
         """Deregister the plot window associated with an action."""

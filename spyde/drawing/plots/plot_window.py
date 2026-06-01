@@ -105,6 +105,7 @@ class PlotWindow(FramelessSubWindow):
         self._commit_fn = None  # type: callable | None
         self._commit_connection = None  # type: QtCore.QMetaObject.Connection | None
         self.owner_plot_window = None  # type: "PlotWindow | None"
+        self.controlling_action = None  # type: QtGui.QAction | None
 
     def set_compute_indicator(self, indicator) -> None:
         """Insert the ComputeStatusIndicator into the title bar left zone."""
