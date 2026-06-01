@@ -389,6 +389,7 @@ class BaseSignalTree:
             try:
                 new_signal = getattr(parent_signal, method)(*args, **kwargs)
             except Exception as e:
+                from PySide6 import QtWidgets
                 QtWidgets.QMessageBox.critical(
                     self.main_window,
                     "Transformation error",
