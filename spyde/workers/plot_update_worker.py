@@ -110,16 +110,17 @@ class PlotUpdateWorker(QtCore.QObject):
         self._seen.add(fid)
         self._seen_plots[fid] = id(plot)
         try:
-            self.debug_print.emit(
-                f"Emitting Future, {fut.key} for plot: {plot}")  # avoid blocking on shared arrays
+            self.debug_print.emit(f"Emitting Future, {fut.key} for plot: {plot}")
             if "write_shared_array" in fut.key and plot is not None:
                 start_read = time.time()
-                result  = read_shared_array(plot.shared_memory)
-                self.debug_print.emit(f"Read shared array in {(time.time() - start_read)*1000:.2f} ms")  # avoid blocking on shared arrays
+                result = read_shared_array(plot.shared_memory)
+                self.debug_print.emit(f"Read shared array in {(time.time() - start_read)*1000:.2f} ms")
             else:
                 start_transfer = time.time()
                 result = fut.result()
                 self.debug_print.emit(f"Transferred Future over TCP in {(time.time() - start_transfer)*1000:.2f} ms")
         except Exception as e:
             result = e
-        emitter(plot, result, fid)
+        # Pass the future object itself (not id) so on_plot_future_ready can use
+        # identity comparison (`is`) — avoids id()-reuse false positives from GC.
+        emitter(plot, result, fut)

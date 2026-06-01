@@ -274,27 +274,25 @@ class MainWindow(QMainWindow):
         return selectors
 
     @QtCore.Slot(object, object, object)
-    def on_plot_future_ready(self, plot: Plot, result: object, fid:int) -> None:
+    def on_plot_future_ready(self, plot: Plot, result: object, future: object) -> None:
         """
         Receive finished compute results from the worker and apply them on the GUI thread.
 
         Parameters:
             plot: Plot to update.
             result: Either the computed data or an Exception.
-            fid: The id of the Future that was completed.
+            future: The Future object that completed (used for identity staleness check).
         """
         if isinstance(result, Exception):
             print(f"Plot update failed: {result}")
             return
         try:
-            print("Updating Plot from worker signal...")
-            # make sure that the future is still the current data. It may have changed meanwhile.
-            if id(plot.current_data) != fid:
-                print("Plot data has changed since the Future was issued; skipping update.")
+            # Use identity (`is`) not id() — id() can be reused by GC for a newer
+            # future allocated at the same address, falsely passing the staleness check.
+            if plot.current_data is not future:
                 return
-            else:
-                plot.current_data = result
-                plot.update()
+            plot.current_data = result
+            plot.update()
         except Exception as e:
             print(f"Failed to update plot: {e}")
 

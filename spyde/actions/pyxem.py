@@ -242,6 +242,9 @@ def add_virtual_image(
     _cached_mask = [None]
     _cached_roi = [None]  # ROI that produced _cached_mask — kept in sync
     _timer_holder = []  # keeps QTimer refs alive
+    _generation = [0]  # monotonically incremented each time a new computation starts;
+                       # the done-callback checks its captured generation matches to
+                       # avoid id()-reuse false positives from Python GC.
 
     action_name = f"Virtual Image ({color})"
 
@@ -354,6 +357,10 @@ def add_virtual_image(
         mask = roi_to_mask(_roi, signal)
         _cached_mask[0] = mask
         _cached_roi[0] = _roi
+
+        _generation[0] += 1
+        my_generation = _generation[0]
+
         future = compute_virtual_image_kernel(signal.data, mask, client, gpu_worker)
         virtual_plot.current_data = future
         _start_progress_poll(future, indicator, client, _timer_holder)
@@ -361,6 +368,11 @@ def add_virtual_image(
 
         def _on_preview_done(fut):
             from PySide6 import QtCore as _QtCore
+            # Only enable Commit if this is still the latest computation.
+            # Generation counter avoids id()-reuse false positives from Python GC
+            # (GC can reuse freed future addresses, making id(old) == id(new)).
+            if _generation[0] != my_generation:
+                return
             _QtCore.QMetaObject.invokeMethod(
                 virtual_plot_window, "set_commit_enabled",
                 _QtCore.Qt.ConnectionType.QueuedConnection,
