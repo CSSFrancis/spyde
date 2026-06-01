@@ -104,7 +104,10 @@ class TestActions:
         assert not caret_params_new.isVisible()
 
         # Simulate clicking the "Center Zero Beam" action
-        qtbot.wait(4000)  # wait for the action to take effect
+        qtbot.waitUntil(
+            lambda: bool(toolbar_bottom_new.action_widgets.get("Center Zero Beam", {}).get("plot_items")),
+            timeout=8000,
+        )
         center_button_new.trigger()
         # make sure that the caret box was created
 
@@ -137,7 +140,14 @@ class TestActions:
 
         # submit the rebin
         rebin_widget.submit_button.click()
-        qtbot.wait(6000)  # wait for the action to take effect
+        qtbot.waitUntil(
+            lambda: (
+                sig.current_data is not None
+                and hasattr(sig.current_data, "shape")
+                and sig.current_data.shape[0] == 32
+            ),
+            timeout=10000,
+        )
 
         # check that the data has been rebinned
         current_data = sig.current_data
