@@ -76,6 +76,29 @@ class TestPlotUpdateWorker:
 
         assert len(received) == 1
 
+    def test_emits_future_object_not_id(self, qtbot):
+        """The third argument emitted by plot_ready must be the future object itself,
+        not id(future). This prevents id()-reuse bugs where Python GC recycles the
+        address of a collected future for a new one, causing stale results to display."""
+        fut = _make_done_future(key="identity_key")
+        plot = MagicMock()
+        plot.current_data = fut
+        plot.plot_state = MagicMock()
+        plot.plot_state.current_signal = MagicMock()
+        plot.plot_state.current_signal.data = None
+
+        worker = PlotUpdateWorker(get_plots_callable=lambda: [plot], interval_ms=5)
+        received = []
+        worker.plot_ready.connect(lambda p, r, token: received.append((p, r, token)))
+
+        with patch("spyde.workers.plot_update_worker.Future", type(fut)):
+            with qtbot.waitSignal(worker.plot_ready, timeout=1000):
+                worker._check()
+
+        assert len(received) == 1
+        # The token must be the future object itself, not an integer id
+        assert received[0][2] is fut
+
     def test_handles_exception_in_future(self, qtbot):
         fut = MagicMock()
         fut.done.return_value = True
