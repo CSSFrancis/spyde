@@ -1,113 +1,146 @@
+from __future__ import annotations
+
 import pytest
-import subprocess
 from typing import Dict, Union, List, Iterator
+
+from PySide6.QtWidgets import QApplication, QMdiArea
 
 from spyde.qt.shared import open_window as _open_window
 from spyde.qt.shared import create_data as _create_data
 from spyde.__main__ import MainWindow
 from spyde.drawing.plots.plot import Plot
 from spyde.signal_tree import BaseSignalTree
-from PySide6.QtWidgets import QMdiArea
 
 
-def _close_window(qtbot, win) -> None:
+# ---------------------------------------------------------------------------
+# Session-scoped window: one MainWindow + Dask cluster per test session
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def _session_window():
+    """Create a single MainWindow for the entire test session.
+
+    Dask startup is asynchronous; we do NOT wait for ``win.client`` here
+    because the session fixture runs before any ``qtbot`` is active and
+    ``QTest.qWait`` cannot reliably deliver cross-thread queued signals in
+    that context.  Instead, each per-test dataset fixture (which has
+    ``qtbot``) lets ``MainWindow.create_signal_tree`` handle the wait via its
+    own ``while self.client is None: QApplication.processEvents()`` loop.
+    """
+    win = _open_window()
+    yield win
     win.close()
-    qtbot.waitUntil(lambda: not win.isVisible(), timeout=2000)
+
+
+# ---------------------------------------------------------------------------
+# Per-test reset: close all subwindows, clear tracking lists
+# ---------------------------------------------------------------------------
+
+def _reset_window(win: MainWindow) -> MainWindow:
+    """Close all MDI subwindows and clear signal/plot tracking. Returns win.
+
+    Strategy:
+    1. Patch close_window() on all currently-tracked PlotWindows to a no-op.
+       This breaks the cascade re-close loop in PlotWindow.close_window()
+       without affecting the Qt-level close/hide logic (hideEvent still fires,
+       toolbars are properly hidden).
+    2. Clear the tracking lists so any deferred callbacks that escaped
+       the patch are harmless (ValueError is caught inside close_window()).
+    3. Use closeAllSubWindows() to close all MDI subwindows.  With
+       close_window() patched, no cascade fires.
+    4. Drain the event queue (processEvents) to flush deleteLater calls.
+    """
+    def _noop(*args, **kwargs):
+        pass
+
+    # Patch close_window on ALL MDI subwindows, not just plot_subwindows,
+    # to handle windows closed by the test body that are still in the MDI
+    # area's internal list but removed from plot_subwindows.
+    for sw in list(win.mdi_area.subWindowList()):
+        try:
+            sw.close_window = _noop
+        except Exception:
+            pass
+
+    win.plot_subwindows.clear()
+    win.signal_trees.clear()
+    win.mdi_area.closeAllSubWindows()
+    QApplication.processEvents()
+    return win
+
+
+# ---------------------------------------------------------------------------
+# Dataset fixtures — reuse session window, reset before each test
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def window(qtbot, _session_window) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
+    win = _reset_window(_session_window)
+    qtbot.waitUntil(lambda: win.isVisible(), timeout=2000)
+    yield {
+        "window": win,
+        "mdi_area": win.mdi_area,
+        "subwindows": win.mdi_area.subWindowList(),
+        "signal_trees": getattr(win, "signal_trees", []),
+    }
 
 
 @pytest.fixture()
-def tem_2d_dataset(
-    qtbot,
-) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
-    win = _open_window()
+def tem_2d_dataset(qtbot, _session_window) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
+    win = _reset_window(_session_window)
     _create_data(win, "Image")
-    # Wait for 1 subwindow
     qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 1, timeout=5000)
-    try:
-        yield {
-            "window": win,
-            "mdi_area": win.mdi_area,
-            "subwindows": win.mdi_area.subWindowList(),
-            "signal_trees": getattr(win, "signal_trees", []),
-        }
-    finally:
-        _close_window(qtbot, win)
+    yield {
+        "window": win,
+        "mdi_area": win.mdi_area,
+        "subwindows": win.mdi_area.subWindowList(),
+        "signal_trees": getattr(win, "signal_trees", []),
+    }
 
 
-@pytest.fixture
-def insitu_tem_2d_dataset(
-    qtbot,
-) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
-    win = _open_window()
+@pytest.fixture()
+def insitu_tem_2d_dataset(qtbot, _session_window) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
+    win = _reset_window(_session_window)
     _create_data(win, "Insitu TEM")
     qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 2, timeout=5000)
-    try:
-        yield {
-            "window": win,
-            "mdi_area": win.mdi_area,
-            "subwindows": win.mdi_area.subWindowList(),
-            "signal_trees": getattr(win, "signal_trees", []),
-        }
-    finally:
-        _close_window(qtbot, win)
+    yield {
+        "window": win,
+        "mdi_area": win.mdi_area,
+        "subwindows": win.mdi_area.subWindowList(),
+        "signal_trees": getattr(win, "signal_trees", []),
+    }
 
 
-@pytest.fixture
-def stem_4d_dataset(
-    qtbot,
-) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
-    win = _open_window()
+@pytest.fixture()
+def stem_4d_dataset(qtbot, _session_window) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
+    win = _reset_window(_session_window)
     _create_data(win, "4D STEM")
     qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 2, timeout=5000)
-    try:
-        yield {
-            "window": win,
-            "mdi_area": win.mdi_area,
-            "subwindows": win.mdi_area.subWindowList(),
-            "signal_trees": getattr(win, "signal_trees", []),
-        }
-    finally:
-        _close_window(qtbot, win)
+    yield {
+        "window": win,
+        "mdi_area": win.mdi_area,
+        "subwindows": win.mdi_area.subWindowList(),
+        "signal_trees": getattr(win, "signal_trees", []),
+    }
 
 
-@pytest.fixture
-def stem_5d_dataset(
-    qtbot,
-) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
-    win = _open_window()
+@pytest.fixture()
+def stem_5d_dataset(qtbot, _session_window) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
+    win = _reset_window(_session_window)
     _create_data(win, "5D STEM")
     qtbot.waitUntil(lambda: len(win.mdi_area.subWindowList()) == 3, timeout=10000)
-    try:
-        yield {
-            "window": win,
-            "mdi_area": win.mdi_area,
-            "subwindows": win.mdi_area.subWindowList(),
-            "signal_trees": getattr(win, "signal_trees", []),
-        }
-    finally:
-        _close_window(qtbot, win)
-
-
-@pytest.fixture
-def window(
-    qtbot,
-) -> Iterator[Dict[str, Union[MainWindow, QMdiArea, List[Plot], List[BaseSignalTree]]]]:
-    win = _open_window()
-    qtbot.waitUntil(lambda: win.isVisible(), timeout=2000)
-    try:
-        yield {
-            "window": win,
-            "mdi_area": win.mdi_area,
-            "subwindows": win.mdi_area.subWindowList(),
-            "signal_trees": getattr(win, "signal_trees", []),
-        }
-    finally:
-        _close_window(qtbot, win)
+    yield {
+        "window": win,
+        "mdi_area": win.mdi_area,
+        "subwindows": win.mdi_area.subWindowList(),
+        "signal_trees": getattr(win, "signal_trees", []),
+    }
 
 
 @pytest.fixture(scope="session")
 def gpu_available() -> bool:
     """True if nvidia-smi detects at least one GPU."""
+    import subprocess
     try:
         r = subprocess.run(
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
