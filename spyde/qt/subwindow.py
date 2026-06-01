@@ -53,6 +53,8 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
 
         self._status_placeholder = QtWidgets.QWidget(self.title_bar)
         self._status_placeholder.setFixedSize(24, 24)
+        self._status_placeholder.setStyleSheet("background: transparent;")
+        self._status_placeholder.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.title_bar_layout.addWidget(self._status_placeholder)
 
         self.title_bar.commit_button = QtWidgets.QPushButton("Commit", self.title_bar)

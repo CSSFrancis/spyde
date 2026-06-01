@@ -76,6 +76,16 @@ class TestCommitInfrastructure:
         win.close()
 
 
+def test_status_placeholder_is_transparent(qtbot, window):
+    """The status placeholder must not have a white/opaque background."""
+    pw = window["window"].add_plot_window(is_navigator=False, signal_tree=None)
+    placeholder = pw._status_placeholder
+    style = placeholder.styleSheet()
+    assert "transparent" in style, (
+        f"_status_placeholder stylesheet should contain 'transparent', got: {style!r}"
+    )
+
+
 def test_commit_button_is_left_of_title(qtbot, window):
     """Commit button must appear before the title label in the title bar layout."""
     pw = window["window"].add_plot_window(is_navigator=False, signal_tree=None)
