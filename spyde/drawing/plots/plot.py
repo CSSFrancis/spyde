@@ -423,7 +423,7 @@ class Plot(PlotItem):
         This should always be in the center of the plot
         """
         self._updating_text = pg.TextItem(
-            text=f"Updating Plot...\nVisit {self.main_window.client.dashboard_link} for progress",
+            text=f"Updating Plot...\nVisit {self.main_window.dask_manager.client.dashboard_link} for progress",
             color=(255, 0, 0), anchor=(-.1, -0.5)
         )
         self._updating_text.setZValue(1000)

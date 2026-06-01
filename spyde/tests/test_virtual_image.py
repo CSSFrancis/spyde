@@ -10,7 +10,7 @@ class TestVirtualImageKernel:
     @pytest.fixture(autouse=True)
     def client(self, stem_4d_dataset):
         self.win = stem_4d_dataset["window"]
-        self.client = self.win.client
+        self.client = self.win.dask_manager.client
 
     def _mask(self, nkx=8, nky=8):
         mask = np.zeros((nkx, nky), dtype=np.float32)
@@ -86,30 +86,30 @@ class TestGPUWorkerSetup:
     def test_probe_gpus_returns_zero_when_absent(self):
         """_probe_gpus returns 0 when nvidia-smi is not found."""
         import unittest.mock as mock
-        from spyde.__main__ import _probe_gpus
-        with mock.patch("spyde.__main__.subprocess.run", side_effect=FileNotFoundError):
+        from spyde.dask_manager import _probe_gpus
+        with mock.patch("spyde.dask_manager.subprocess.run", side_effect=FileNotFoundError):
             assert _probe_gpus() == 0
 
     def test_probe_gpus_returns_zero_on_timeout(self):
         import unittest.mock as mock
         import subprocess
-        from spyde.__main__ import _probe_gpus
-        with mock.patch("spyde.__main__.subprocess.run", side_effect=subprocess.TimeoutExpired("nvidia-smi", 3)):
+        from spyde.dask_manager import _probe_gpus
+        with mock.patch("spyde.dask_manager.subprocess.run", side_effect=subprocess.TimeoutExpired("nvidia-smi", 3)):
             assert _probe_gpus() == 0
 
     def test_probe_gpus_returns_count_from_mocked_output(self):
         import unittest.mock as mock
-        from spyde.__main__ import _probe_gpus
+        from spyde.dask_manager import _probe_gpus
         fake_result = mock.Mock()
         fake_result.returncode = 0
         fake_result.stdout = b"NVIDIA GeForce RTX 3080\nNVIDIA GeForce RTX 3080\n"
-        with mock.patch("spyde.__main__.subprocess.run", return_value=fake_result):
+        with mock.patch("spyde.dask_manager.subprocess.run", return_value=fake_result):
             assert _probe_gpus() == 2
 
     def test_gpu_worker_address_is_none_when_no_gpu(self, stem_4d_dataset):
         """_gpu_worker_address is None when no GPU is present (default on CI)."""
         win = stem_4d_dataset["window"]
-        assert hasattr(win, "_gpu_worker_address")
+        assert hasattr(win, "dask_manager")
         import subprocess
         try:
             r = subprocess.run(
@@ -120,7 +120,7 @@ class TestGPUWorkerSetup:
         except Exception:
             has_gpu = False
         if not has_gpu:
-            assert win._gpu_worker_address is None
+            assert win.dask_manager.gpu_worker_address is None
 
 
 class TestComputeStatusIndicator:
@@ -657,8 +657,8 @@ class TestVirtualImageKernelGPU:
     @pytest.fixture(autouse=True)
     def client(self, stem_4d_dataset):
         self.win = stem_4d_dataset["window"]
-        self.client = self.win.client
-        self.gpu_address = self.win._gpu_worker_address
+        self.client = self.win.dask_manager.client
+        self.gpu_address = self.win.dask_manager.gpu_worker_address
 
     def _mask(self):
         mask = np.zeros((8, 8), dtype=np.float32)

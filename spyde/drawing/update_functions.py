@@ -124,7 +124,7 @@ def update_from_navigation_selection(
             if cache_in_shared_memory:
                 # Write to shared memory and return the name
                 shared_arr_name = f"plot_buffer{id(child)}"
-                current_img = child.main_window.client.submit(write_shared_array,
+                current_img = child.main_window.dask_manager.client.submit(write_shared_array,
                                                 current_img,
                                                 shared_arr_name)
     else:

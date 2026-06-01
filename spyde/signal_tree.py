@@ -169,11 +169,11 @@ class BaseSignalTree:
             if navigator._lazy:
                 navigator.data = self.client.compute(navigator.data,
                                                      priority=-10,
-                                                     workers=self.main_window._heavy_compute_workers)  # creates a ndarray from setting...
+                                                     workers=self.main_window.dask_manager.heavy_workers)  # creates a ndarray from setting...
             if signal._lazy:
                 signal.data = self.client.compute(signal.data,
                                                   priority=-10,
-                                                  workers=self.main_window._heavy_compute_workers
+                                                  workers=self.main_window.dask_manager.heavy_workers
                                                   )
             print("Preprocessing navigator: ", navigator, signal)
             return [navigator, signal]
@@ -184,10 +184,10 @@ class BaseSignalTree:
             if navigator._lazy:
                 navigator.data = self.client.compute(navigator.data,
                                                      priority=-10,
-                                                     workers=self.main_window._heavy_compute_workers)
+                                                     workers=self.main_window.dask_manager.heavy_workers)
             if signal._lazy:
                 signal.data = self.client.compute(signal.data, priority=-10,
-                                                  workers=self.main_window._heavy_compute_workers)
+                                                  workers=self.main_window.dask_manager.heavy_workers)
             print("Preprocessing navigator: ", navigator, signal)
 
             return [navigator, signal]
@@ -195,7 +195,7 @@ class BaseSignalTree:
         if signal._lazy:
             signal.data = self.client.compute(signal.data,
                                                      priority=-10,
-                                                     workers=self.main_window._heavy_compute_workers)
+                                                     workers=self.main_window.dask_manager.heavy_workers)
         return [signal]
 
     def _on_axis_field_edit(

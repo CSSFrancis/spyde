@@ -60,7 +60,8 @@ def _make_tree():
     """Minimal BaseSignalTree without Qt (mock main_window)."""
     sig = _make_signal((4, 4, 8, 8))  # 4D: nav(4,4) sig(8,8)
     mw = MagicMock()
-    mw._heavy_compute_workers = None
+    mw.dask_manager = MagicMock()
+    mw.dask_manager.heavy_workers = None
     # Prevent MDI/plot construction during __init__
     mw.add_plot_window.return_value = MagicMock()
     mw.add_plot_window.return_value.add_new_plot.return_value = MagicMock()

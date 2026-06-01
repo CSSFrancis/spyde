@@ -9,7 +9,7 @@ class TestLineProfileKernel:
     @pytest.fixture(autouse=True)
     def client(self, stem_4d_dataset):
         self.win = stem_4d_dataset["window"]
-        self.client = self.win.client
+        self.client = self.win.dask_manager.client
 
     def test_signal_profile_horizontal_line(self):
         """Horizontal line through a known row must return that row's values."""

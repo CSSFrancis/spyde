@@ -1,7 +1,6 @@
 from __future__ import annotations
 import sys
 import os
-import subprocess
 from collections import deque
 from typing import Union
 from functools import partial
@@ -22,7 +21,7 @@ from PySide6.QtWidgets import (
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtGui import QPixmap, QColor
 
-from dask.distributed import Client, Future, LocalCluster
+from dask.distributed import Future
 import pyqtgraph as pg
 import hyperspy.api as hs
 import pyxem.data
@@ -45,56 +44,9 @@ from spyde.external.pyqtgraph.histogram_widget import (
 from spyde.workers.plot_update_worker import PlotUpdateWorker
 from spyde.actions.base import NAVIGATOR_DRAG_MIME
 from spyde.drawing.colormaps import COLORMAPS
+from spyde.dask_manager import DaskManager
 
 SUPPORTED_EXTS = (".hspy", ".mrc", ".tif", ".tiff", ".de5")  # extend as needed
-
-
-def _probe_gpus() -> int:
-    """Return the number of NVIDIA GPUs detected via nvidia-smi. Returns 0 on any failure."""
-    try:
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-            capture_output=True,
-            timeout=3,
-        )
-        if result.returncode != 0:
-            return 0
-        lines = [line for line in result.stdout.decode().strip().splitlines() if line.strip()]
-        return len(lines)
-    except Exception:
-        return 0
-
-
-class DaskClusterWorker(QtCore.QObject):
-    finished = QtCore.Signal(object, object, object)  # cluster, client, gpu_worker_address
-    error = QtCore.Signal(Exception)
-
-    def __init__(self, n_workers: int, threads_per_worker: int, parent=None):
-        super().__init__(parent)
-        self.n_workers = n_workers
-        self.threads_per_worker = threads_per_worker
-        self._stopped = False
-
-    @QtCore.Slot()
-    def start(self):
-        if self._stopped:
-            return
-        try:
-            cluster = LocalCluster(
-                n_workers=self.n_workers,
-                threads_per_worker=self.threads_per_worker,
-            )
-            client = Client(cluster)
-            n_gpus = _probe_gpus()
-            # Sentinel: truthy = GPU annotation enabled; actual worker provisioning deferred to future iteration
-            gpu_worker_address = "gpu_available" if n_gpus > 0 else None
-            self.finished.emit(cluster, client, gpu_worker_address)
-        except Exception as e:
-            self.error.emit(e)
-
-    @QtCore.Slot()
-    def stop(self):
-        self._stopped = True
 
 
 class StartupTimer:
@@ -160,7 +112,6 @@ class MainWindow(QMainWindow):
             self.screen_size.width() * 3 // 4, self.screen_size.height() * 3 // 4
         )
         self.histogram = None
-        self._gpu_worker_address: str | None = None
         self._histogram_image_item = None  # track bound ImageItem to avoid LUT resets
 
         # center the main window on the screen
@@ -284,54 +235,21 @@ class MainWindow(QMainWindow):
         # For accepting dropped files into the mdi area
         self.mdi_area.setAcceptDrops(True)
         self.mdi_area.installEventFilter(self)
-        if app is not None:
-            app.aboutToQuit.connect(self._shutdown_update_thread)
-
-        print(
-            f"Starting Dask LocalCluster with {workers} workers, and {threads_per_worker} threads per worker"
-        )
-
-        # Dask background startup
-        self.client = None
-        self.cluster = None  # add: keep cluster reference for clean shutdown
-        self._dask_thread = QtCore.QThread(self)
-        self._dask_worker = DaskClusterWorker(
+        print(f"Starting Dask LocalCluster with {workers} workers, {threads_per_worker} threads per worker")
+        self.dask_manager = DaskManager(
             n_workers=workers,
             threads_per_worker=threads_per_worker,
+            parent=self,
         )
-        self._dask_worker.moveToThread(self._dask_thread)
-        self._dask_thread.started.connect(self._dask_worker.start)
-        self._dask_worker.finished.connect(self._on_dask_ready)
-        self._dask_worker.error.connect(self._on_dask_error)
-        # ensure proper cleanup of worker object
-        self._dask_thread.finished.connect(self._dask_worker.deleteLater)
-        self._dask_thread.start()
+        self.dask_manager.ready.connect(self._on_dask_ready)
+        self.dask_manager.start()
+        if self.app is not None:
+            self.app.aboutToQuit.connect(self.dask_manager.shutdown)
+            self.app.aboutToQuit.connect(self._shutdown_update_thread)
 
-        self.app.aboutToQuit.connect(self._shutdown_dask)
-        self.app.aboutToQuit.connect(self._shutdown_update_thread)
-
-    @QtCore.Slot(object, object, object)
-    def _on_dask_ready(self, cluster, client, gpu_worker_address=None):
-        # store both client and cluster so we can close cleanly
-        self.cluster = cluster
-        self.client = client
-        self._gpu_worker_address = gpu_worker_address
-        print(f"Dask cluster ready. Dashboard: {client.dashboard_link}")
-
-        self._worker_keys = list(self.client.scheduler_info()['workers'].keys())
-        heavy = self._worker_keys[1:]  # leave one worker free for GUI tasks
-        # If there is only one worker, don't restrict — an empty workers list
-        # would cause Dask to hang tasks with no eligible worker.
-        self._heavy_compute_workers = heavy if heavy else None
-        # stop the bootstrap thread
-        self._dask_thread.quit()
-        self._dask_thread.wait(2000)
-
-    @QtCore.Slot(Exception)
-    def _on_dask_error(self, exc):
-        print(f"Failed to start Dask cluster: {exc}")
-        self._dask_thread.quit()
-        self._dask_thread.wait(2000)
+    @QtCore.Slot()
+    def _on_dask_ready(self):
+        print("MainWindow: Dask ready.")
 
     @property
     def plots(self) -> list[Plot]:
@@ -562,8 +480,8 @@ class MainWindow(QMainWindow):
         """
         Open the Dask dashboard in a new window.
         """
-        if self.client:
-            dashboard_url = self.client.dashboard_link
+        if self.dask_manager.client:
+            dashboard_url = self.dask_manager.client.dashboard_link
             webbrowser.open(dashboard_url)
         else:
             QMessageBox.warning(self, "Error", "Dask client is not initialized.")
@@ -667,7 +585,7 @@ class MainWindow(QMainWindow):
         print("Creating Signal Tree for signal")
 
         # If Dask client is not ready, show a waiting message and check until it is
-        if self.client is None:
+        if self.dask_manager.client is None:
             message_box = QtWidgets.QMessageBox(self)
             message_box.setWindowTitle("Please wait")
             message_box.setText("Dask client is still initializing. Please wait...")
@@ -675,14 +593,14 @@ class MainWindow(QMainWindow):
             message_box.setModal(False)
             message_box.show()
 
-            while self.client is None:
+            while self.dask_manager.client is None:
                 QApplication.processEvents()
             message_box.hide()
             message_box.close()
 
 
         signal_tree = BaseSignalTree(
-            root_signal=signal, main_window=self, distributed_client=self.client
+            root_signal=signal, main_window=self, distributed_client=self.dask_manager.client
         )
         self.signal_trees.append(signal_tree)
         print("Signal Tree Created")
@@ -1439,112 +1357,9 @@ class MainWindow(QMainWindow):
         # TODO: reset view to fit data
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
-        # 1) shutdown Dask to stop its background threads and logging
-        self._shutdown_dask()
-        # 2) stop any QThreads we own
+        self.dask_manager.shutdown()
         self._shutdown_update_thread()
         super().closeEvent(event)
-
-    def _shutdown_dask(self) -> None:
-        """Robust shutdown for Dask used during application quit.
-
-        - Silence distributed logging.
-        - Scale cluster to 0, close cluster, then close client.
-        - Wait briefly to let processes exit, then attempt to terminate
-          any multiprocessing children started from this process.
-        - Must be called on the main thread before QApplication teardown.
-        """
-        import logging
-        import time
-        import multiprocessing as mp
-        import gc
-
-        print("Shutting down Dask cluster and client...")
-
-        # Silence distributed logs to avoid I/O errors during teardown
-        try:
-            for name in ("distributed", "distributed.comm", "distributed.comm.tcp"):
-                lg = logging.getLogger(name)
-                lg.setLevel(logging.CRITICAL)
-                lg.propagate = False
-                try:
-                    lg.handlers.clear()
-                except Exception:
-                    lg.handlers = []
-                lg.addHandler(logging.NullHandler())
-        except Exception:
-            pass
-
-        # Close client first if present (client talks to cluster)
-        try:
-            client = getattr(self, "client", None)
-            if client is not None:
-                try:
-                    client.close(timeout="2s")
-                except TypeError:
-                    # older/newer API may expect numeric timeout
-                    try:
-                        client.close(timeout=2)
-                    except Exception:
-                        client.close()
-                except Exception:
-                    # fallback to best-effort close
-                    try:
-                        client.close()
-                    except Exception:
-                        pass
-                finally:
-                    self.client = None
-        except Exception:
-            self.client = None
-
-        # Then scale down and close the cluster
-        try:
-            cluster = getattr(self, "cluster", None)
-            if cluster is not None:
-                try:
-                    # try a graceful scale-down first
-                    try:
-                        cluster.scale(0)
-                    except Exception:
-                        pass
-                    # close the cluster (synchronous)
-                    try:
-                        cluster.close(timeout="2s")
-                    except TypeError:
-                        cluster.close(timeout=2)
-                    except Exception:
-                        cluster.close()
-                except Exception:
-                    pass
-                finally:
-                    self.cluster = None
-        except Exception:
-            self.cluster = None
-
-        # Give OS a moment to reap processes and release semaphores
-        time.sleep(0.5)
-
-        # Attempt to clean up multiprocessing children started by this process
-        try:
-            for child in mp.active_children():
-                print("Terminating leftover child process:", child.pid)
-                try:
-                    child.terminate()
-                    child.join(timeout=0.5)
-                except Exception:
-                    try:
-                        child.kill()
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        # Force garbage collection (helps resource_tracker cleanup)
-        try:
-            gc.collect()
-        except Exception:
-            pass
 
     def _shutdown_update_thread(self) -> None:
         worker = getattr(self, "_plot_update_worker", None)
@@ -1558,16 +1373,10 @@ class MainWindow(QMainWindow):
             thread.quit()
             thread.wait(2000)
 
-        # also ensure the dask bootstrap thread is stopped if still running
-        dthread = getattr(self, "_dask_thread", None)
-        if dthread is not None and dthread.isRunning():
-            dthread.quit()
-            dthread.wait(2000)
-
     def close(self) -> None:
         self._shutdown_update_thread()
         try:
-            self.client.shutdown()
+            self.dask_manager.shutdown()
         except Exception:
             pass
         super().close()

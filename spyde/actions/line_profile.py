@@ -98,8 +98,8 @@ def add_line_profile(
     plot = toolbar.parent_toolbar.plot
     signal = plot.plot_state.current_signal
     main_window = plot.main_window
-    client = main_window.client
-    gpu_worker = getattr(main_window, "_gpu_worker_address", None)
+    client = main_window.dask_manager.client
+    gpu_worker = main_window.dask_manager.gpu_worker_address
 
     _live_enabled = [True]
     _timer_holder = []

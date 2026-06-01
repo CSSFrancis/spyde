@@ -292,8 +292,8 @@ def add_virtual_image(
     plot = toolbar.parent_toolbar.plot
     signal = plot.plot_state.current_signal
     main_window = plot.main_window
-    client = main_window.client
-    gpu_worker = getattr(main_window, "_gpu_worker_address", None)
+    client = main_window.dask_manager.client
+    gpu_worker = main_window.dask_manager.gpu_worker_address
 
     # Create the virtual image preview PlotWindow using the same factory as all other
     # plot windows — this applies FramelessWindowHint and removes the Qt border.
