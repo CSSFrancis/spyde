@@ -45,6 +45,7 @@ from spyde.workers.plot_update_worker import PlotUpdateWorker
 from spyde.actions.base import NAVIGATOR_DRAG_MIME
 from spyde.drawing.colormaps import COLORMAPS
 from spyde.dask_manager import DaskManager
+from spyde.dock_manager import DockManager
 from spyde.drawing.signal_tree_presenter import build_axes_groups, build_metadata_dict
 
 SUPPORTED_EXTS = (".hspy", ".mrc", ".tif", ".tiff", ".de5")  # extend as needed
@@ -224,10 +225,18 @@ class MainWindow(QMainWindow):
         self._navigator_drag_payloads: dict[str, dict[str, object]] = {}
         self._navigator_drag_over_active = False
         with log_startup_time("Plot control dock creation"):
-            self.add_plot_control_widget()
-
-        with log_startup_time("Inst. control dock creation"):
-            self.add_instrument_control_widget()
+            self.dock_manager = DockManager(main_window=self, parent=self)
+            # expose selectors_layout for Plot.show_selector_control_widget compatibility
+            self.selectors_layout = self.dock_manager.selectors_layout
+            self.histogram = self.dock_manager.histogram
+            self.cmap_selector = self.dock_manager.cmap_selector
+            self.metadata_layout = self.dock_manager.metadata_layout
+            self.axes_layout = self.dock_manager.axes_layout
+            self.btn_auto = self.dock_manager.btn_auto
+            self.btn_reset = self.dock_manager.btn_reset
+            # expose dock/control widgets for backward compat
+            self.dock_widget = self.dock_manager.dock_widget
+            self.control_widget = self.dock_manager.control_widget
 
 
         self.cursor_readout = QtWidgets.QLabel("x: -, y: -, value: -")
@@ -367,11 +376,11 @@ class MainWindow(QMainWindow):
         view_menu.addAction(view_dashboard_action)
 
         view_plot_control_action = QAction("Toggle Plot Control Dock", self)
-        view_plot_control_action.triggered.connect(self.toggle_plot_control_dock)
+        view_plot_control_action.triggered.connect(lambda: self.dock_manager.toggle_plot_control())
         view_menu.addAction(view_plot_control_action)
 
         view_camera_control_action = QAction("Toggle Instrument Control Dock", self)
-        view_camera_control_action.triggered.connect(self.toggle_camera_control_dock)
+        view_camera_control_action.triggered.connect(lambda: self.dock_manager.toggle_instrument_control())
         view_menu.addAction(view_camera_control_action)
 
         tile_action = QAction("Tile Active Windows", self)
@@ -379,27 +388,12 @@ class MainWindow(QMainWindow):
         tile_action.setShortcut("Ctrl+T")
         view_menu.addAction(tile_action)
 
-    def toggle_plot_control_dock(self) -> None:
-        """
-        Toggle the visibility of the plot control dock widget.
-        """
-        if self.dock_widget is not None:
-            is_visible = self.dock_widget.isVisible()
-            self.dock_widget.setVisible(not is_visible)
-
-    def toggle_camera_control_dock(self) -> None:
-        """
-        Toggle the visibility of the camera control dock widget.
-        """
-        if self.control_widget is not None:
-            is_visible = self.control_widget.isVisible()
-            self.control_widget.setVisible(not is_visible)
-
     def export_current_signal(self):
-        if not isinstance(self._active_plot(), Plot):
+        plot = self._active_plot()
+        if not isinstance(plot, Plot):
             QMessageBox.warning(self, "Error", "No active plot window to export from.")
             return
-        export_dialog = MovieExportDialog(plot=self._active_plot(), parent=self).exec()
+        MovieExportDialog(plot=plot, parent=self).exec()
 
     ### Handling Recent File opens ###
 
@@ -902,136 +896,13 @@ class MainWindow(QMainWindow):
                 pw.setGraphicsEffect(effect)
         # ── end 3-state visibility ───────────────────────────────────────────────
 
-        # Histogram binding: use the image_item on the inner widget / plot
-        img_item = plot.image_item
-        if (
-            self.histogram is not None
-            and img_item is not None
-            and img_item is not self._histogram_image_item
-        ):
-            try:
-                self.histogram.setImageItem(img_item)
-                self._histogram_image_item = img_item
-                if plot_state is not None:
-                    self.histogram.setLevels(plot_state.min_level, plot_state.max_level)
-                self.histogram.item.autoHistogramRange()
-            except Exception:
-                pass
-
         st = getattr(window, "signal_tree", None)
         if st is not None and st is not self.current_selected_signal_tree:
             self.current_selected_signal_tree = st
-            self.update_metadata_widget(plot)
 
-        self.update_axes_widget(plot)
-
-        if plot_state is not None and hasattr(self, "cmap_selector"):
-            self.cmap_selector.setCurrentText(plot_state.colormap)
+        self.dock_manager.on_active_plot_changed(window)
 
 
-    def add_instrument_control_widget(self):
-        """
-        This is the left-hand side docked widget that contains the instrument controls.
-        """
-        self.control_widget = ControlDockWidget()
-        self.control_widget.setVisible(False)  # Add this line
-
-        self.addDockWidget(
-            QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, self.control_widget
-        )
-        #self.control_widget.add_widget(StageControlWidget())
-        self.control_widget.add_widget(CameraControlWidget())
-        self.control_widget.add_widget(ParticleScanControlWidget())
-        #self.control_widget.add_widget(StemControlWidget())
-        #self.control_widget.add_widget(ReferenceControlWidget())
-
-
-    def add_plot_control_widget(self):
-        """
-        This is the right-hand side docked widget the contains the plot controls, image metadata
-        and the selector controls.
-
-        It updates with the current active plot in the MDI area.
-
-        """
-        self.dock_widget = QtWidgets.QDockWidget("Plot Control", self)
-        self.dock_widget.setObjectName("plotControlDock")
-        self.dock_widget.setFeatures(
-            self.dock_widget.features()
-            & ~QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable
-        )
-        self.dock_widget.setBaseSize(self.width() // 6, self.height() // 6)
-
-        # Create a main widget and layout
-
-        main_widget = QtWidgets.QWidget()
-        main_widget.setAutoFillBackground(True)
-        main_widget.setStyleSheet("background-color: #141414;")
-        layout = QtWidgets.QVBoxLayout(main_widget)
-
-        # Creating the display group box
-        # ------------------------------
-        display_group = QtWidgets.QGroupBox("Plot Display Controls")
-        display_group.setMaximumHeight(250)
-        display_layout = QtWidgets.QVBoxLayout(display_group)
-
-        # Create a Histogram plot LUT widget
-        self.histogram = HistogramLUTWidget(
-            orientation="horizontal", autoLevel=False, constantLevel=True
-        )  # type: HistogramLUTWidget
-        self.histogram.setMinimumWidth(200)
-        self.histogram.setMinimumHeight(100)
-        self.histogram.setMaximumHeight(150)
-        self.histogram.item.sigLevelChangeFinished.connect(
-            self.on_histogram_levels_finished
-        )
-        display_layout.addWidget(self.histogram)
-
-        # Add a color map selector inside a group box
-        self.cmap_selector = QtWidgets.QComboBox()
-        self.cmap_selector.addItems(list(COLORMAPS.keys()))
-        self.cmap_selector.setCurrentText("grays")
-        self.cmap_selector.currentTextChanged.connect(self.on_cmap_changed)
-        cmap_layout = QtWidgets.QHBoxLayout()
-        cmap_layout.addWidget(QtWidgets.QLabel("Colormap"))
-        cmap_layout.addWidget(self.cmap_selector, 1)
-        display_layout.addLayout(cmap_layout)
-        layout.addWidget(display_group)
-
-        buttons_layout = QtWidgets.QHBoxLayout()
-        self.btn_auto = QtWidgets.QPushButton("auto")
-        self.btn_reset = QtWidgets.QPushButton("reset")
-        self.btn_auto.clicked.connect(self.on_contrast_auto_click)
-        self.btn_reset.clicked.connect(self.on_contrast_reset_click)
-        buttons_layout.addWidget(self.btn_auto)
-        buttons_layout.addWidget(self.btn_reset)
-        display_layout.addLayout(buttons_layout)
-
-        # Create a Group for the metadata
-        # ----------------------------------------
-        self.metadata_group = QtWidgets.QGroupBox("Metadata")
-        self.metadata_layout = QtWidgets.QHBoxLayout(self.metadata_group)
-        layout.addWidget(self.metadata_group)
-
-        # Create a Group for the axes
-        # ----------------------------------------
-        self.axes_group = QtWidgets.QGroupBox("Plot Axes")
-        self.axes_layout = QtWidgets.QVBoxLayout(self.axes_group)
-        layout.addWidget(self.axes_group)
-
-        # Create a Group for the Selector Controls
-        # ----------------------------------------
-        # The when a plot is selected we will populate self.selectors_layout with a
-        # selector control layout...
-        selectors_group = QtWidgets.QGroupBox("Selectors Controls")
-        self.selectors_layout = QtWidgets.QVBoxLayout(selectors_group)
-
-        layout.addWidget(selectors_group)
-        self.dock_widget.setWidget(main_widget)
-
-        self.addDockWidget(
-            QtCore.Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget
-        )
 
     def _active_plot(self) -> Union[Plot, None]:
         """Return the currently active QMdiSubWindow (Plot) or None."""
@@ -1049,63 +920,6 @@ class MainWindow(QMainWindow):
         else:
             return sub
 
-    def on_contrast_auto_click(self) -> None:
-        """
-        Set image contrast to [1st, 99th] percentile for 2D; y-range percentiles for 1D.
-        Persist on PlotState, so it remains constant when data changes.
-        """
-        w = self._active_plot()
-        if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
-            return
-
-        if getattr(w.plot_state, "dimensions", 0) == 2:
-            mn, mx = self.histogram.percentile2levels(0.00, 99.0)
-            self.histogram.setLevels(mn, mx)
-
-    def on_contrast_reset_click(self) -> None:
-        """
-        Reset contrast to full range for 2D; re-enable y auto-range for 1D.
-        Persist on PlotState.
-        """
-        w = self._active_plot()
-        if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
-            return
-        if getattr(w.plot_state, "dimensions", 0) == 2:
-            mn, mx = w.image_item.quickMinMax()
-            self.histogram.setLevels(mn, mx)
-
-    def on_cmap_changed(self, cmap_name: str) -> None:
-        # Apply colormap to the active plot and sync the histogram widget
-        sub = self.mdi_area.activeSubWindow()
-        if sub is None:
-            return
-        if hasattr(sub, "set_colormap"):
-            print("Setting colormap on plot:", cmap_name)
-            sub.set_colormap(cmap_name)
-
-    def on_histogram_levels_finished(self, signal: HistogramLUTItem) -> None:
-        """
-        On histogram level change, update the active plot's contrast via PlotState
-        and apply immediately. Guard against missing histogram data.
-        """
-        # Guard: histogram not ready yet
-        if (
-            signal is None
-            or getattr(signal, "bins", None) is None
-            or getattr(signal, "counts", None) is None
-        ):
-            return
-        percentiles = signal.get_percentile_levels()
-        levels = signal.getLevels()
-        w = self._active_plot()
-        if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
-            return
-        else:
-            w.plot_state.max_level = levels[1]
-            w.plot_state.min_level = levels[0]
-            w.plot_state.max_percentile = percentiles[1]
-            w.plot_state.min_percentile = percentiles[0]
-        print("Setting levels:", levels, "percentiles:", percentiles, "on plot:", w)
 
     def _is_supported_file(self, path: str) -> bool:
         try:

@@ -1,0 +1,262 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+from PySide6 import QtCore, QtWidgets
+from PySide6.QtCore import QObject, Slot, Qt
+
+from spyde.drawing.colormaps import COLORMAPS
+from spyde.drawing.signal_tree_presenter import build_axes_groups, build_metadata_dict
+from spyde.external.pyqtgraph.histogram_widget import HistogramLUTWidget, HistogramLUTItem
+from spyde.live.camera_control_widget import CameraControlWidget
+from spyde.live.control_dock_widget import ControlDockWidget
+from spyde.live.particle_scanning import ParticleScanControlWidget
+
+if TYPE_CHECKING:
+    from spyde.__main__ import MainWindow
+    from spyde.drawing.plots.plot import Plot
+    from spyde.drawing.plots.plot_window import PlotWindow
+
+
+class DockManager(QObject):
+    """Owns Plot Control and Instrument Control dock construction and updates."""
+
+    def __init__(self, main_window: "MainWindow", parent=None):
+        super().__init__(parent)
+        self.main_window = main_window
+        # _histogram_image_item is stored on main_window so tests can reset it via win._histogram_image_item = None
+
+        self.dock_widget: QtWidgets.QDockWidget | None = None
+        self.control_widget: ControlDockWidget | None = None
+        self.histogram: HistogramLUTWidget | None = None
+        self.cmap_selector: QtWidgets.QComboBox | None = None
+        self.metadata_layout: QtWidgets.QHBoxLayout | None = None
+        self.axes_layout: QtWidgets.QVBoxLayout | None = None
+        self.selectors_layout: QtWidgets.QVBoxLayout | None = None
+        self.btn_auto: QtWidgets.QPushButton | None = None
+        self.btn_reset: QtWidgets.QPushButton | None = None
+
+        self._build_plot_control_dock()
+        self._build_instrument_control_dock()
+
+    def _build_plot_control_dock(self) -> None:
+        mw = self.main_window
+        self.dock_widget = QtWidgets.QDockWidget("Plot Control", mw)
+        self.dock_widget.setObjectName("plotControlDock")
+        self.dock_widget.setFeatures(
+            self.dock_widget.features()
+            & ~QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        self.dock_widget.setBaseSize(mw.width() // 6, mw.height() // 6)
+
+        main_widget = QtWidgets.QWidget()
+        main_widget.setAutoFillBackground(True)
+        main_widget.setStyleSheet("background-color: #141414;")
+        layout = QtWidgets.QVBoxLayout(main_widget)
+
+        display_group = QtWidgets.QGroupBox("Plot Display Controls")
+        display_group.setMaximumHeight(250)
+        display_layout = QtWidgets.QVBoxLayout(display_group)
+
+        self.histogram = HistogramLUTWidget(
+            orientation="horizontal", autoLevel=False, constantLevel=True
+        )
+        self.histogram.setMinimumWidth(200)
+        self.histogram.setMinimumHeight(100)
+        self.histogram.setMaximumHeight(150)
+        self.histogram.item.sigLevelChangeFinished.connect(self._on_histogram_levels_finished)
+        display_layout.addWidget(self.histogram)
+
+        self.cmap_selector = QtWidgets.QComboBox()
+        self.cmap_selector.addItems(list(COLORMAPS.keys()))
+        self.cmap_selector.setCurrentText("gray")
+        self.cmap_selector.currentTextChanged.connect(self._on_cmap_changed)
+        cmap_layout = QtWidgets.QHBoxLayout()
+        cmap_layout.addWidget(QtWidgets.QLabel("Colormap"))
+        cmap_layout.addWidget(self.cmap_selector, 1)
+        display_layout.addLayout(cmap_layout)
+        layout.addWidget(display_group)
+
+        buttons_layout = QtWidgets.QHBoxLayout()
+        self.btn_auto = QtWidgets.QPushButton("auto")
+        self.btn_reset = QtWidgets.QPushButton("reset")
+        self.btn_auto.clicked.connect(self._on_contrast_auto)
+        self.btn_reset.clicked.connect(self._on_contrast_reset)
+        buttons_layout.addWidget(self.btn_auto)
+        buttons_layout.addWidget(self.btn_reset)
+        display_layout.addLayout(buttons_layout)
+
+        metadata_group = QtWidgets.QGroupBox("Metadata")
+        self.metadata_layout = QtWidgets.QHBoxLayout(metadata_group)
+        layout.addWidget(metadata_group)
+
+        axes_group = QtWidgets.QGroupBox("Plot Axes")
+        self.axes_layout = QtWidgets.QVBoxLayout(axes_group)
+        layout.addWidget(axes_group)
+
+        selectors_group = QtWidgets.QGroupBox("Selectors Controls")
+        self.selectors_layout = QtWidgets.QVBoxLayout(selectors_group)
+        layout.addWidget(selectors_group)
+
+        self.dock_widget.setWidget(main_widget)
+        mw.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
+
+    def _build_instrument_control_dock(self) -> None:
+        mw = self.main_window
+        self.control_widget = ControlDockWidget()
+        self.control_widget.setVisible(False)
+        mw.addDockWidget(QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, self.control_widget)
+        self.control_widget.add_widget(CameraControlWidget())
+        self.control_widget.add_widget(ParticleScanControlWidget())
+
+    def toggle_plot_control(self) -> None:
+        if self.dock_widget is not None:
+            self.dock_widget.setVisible(not self.dock_widget.isVisible())
+
+    def toggle_instrument_control(self) -> None:
+        if self.control_widget is not None:
+            self.control_widget.setVisible(not self.control_widget.isVisible())
+
+    @Slot(object)
+    def on_active_plot_changed(self, window: "PlotWindow") -> None:
+        """Called when a new PlotWindow is activated."""
+        if window is None:
+            return
+        from spyde.drawing.plots.plot_window import PlotWindow
+        if not isinstance(window, PlotWindow):
+            return
+        plot = window.current_plot_item
+        if plot is None:
+            return
+        plot_state = getattr(plot, "plot_state", None)
+
+        # Histogram binding
+        img_item = getattr(plot, "image_item", None)
+        if (
+            self.histogram is not None
+            and img_item is not None
+            and img_item is not self.main_window._histogram_image_item
+        ):
+            try:
+                self.histogram.setImageItem(img_item)
+                self.main_window._histogram_image_item = img_item
+                if plot_state is not None:
+                    self.histogram.setLevels(plot_state.min_level, plot_state.max_level)
+                self.histogram.item.autoHistogramRange()
+            except Exception:
+                pass
+
+        # Colormap selector sync
+        if plot_state is not None and self.cmap_selector is not None:
+            self.cmap_selector.setCurrentText(plot_state.colormap)
+
+        # Metadata and axes panels
+        st = getattr(window, "signal_tree", None)
+        if st is not None:
+            self._update_metadata_panel(plot)
+        self._update_axes_panel(plot)
+
+    def _update_metadata_panel(self, plot: "Plot") -> None:
+        if self.metadata_layout is None:
+            return
+        while self.metadata_layout.count():
+            item = self.metadata_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+            else:
+                del item
+        if not hasattr(plot, "signal_tree") or plot.signal_tree is None:
+            return
+        metadata_dict = build_metadata_dict(plot.signal_tree)
+        for subsection, items in metadata_dict.items():
+            group = QtWidgets.QGroupBox(str(subsection))
+            group.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Expanding,
+                QtWidgets.QSizePolicy.Policy.Fixed,
+            )
+            group.setFixedHeight(120)
+            group_layout = QtWidgets.QVBoxLayout(group)
+            group_layout.setContentsMargins(6, 6, 6, 6)
+            group_layout.setSpacing(0)
+            scroll = QtWidgets.QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            container = QtWidgets.QWidget()
+            grid = QtWidgets.QGridLayout(container)
+            grid.setContentsMargins(0, 0, 0, 0)
+            grid.setHorizontalSpacing(12)
+            grid.setVerticalSpacing(4)
+            for row, (key, value) in enumerate((items or {}).items()):
+                key_label = QtWidgets.QLabel(f"{key}:")
+                value_label = QtWidgets.QLabel(f"{value}")
+                key_label.setStyleSheet("font-size: 10px;")
+                value_label.setStyleSheet("font-size: 10px;")
+                key_label.setAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
+                grid.addWidget(key_label, row, 0)
+                grid.addWidget(value_label, row, 1)
+            grid.setColumnStretch(0, 0)
+            grid.setColumnStretch(1, 1)
+            scroll.setWidget(container)
+            group_layout.addWidget(scroll)
+            self.metadata_layout.addWidget(group)
+
+    def _update_axes_panel(self, plot: "Plot") -> None:
+        if self.axes_layout is None:
+            return
+        while self.axes_layout.count():
+            item = self.axes_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+            else:
+                del item
+        if not hasattr(plot, "signal_tree") or plot.signal_tree is None:
+            return
+        plot_state = getattr(plot, "plot_state", None)
+        current_signal = plot_state.current_signal if plot_state else None
+        groups = build_axes_groups(plot.signal_tree, current_signal, plot)
+        for group in groups:
+            self.axes_layout.addWidget(group)
+
+    def _on_cmap_changed(self, cmap_name: str) -> None:
+        sub = self.main_window.mdi_area.activeSubWindow()
+        if sub is None:
+            return
+        if hasattr(sub, "set_colormap"):
+            sub.set_colormap(cmap_name)
+
+    def _on_contrast_auto(self) -> None:
+        w = self.main_window._active_plot()
+        if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
+            return
+        if getattr(w.plot_state, "dimensions", 0) == 2:
+            mn, mx = self.histogram.percentile2levels(0.00, 99.0)
+            self.histogram.setLevels(mn, mx)
+
+    def _on_contrast_reset(self) -> None:
+        w = self.main_window._active_plot()
+        if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
+            return
+        if getattr(w.plot_state, "dimensions", 0) == 2:
+            mn, mx = w.image_item.quickMinMax()
+            self.histogram.setLevels(mn, mx)
+
+    def _on_histogram_levels_finished(self, signal: HistogramLUTItem) -> None:
+        if (
+            signal is None
+            or getattr(signal, "bins", None) is None
+            or getattr(signal, "counts", None) is None
+        ):
+            return
+        percentiles = signal.get_percentile_levels()
+        levels = signal.getLevels()
+        w = self.main_window._active_plot()
+        if w is None or not hasattr(w, "plot_state") or w.plot_state is None:
+            return
+        w.plot_state.max_level = levels[1]
+        w.plot_state.min_level = levels[0]
+        w.plot_state.max_percentile = percentiles[1]
+        w.plot_state.min_percentile = percentiles[0]
