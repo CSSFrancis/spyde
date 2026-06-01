@@ -27,13 +27,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-COLORMAPS = {
-    "gray": pg.colormap.get("CET-L1"),
-    "viridis": pg.colormap.get("viridis"),
-    "plasma": pg.colormap.get("plasma"),
-    "cividis": pg.colormap.get("cividis"),
-    "fire": pg.colormap.get("CET-L3"),
-}
+from spyde.drawing.colormaps import COLORMAPS
 
 
 class Plot(PlotItem):

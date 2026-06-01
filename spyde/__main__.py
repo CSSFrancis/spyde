@@ -44,14 +44,7 @@ from spyde.external.pyqtgraph.histogram_widget import (
 )
 from spyde.workers.plot_update_worker import PlotUpdateWorker
 from spyde.actions.base import NAVIGATOR_DRAG_MIME
-
-COLORMAPS = {
-    "gray": pg.colormap.get("CET-L1"),
-    "viridis": pg.colormap.get("viridis"),
-    "plasma": pg.colormap.get("plasma"),
-    "cividis": pg.colormap.get("cividis"),
-    "fire": pg.colormap.get("CET-L3"),
-}
+from spyde.drawing.colormaps import COLORMAPS
 
 SUPPORTED_EXTS = (".hspy", ".mrc", ".tif", ".tiff", ".de5")  # extend as needed
 
