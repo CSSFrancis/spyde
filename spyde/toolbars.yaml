@@ -139,5 +139,5 @@ functions:
       add_line_profile:
         name: Add Line Profile
         description: Add a line profile ROI to the plot.
-        icon: drawing/toolbars/icons/zoom.svg
+        icon: drawing/toolbars/icons/line_profile.svg
         function: spyde.actions.line_profile.add_line_profile
