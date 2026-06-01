@@ -95,6 +95,111 @@ class TestVirtualImageKernel:
         assert result.shape == (4, 4)
 
 
+class TestVirtualImageEndToEnd:
+    """Integration test: roi_to_mask + compute_virtual_image_kernel on a known dataset.
+
+    Dataset: 4x4 nav grid. Some positions have a 4x4 rectangle of ones in the
+    centre of a 16x16 diffraction pattern, others are all zeros.
+
+    Pattern:
+        (0,0)=filled  (0,1)=empty  (0,2)=filled  (0,3)=empty
+        (1,0)=empty   (1,1)=filled (1,2)=empty   (1,3)=filled
+        (2,0)=filled  (2,1)=empty  (2,2)=filled  (2,3)=empty
+        (3,0)=empty   (3,1)=filled (3,2)=empty   (3,3)=filled
+
+    The rectangle covers diffraction pixels [6:10, 6:10] (4x4 = 16 pixels of value 1.0).
+    A RectROI placed exactly over that region should give virtual_image[ny,nx] = 16
+    for filled positions and 0 for empty ones.
+    """
+
+    @pytest.fixture(autouse=True)
+    def client(self, stem_4d_dataset):
+        self.win = stem_4d_dataset["window"]
+        self.client = self.win.dask_manager.client
+
+    def _make_signal(self, chunks):
+        """4D STEM signal: filled positions have a 4x4 rectangle in diffraction centre."""
+        import hyperspy.api as hs
+        nav_y, nav_x, ky, kx = 4, 4, 16, 16
+        rect_y, rect_x = slice(6, 10), slice(6, 10)  # 4x4 centre rectangle
+
+        data = np.zeros((nav_y, nav_x, ky, kx), dtype=np.float32)
+        for ny in range(nav_y):
+            for nx in range(nav_x):
+                if (ny + nx) % 2 == 0:  # checkerboard of filled/empty
+                    data[ny, nx, rect_y, rect_x] = 1.0
+
+        sig = hs.signals.Signal2D(da.from_array(data, chunks=chunks))
+        # Set unit scale and zero offset on signal axes so ROI coords == pixel coords
+        sig.axes_manager.signal_axes[0].scale = 1.0   # kx
+        sig.axes_manager.signal_axes[0].offset = 0.0
+        sig.axes_manager.signal_axes[1].scale = 1.0   # ky
+        sig.axes_manager.signal_axes[1].offset = 0.0
+        return sig, data
+
+    def _make_rect_roi(self):
+        """RectROI exactly covering the 4x4 rectangle at diffraction pixels [6:10, 6:10].
+
+        pyqtgraph scene-x = ky (data axis 0 of signal slice).
+        pyqtgraph scene-y = kx (data axis 1 of signal slice).
+        Rectangle runs ky 6..10 (scene-x) and kx 6..10 (scene-y).
+        RectROI pos=(scene_x0, scene_y0), size=(scene_dx, scene_dy).
+        """
+        from pyqtgraph import RectROI
+        return RectROI(pos=(6, 6), size=(4, 4))
+
+    def _expected(self, data):
+        """Expected virtual image: 16 for filled positions, 0 for empty."""
+        expected = np.zeros((4, 4), dtype=np.float32)
+        for ny in range(4):
+            for nx in range(4):
+                expected[ny, nx] = data[ny, nx, 6:10, 6:10].sum()
+        return expected
+
+    def _run(self, chunks):
+        from spyde.actions.pyxem import roi_to_mask
+        from spyde.drawing.update_functions import compute_virtual_image_kernel
+
+        sig, data_np = self._make_signal(chunks)
+        roi = self._make_rect_roi()
+        mask = roi_to_mask(roi, sig)
+
+        # Mask must be (ky_size, kx_size) = (16, 16)
+        assert mask.shape == (16, 16), f"mask shape {mask.shape}"
+        # Mask must select exactly the rectangle pixels [6:10, 6:10]
+        assert mask[6:10, 6:10].sum() == 16, "mask should select 16 pixels"
+        assert mask[:6, :].sum() == 0, "pixels outside rect should be 0"
+        assert mask[10:, :].sum() == 0, "pixels outside rect should be 0"
+
+        future = compute_virtual_image_kernel(sig.data, mask, self.client, None)
+        result = future.result()
+
+        expected = self._expected(data_np)
+        np.testing.assert_allclose(
+            result, expected, atol=1e-4,
+            err_msg=f"chunks={chunks}: result mismatch\n{result}\n!=\n{expected}"
+        )
+
+    def test_single_chunk(self):
+        self._run(chunks=(4, 4, 16, 16))
+
+    def test_nav_chunked(self):
+        """Nav axes chunked into rows of 1 — typical real STEM chunking."""
+        self._run(chunks=(1, 4, 16, 16))
+
+    def test_nav_fully_chunked(self):
+        """Both nav axes chunked individually."""
+        self._run(chunks=(1, 1, 16, 16))
+
+    def test_signal_axes_chunked(self):
+        """Signal axes also chunked — was the original failing case."""
+        self._run(chunks=(1, 1, 4, 4))
+
+    def test_mixed_chunk_sizes(self):
+        """Uneven nav chunks like a real large dataset (22-row tiles, single signal chunk)."""
+        self._run(chunks=(2, 3, 16, 16))
+
+
 class TestGPUWorkerSetup:
     def test_probe_gpus_returns_zero_when_absent(self):
         """_probe_gpus returns 0 when nvidia-smi is not found."""

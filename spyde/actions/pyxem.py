@@ -71,9 +71,12 @@ def roi_to_mask(roi, signal) -> np.ndarray:
         size = roi.size()
         x0, x1 = pos.x(), pos.x() + size.x()
         y0, y1 = pos.y(), pos.y() + size.y()
+        # Use half-open interval [x0, x1) so the ROI covers exactly
+        # the pixels whose left edges fall within the rectangle, matching
+        # pyqtgraph's convention that pos+size is the exclusive right edge.
         mask_bool = (
-            (scene_x >= x0) & (scene_x <= x1) &
-            (scene_y >= y0) & (scene_y <= y1)
+            (scene_x >= x0) & (scene_x < x1) &
+            (scene_y >= y0) & (scene_y < y1)
         )
 
     else:
