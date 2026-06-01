@@ -1,5 +1,4 @@
 import time
-from multiprocessing.shared_memory import SharedMemory
 
 from PySide6 import QtCore, QtGui
 
@@ -108,14 +107,23 @@ class Plot(PlotItem):
         self._updating_text = None  # type: pg.TextItem | None
         self._needs_hide_updating_text = False
 
-        # shared memory
-        BUFFER_SIZE = (8192 * 8192 * 4) + 128  # Example size, adjust as needed
-        self.shared_memory = SharedMemory(name=f"plot_buffer{id(self)}",
-                                          create=True,
-                                          size=BUFFER_SIZE)
+        self._shared_memory = None  # allocated lazily on first 2D use
 
         self.data_max_y = 1  # type: float
         self.data_min_y = 0  # type: float
+
+    @property
+    def shared_memory(self):
+        """Allocate shared memory lazily on first access (2D plots only)."""
+        if self._shared_memory is None:
+            from multiprocessing.shared_memory import SharedMemory
+            BUFFER_SIZE = (8192 * 8192 * 4) + 128
+            self._shared_memory = SharedMemory(
+                name=f"plot_buffer{id(self)}",
+                create=True,
+                size=BUFFER_SIZE,
+            )
+        return self._shared_memory
 
     @property
     def toolbars(self):
@@ -735,6 +743,14 @@ class Plot(PlotItem):
                     child_plot.close()
                 except Exception:
                     pass
+
+        if self._shared_memory is not None:
+            try:
+                self._shared_memory.close()
+                self._shared_memory.unlink()
+            except Exception:
+                pass
+            self._shared_memory = None
 
     def _apply_pending_navigator_assignment(self) -> bool:
         """Replace this plot with the queued navigator signal, if any."""
