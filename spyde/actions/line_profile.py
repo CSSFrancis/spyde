@@ -158,6 +158,15 @@ def add_line_profile(
     )
 
     # ── Branch: signal plot vs navigator plot ────────────────────────────────
+    def _remove_roi():
+        """Remove the LineROI from the parent plot when any preview window closes."""
+        try:
+            toolbar.parent_toolbar.unregister_action_plot_item(
+                action_name="Line Profile", key=action_name
+            )
+        except Exception:
+            pass
+
     if not plot.is_navigator:
         # Signal plot: 1 preview window, Signal1D commit
         preview_window = main_window.add_plot_window(
@@ -170,6 +179,13 @@ def add_line_profile(
             preview_plot.addItem(preview_plot.line_item)
         indicator = ComputeStatusIndicator(color=color)
         preview_window.set_compute_indicator(indicator)
+
+        # Remove the LineROI from the parent plot when the preview window closes.
+        _orig_close = preview_window.close_window
+        def _close_with_roi_cleanup():
+            _remove_roi()
+            _orig_close()
+        preview_window.close_window = _close_with_roi_cleanup
 
         toolbar.parent_toolbar.register_action_plot_window(
             action_name="Line Profile", plot_window=preview_window, key=action_name
@@ -252,6 +268,13 @@ def add_line_profile(
         profile_plot = profile_window.add_new_plot()
         if profile_plot.line_item not in profile_plot.items:
             profile_plot.addItem(profile_plot.line_item)
+
+        _orig_close_profile = profile_window.close_window
+        def _close_profile_with_roi_cleanup():
+            _remove_roi()
+            _orig_close_profile()
+        profile_window.close_window = _close_profile_with_roi_cleanup
+
         toolbar.parent_toolbar.register_action_plot_window(
             action_name="Line Profile", plot_window=profile_window,
             key=action_name + "_profile"
@@ -268,6 +291,13 @@ def add_line_profile(
         if sum_plot.image_item not in sum_plot.items:
             sum_plot.addItem(sum_plot.image_item)
         sum_window.set_compute_indicator(sum_indicator)
+
+        _orig_close_sum = sum_window.close_window
+        def _close_sum_with_roi_cleanup():
+            _remove_roi()
+            _orig_close_sum()
+        sum_window.close_window = _close_sum_with_roi_cleanup
+
         toolbar.parent_toolbar.register_action_plot_window(
             action_name="Line Profile", plot_window=sum_window,
             key=action_name + "_sum"

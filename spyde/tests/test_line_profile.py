@@ -241,6 +241,19 @@ class TestLineProfileSignalPlot:
         scale = new_signal.axes_manager.signal_axes[0].scale
         assert scale > 0, "Axis scale must be positive"
 
+    def test_closing_preview_removes_roi_from_plot(self, qtbot, stem_4d_dataset):
+        """Closing the line profile preview window must remove the LineROI from the signal plot."""
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        tb, lp_widget, action_name, caret_box, roi, preview_window = _add_line_profile_on_signal(qtbot, win)
+
+        assert roi in sig.items, "ROI should be on signal plot before close"
+
+        preview_window.close()
+        qtbot.wait(200)
+
+        assert roi not in sig.items, "ROI should be removed from signal plot after preview window closes"
+
 
 def _add_line_profile_on_nav(qtbot, win):
     """Helper: add a Line Profile ROI to the navigator plot."""
@@ -458,6 +471,32 @@ class TestLineProfileNavPlot:
 
         new_signal = win.signal_trees[n_signal_trees].root
         assert new_signal.data.ndim == 3, "Width > 1 must still produce 3D signal"
+
+    def test_closing_profile_window_removes_roi(self, qtbot, stem_4d_dataset):
+        """Closing the profile preview window must remove the LineROI from the navigator plot."""
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        tb, lp_widget, action_name, caret_box, roi, profile_window, sum_window = _add_line_profile_on_nav(qtbot, win)
+
+        assert roi in nav.items, "ROI should be on navigator plot before close"
+
+        profile_window.close()
+        qtbot.wait(200)
+
+        assert roi not in nav.items, "ROI should be removed from navigator plot after profile window closes"
+
+    def test_closing_sum_window_removes_roi(self, qtbot, stem_4d_dataset):
+        """Closing the sum preview window must also remove the LineROI from the navigator plot."""
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+        tb, lp_widget, action_name, caret_box, roi, profile_window, sum_window = _add_line_profile_on_nav(qtbot, win)
+
+        assert roi in nav.items, "ROI should be on navigator plot before close"
+
+        sum_window.close()
+        qtbot.wait(200)
+
+        assert roi not in nav.items, "ROI should be removed from navigator plot after sum window closes"
 
 
 def test_preview_window_positioned_near_owner(qtbot, stem_4d_dataset):
