@@ -554,27 +554,26 @@ class BaseSignalTree:
         return None
 
     def add_node(self, parent_signal, new_signal, transformation: str):
-        """
-        Add a new node to the signal tree.
-        Parameters
-        ----------
-        parent_signal : BaseSignal
-            The parent signal in the tree.
-        new_signal : BaseSignal
-            The new signal to add.
-        transformation : str
-            The transformation applied to create the new signal.
-        """
+        """Add a new node to the signal tree."""
         parent_node = self.get_node(parent_signal)
         if parent_node is None:
             raise ValueError("Parent node not found in the tree.")
+        # Handle name collision
+        final_name = transformation
+        if final_name in parent_node.children:
+            count = 1
+            candidate = f"{transformation}_{count}"
+            while candidate in parent_node.children:
+                count += 1
+                candidate = f"{transformation}_{count}"
+            final_name = candidate
         child = SignalNode(
             signal=new_signal,
-            name=transformation,
+            name=final_name,
             parent=parent_node,
             transformation=transformation,
         )
-        parent_node.children[transformation] = child
+        parent_node.children[final_name] = child
 
     def add_transformation(
         self,

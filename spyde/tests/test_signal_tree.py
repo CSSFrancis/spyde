@@ -92,8 +92,8 @@ class TestBaseSignalTreeTraversal:
         nodes = list(tree.walk())
         assert len(nodes) == 2
         signals_visited = [n.signal for n in nodes]
-        assert sig in signals_visited
-        assert child_sig in signals_visited
+        assert any(s is sig for s in signals_visited)
+        assert any(s is child_sig for s in signals_visited)
 
     def test_walk_branching_tree(self):
         tree, sig = _make_tree()
