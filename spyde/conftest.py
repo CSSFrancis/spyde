@@ -43,32 +43,30 @@ def _reset_window(win: MainWindow) -> MainWindow:
     def _noop(*args, **kwargs):
         pass
 
-    # Patch close_window on all subwindows to prevent cascade errors
+    # Patch close_window on all subwindows to prevent cascade errors during removal
     for sw in list(win.mdi_area.subWindowList()):
         try:
             sw.close_window = _noop
-        except Exception:
+        except (AttributeError, RuntimeError):
             pass
 
-    # Also close any signal trees explicitly before clearing
-    for st in list(getattr(win, 'signal_trees', [])):
+    # Close signal trees before clearing so they can do their own cleanup
+    for st in list(win.signal_trees):
         try:
             st.close()
-        except Exception:
+        except (AttributeError, RuntimeError):
             pass
 
     win.plot_subwindows.clear()
     win.signal_trees.clear()
 
-    # Explicitly remove each subwindow from the MDI area so subWindowList() empties
+    # removeSubWindow actually removes from subWindowList(); closeAllSubWindows only hides
     for sw in list(win.mdi_area.subWindowList()):
         try:
             win.mdi_area.removeSubWindow(sw)
             sw.hide()
-        except Exception:
+        except (AttributeError, RuntimeError):
             pass
-
-    win.mdi_area.closeAllSubWindows()
 
     # Wait up to 2s for all subwindows to actually close
     deadline = 2000
