@@ -6,10 +6,9 @@ from typing import Union
 from functools import partial
 import webbrowser
 from time import perf_counter
-from uuid import uuid4
 
 from PySide6.QtGui import QAction, QIcon, QBrush
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QSplashScreen,
     QMainWindow,
@@ -21,8 +20,6 @@ from PySide6.QtWidgets import (
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtGui import QPixmap, QColor
 
-from dask.distributed import Future
-import pyqtgraph as pg
 import hyperspy.api as hs
 import pyxem.data
 from hyperspy.signal import BaseSignal
@@ -42,10 +39,10 @@ from spyde.external.pyqtgraph.histogram_widget import (
     HistogramLUTItem,
 )
 from spyde.workers.plot_update_worker import PlotUpdateWorker
-from spyde.actions.base import NAVIGATOR_DRAG_MIME
 from spyde.drawing.colormaps import COLORMAPS
 from spyde.dask_manager import DaskManager
 from spyde.dock_manager import DockManager
+from spyde.mdi_manager import MDIManager
 from spyde.drawing.signal_tree_presenter import build_axes_groups, build_metadata_dict
 
 SUPPORTED_EXTS = (".hspy", ".mrc", ".tif", ".tiff", ".de5")  # extend as needed
@@ -81,8 +78,6 @@ class MainWindow(QMainWindow):
 
     def __init__(self, app=None):
         super().__init__()
-        self._in_subwindow_activation = False
-        self._original_layout = None
         self.btn_reset = None
         self.btn_auto = None
         self.app = app
@@ -130,10 +125,11 @@ class MainWindow(QMainWindow):
         self.settings = QtCore.QSettings("spyde", "SpyDE")
         self.recent_menu = None
 
-        self.plot_subwindows = []  # type: list[PlotWindow]
         self._pending_signal_queue: deque = deque()  # thread-safe deque for cross-thread signal delivery
+        # Temporary empty list; replaced by mdi_manager.plot_subwindows after MDIManager is created
+        self.plot_subwindows: list["PlotWindow"] = []
+        self.signal_trees: list["BaseSignalTree"] = []
 
-        self.mdi_area.subWindowActivated.connect(self.on_subwindow_activated)
         self.create_menu()
         self.setMouseTracking(True)
 
@@ -219,11 +215,8 @@ class MainWindow(QMainWindow):
         else:
             self.mdi_area.setStyleSheet("background-color: #0d0d0d;")
 
-        self.signal_trees = []  # type: list[BaseSignalTree]
         self.current_selected_signal_tree = None  # type: Union[BaseSignalTree, None]
         self._pending_navigator_assignment = None
-        self._navigator_drag_payloads: dict[str, dict[str, object]] = {}
-        self._navigator_drag_over_active = False
         with log_startup_time("Plot control dock creation"):
             self.dock_manager = DockManager(main_window=self, parent=self)
             # expose selectors_layout for Plot.show_selector_control_widget compatibility
@@ -242,9 +235,12 @@ class MainWindow(QMainWindow):
         self.cursor_readout = QtWidgets.QLabel("x: -, y: -, value: -")
         self.statusBar().addPermanentWidget(self.cursor_readout)
 
-        # For accepting dropped files into the mdi area
-        self.mdi_area.setAcceptDrops(True)
-        self.mdi_area.installEventFilter(self)
+        self.mdi_manager = MDIManager(mdi_area=self.mdi_area, main_window=self, parent=self)
+        # Share the lists so existing code can still do win.plot_subwindows / win.signal_trees
+        self.plot_subwindows = self.mdi_manager.plot_subwindows
+        self.signal_trees = self.mdi_manager.signal_trees
+        self.mdi_manager.subwindow_activated.connect(self.dock_manager.on_active_plot_changed)
+
         print(f"Starting Dask LocalCluster with {workers} workers, {threads_per_worker} threads per worker")
         self.dask_manager = DaskManager(
             n_workers=workers,
@@ -635,106 +631,25 @@ class MainWindow(QMainWindow):
         print("Example data loaded:", name)
 
     def _auto_position_near_owner(self, pw: "PlotWindow") -> None:
-        """Position pw to the right of its owner, or below if no room."""
-        owner = pw.owner_plot_window
-        if owner is None:
-            return
-        mdi_rect = self.mdi_area.rect()
-        gap = 8
-        # Try right of owner
-        x = owner.x() + owner.width() + gap
-        y = owner.y()
-        if x + pw.width() <= mdi_rect.width():
-            pw.move(x, y)
-            return
-        # Try below owner
-        x = owner.x()
-        y = owner.y() + owner.height() + gap
-        if y + pw.height() <= mdi_rect.height():
-            pw.move(x, y)
-            return
-        # Clamp to MDI bounds as fallback
-        x = min(x, max(0, mdi_rect.width() - pw.width()))
-        y = min(y, max(0, mdi_rect.height() - pw.height()))
-        pw.move(x, y)
+        """Delegate to MDIManager."""
+        self.mdi_manager.auto_position_near_owner(pw)
 
     def tile_active_windows(self) -> None:
-        """Tile all Shown PlotWindows (active SignalTree) in an even grid."""
-        import math
-        active = self.mdi_area.activeSubWindow()
-        if not isinstance(active, PlotWindow):
-            return
-        active_tree = active.signal_tree
-        shown = [
-            pw for pw in self.plot_subwindows
-            if pw.signal_tree is active_tree and pw.isVisible()
-        ]
-        n = len(shown)
-        if n == 0:
-            return
-        cols = math.ceil(math.sqrt(n))
-        rows = math.ceil(n / cols)
-        mdi_rect = self.mdi_area.rect()
-        margin = 6
-        cell_w = (mdi_rect.width() - margin * (cols + 1)) // cols
-        cell_h = (mdi_rect.height() - margin * (rows + 1)) // rows
-        for i, pw in enumerate(shown):
-            row = i // cols
-            col = i % cols
-            x = margin + col * (cell_w + margin)
-            y = margin + row * (cell_h + margin)
-            pw.setGeometry(x, y, cell_w, cell_h)
+        self.mdi_manager.tile_active_windows()
 
     def add_plot_window(
         self,
-        is_navigator: bool = False,  # if navigator then it will share the navigation selectors
-        plot_manager: Union["MultiplotManager", None] = None,
-        signal_tree: Union["BaseSignalTree", None] = None,
+        is_navigator: bool = False,
+        plot_manager=None,
+        signal_tree=None,
         *args,
         **kwargs,
-    ) -> PlotWindow:
-        """
-        Plot window construction:
-        Create a new PlotWindow instance, add it to the MDI area, and set it up.
-
-        Parameters
-        ----------
-        is_navigator : bool
-            Whether this plot window is for a navigator signal.
-        plot_manager : MultiplotManager or None
-            The plot manager to associate with this plot window.
-        signal_tree : BaseSignalTree or None
-            The signal tree to associate with this plot window.
-        Returns
-        -------
-        PlotWindow
-            The created PlotWindow instance.
-        """
-        pw = PlotWindow(
+    ) -> "PlotWindow":
+        return self.mdi_manager.add_plot_window(
             is_navigator=is_navigator,
-            main_window=self,
-            signal_tree=signal_tree,
             plot_manager=plot_manager,
-            *args,
-            **kwargs,
+            signal_tree=signal_tree,
         )
-        # pw.setWidget(pw.container)
-
-        pw.resize(self.screen_size.height() // 3, self.screen_size.height() // 3)
-
-        # Add to MDI and make the subwindow frameless
-        self.mdi_area.addSubWindow(pw)
-        try:
-            # Remove title bar and frame
-            pw.setWindowFlags(pw.windowFlags() | Qt.WindowType.FramelessWindowHint)
-            pw.setStyleSheet("QMdiSubWindow { border: none; }")
-        except Exception:
-            pass
-
-        pw.show()
-        self.plot_subwindows.append(pw)
-        # set the main window reference in the plot
-        return pw
 
     def update_metadata_widget(self, plot: Plot) -> None:
         """Rebuild metadata panel for the active Plot's signal tree."""
@@ -827,326 +742,41 @@ class MainWindow(QMainWindow):
         if hasattr(self, "cursor_readout") and self.cursor_readout is not None:
             self.cursor_readout.setText(txt)
 
+
+
+
     def on_subwindow_activated(self, window: "PlotWindow") -> None:
-        """MDI activation handler: update toolbars, metadata, histogram binding, and colormap selector."""
-        if getattr(self, '_in_subwindow_activated', False):
-            return
-        self._in_subwindow_activated = True
-        try:
-            self._on_subwindow_activated_impl(window)
-        finally:
-            self._in_subwindow_activated = False
+        """Delegate to MDIManager (called from Plot and PlotWindow)."""
+        self.mdi_manager._on_subwindow_activated(window)
 
-    def _on_subwindow_activated_impl(self, window: "PlotWindow") -> None:
-        """Implementation of on_subwindow_activated — never call directly."""
-        print("Subwindow activated:", window)
-        if window is None or not isinstance(window, PlotWindow):
-            return
+    # ── Navigator drag/drop delegators (used by tests and legacy callers) ────
 
-        plot = window.current_plot_item
-        plot_state = getattr(plot, "plot_state", None)
-        if plot is None:
-            return
+    def navigator_enter(self) -> None:
+        self.mdi_manager._navigator_enter()
 
-        # hide all toolbar from other plots in the same window except toolbars from
-        # the active signal tree
-        if window.signal_tree is not None and window.signal_tree.navigator_plot_manager is not None:
-            active_plots = [w.current_plot_item for
-                            w in window.signal_tree.navigator_plot_manager.all_plot_windows
-                            if w.isVisible()]
-        else:
-            active_plots = [plot]
+    def navigator_move(self, pos) -> None:
+        self.mdi_manager._navigator_move(pos)
 
-        for plt in active_plots:
-            if getattr(plt, "plot_state", None) is not None:
-                plt.plot_state.show_toolbars()
-            if hasattr(plt, "show_selector_control_widget"):
-                plt.show_selector_control_widget()
+    def navigator_leave(self) -> None:
+        self.mdi_manager._navigator_leave()
 
-        for pw in self.plot_subwindows:
-            for plt in pw.plots:
-                if plt in active_plots:
-                    continue
-                if getattr(plt, "plot_state", None) is not None:
-                    plt.plot_state.hide_toolbars()
+    def navigator_drop(self, pos, mime_data) -> None:
+        self.mdi_manager._navigator_drop(pos, mime_data)
 
-        # ── 3-state visibility ───────────────────────────────────────────────────
-        from PySide6.QtWidgets import QGraphicsOpacityEffect
-        active_tree = window.signal_tree
-        for pw in self.plot_subwindows:
-            same_tree = (pw.signal_tree is active_tree)
-            is_action_preview = (pw.owner_plot_window is not None)
-            action = getattr(pw, 'controlling_action', None)
-            # Non-checkable actions don't track toggle state — always show their windows
-            action_wants_visible = (action is None or not action.isCheckable() or action.isChecked())
+    def _active_plot(self):
+        return self.mdi_manager.active_plot()
 
-            if same_tree and action_wants_visible:
-                if not pw.isVisible():
-                    pw.show()
-                pw.setGraphicsEffect(None)
-            elif same_tree and not action_wants_visible:
-                pw.hide()
-            elif is_action_preview:
-                pw.hide()
-            else:
-                if not pw.isVisible():
-                    pw.show()
-                effect = QGraphicsOpacityEffect(pw)
-                effect.setOpacity(0.65)
-                pw.setGraphicsEffect(effect)
-        # ── end 3-state visibility ───────────────────────────────────────────────
+    def _active_plot_window(self):
+        return self.mdi_manager.active_plot_window()
 
-        st = getattr(window, "signal_tree", None)
-        if st is not None and st is not self.current_selected_signal_tree:
-            self.current_selected_signal_tree = st
-
-        self.dock_manager.on_active_plot_changed(window)
-
-
-
-    def _active_plot(self) -> Union[Plot, None]:
-        """Return the currently active QMdiSubWindow (Plot) or None."""
-        sub = self.mdi_area.activeSubWindow()
-        if not isinstance(sub, PlotWindow):
-            return None
-        else:
-            return sub.current_plot_item
-
-    def _active_plot_window(self) -> Union[PlotWindow, None]:
-        """Return the currently active QMdiSubWindow (PlotWindow) or None."""
-        sub = self.mdi_area.activeSubWindow()
-        if not isinstance(sub, PlotWindow):
-            return None
-        else:
-            return sub
-
-
-    def _is_supported_file(self, path: str) -> bool:
-        try:
-            return os.path.isfile(path) and path.lower().endswith(SUPPORTED_EXTS)
-        except Exception:
-            return False
-
-    def _extract_file_paths(self, mime) -> list[str]:
-        paths = []
-        if mime is None:
-            return paths
-        if mime.hasUrls():
-            for url in mime.urls():
-                if url.isLocalFile():
-                    p = url.toLocalFile()
-                    if p:
-                        paths.append(p)
-        elif mime.hasText():
-            for chunk in mime.text().split():
-                if os.path.isfile(chunk):
-                    paths.append(chunk)
-        return paths
 
     def _handle_drop_files(self, paths: list[str]) -> None:
-        files = [p for p in paths if self._is_supported_file(p)]
+        files = [p for p in paths if os.path.isfile(p) and p.lower().endswith(SUPPORTED_EXTS)]
         if files:
             self._create_signals(files)
 
-    # Only handle drag/drop on the MDI area
-    def eventFilter(
-        self,
-        obj,
-        event: QEvent,
-    ) -> bool:
-        """Handle clicks, drags and drops into the main window."""
-
-        if event is not None:
-            et = event.type()
-            if obj is self._active_plot_window() and et == QEvent.Type.MouseButtonPress:
-                try:
-                    pos = event.position().toPoint()
-                except Exception:
-                    pos = event.pos()
-                print("click pos:", pos)
-                for plot in self.plots:
-                    contains = plot.geometry().contains(pos)
-                    if contains:
-                        print("Clicked on plot:", plot)
-                        self.current_plot_item = plot
-
-            if obj is self.mdi_area:
-                et = event.type()
-
-                # Handle navigator drag events only when entering/moving over the active subwindow
-                # on drag start then save the layout
-
-                if et in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
-                    mime = event.mimeData()
-                    if mime is not None and mime.hasFormat(NAVIGATOR_DRAG_MIME):
-                        active_sub = self.mdi_area.activeSubWindow()
-                        if active_sub is not None:
-                            try:
-                                pos = event.position().toPoint()
-                            except Exception:
-                                pos = event.pos()
-                            contains = active_sub.geometry().contains(pos)
-                            if contains:
-                                local_x = pos.x() - active_sub.geometry().x()
-                                local_y = pos.y() - active_sub.geometry().y()
-                                if not self._navigator_drag_over_active:
-                                    self.navigator_enter()
-                                    print(
-                                        f"Navigator drag entered active subwindow at local position: ({local_x}, {local_y})"
-                                    )
-                                else:
-                                    self.navigator_move(pos=pos)
-                                    print(
-                                        f"Navigator drag moving inside active subwindow at local position: ({local_x}, {local_y})"
-                                    )
-                                self._navigator_drag_over_active = True
-                                event.acceptProposedAction()
-                                return True
-                            if self._navigator_drag_over_active:
-                                print("Navigator drag over")
-                                self.navigator_leave()
-                                print("Navigator drag left active subwindow")
-                                self._navigator_drag_over_active = False
-                            return False
-                    # Fallback: existing file-drag handling (unchanged)
-                    paths = self._extract_file_paths(mime)
-                    if any(self._is_supported_file(p) for p in paths):
-                        event.acceptProposedAction()
-                        return True
-
-                elif et == QEvent.Type.Drop:
-                    mime = event.mimeData()
-                    # Handle navigator drop only if over active subwindow
-                    if mime is not None and mime.hasFormat(NAVIGATOR_DRAG_MIME):
-                        active_sub = self.mdi_area.activeSubWindow()
-                        try:
-                            pos = event.position().toPoint()
-                        except Exception:
-                            pos = event.pos()
-                        contains = (
-                            active_sub is not None
-                            and active_sub.geometry().contains(pos)
-                        )
-                        if contains:
-                            local_x = pos.x() - active_sub.geometry().x()
-                            local_y = pos.y() - active_sub.geometry().y()
-                            print(
-                                f"Navigator dropped into active subwindow at local position: ({local_x}, {local_y})"
-                            )
-                            self._navigator_drag_over_active = False
-                            self.navigator_drop(pos=pos, mime_data=mime)
-                            event.acceptProposedAction()
-                            return True
-                        if self._navigator_drag_over_active:
-                            print("Navigator drag left active subwindow before drop")
-                            self._navigator_drag_over_active = False
-                        return False
-                    # Fallback: existing file-drop handling
-                    paths = self._extract_file_paths(mime)
-                    if any(self._is_supported_file(p) for p in paths):
-                        self._create_signals(paths)
-                        event.acceptProposedAction()
-                        return True
-
-                elif et == QEvent.Type.DragLeave:
-                    if self._navigator_drag_over_active:
-                        print("Navigator drag left active subwindow")
-                        self.navigator_leave()
-                        self._navigator_drag_over_active = False
-            return super().eventFilter(obj, event)
-        return None
-
     def register_navigator_drag_payload(self, signal, nav_manager) -> str:
-        token = uuid4().hex
-        self._navigator_drag_payloads[token] = {
-            "signal": signal,
-            "nav_manager": nav_manager,
-        }
-        return token
-
-    def navigator_enter(self):
-        """
-        Handle navigator drag enter event. Creates a visual placeholder. This is used to show where the
-        navigator plot will be placed.
-        """
-        # Create placeholder
-        placeholder = pg.PlotItem()
-        placeholder.setTitle("Drop Navigator Here", color="#888888")
-        placeholder.hideAxis("left")
-        placeholder.hideAxis("bottom")
-
-        rect = pg.QtWidgets.QGraphicsRectItem()
-        rect.setBrush(pg.mkBrush((100, 100, 255, 100)))
-        rect.setPen(pg.mkPen((100, 100, 255), width=2))
-        placeholder.addItem(rect)
-
-        self._navigator_placeholder = placeholder
-        self._navigator_placeholder_rect = rect
-
-    def navigator_move(self, pos: QtCore.QPointF):
-        """
-        Handle navigator drag move event. Just repositions the placeholder without clearing/redrawing
-        the entire layout.
-
-        This is more efficient than recreating the layout each time but more complicated...
-        """
-        active_plot_window = self._active_plot_window()
-        if active_plot_window is None or not hasattr(self, "_navigator_placeholder"):
-            return
-        # Calculate new position
-        active_plot_window._build_new_layout(
-            drop_pos=pos, plot_to_add=self._navigator_placeholder
-        )
-        # self.build_new_layout(active_plot_window, drop_pos=pos, plot_to_add=self._navigator_placeholder)
-
-        if hasattr(self, "_navigator_placeholder_rect"):
-            vb = self._navigator_placeholder.getViewBox()
-            self._navigator_placeholder_rect.setRect(vb.rect())
-
-    def navigator_leave(self):
-        """
-        Handle navigator drag leave event. Removes the placeholder and
-        restores the original layout.
-        """
-        active_plot_window = self._active_plot_window()
-        print("Setting back original layout:", active_plot_window.previous_subplots_pos)
-        active_plot_window.set_graphics_layout_widget(
-            active_plot_window.previous_subplots_pos
-        )
-
-    def navigator_drop(self, pos: QtCore.QPointF, mime_data):
-        """
-        Handle navigator drop event. Creates the actual navigator plot
-        at the drop position.
-        """
-        active_plot_window = self._active_plot_window()
-        if active_plot_window is None:
-            return
-        nav_plot = active_plot_window.insert_new_plot(
-            drop_pos=pos,
-        )
-
-        # Extract navigator data from mime
-        token = mime_data.data(NAVIGATOR_DRAG_MIME).data().decode("utf-8")
-        payload = self._navigator_drag_payloads.pop(token, None)
-        if payload is None:
-            return
-
-        signal = payload["signal"]  # type: hs.signals.BaseSignal
-        print("Adding navigator signal to plot:", signal)
-        for navigation_signal in nav_plot.signal_tree.navigator_signals.values():
-            nav_plot.multiplot_manager.add_plot_states_for_navigation_signals(
-                navigation_signal
-            )
-        print("setting plot state to:", signal[0])
-        print(signal[0].data)
-        nav_plot.set_plot_state(signal=signal[0])
-        # Clean up
-        self._original_layout_state = {}
-        active_plot_window.previous_subplots_pos = {}
-        active_plot_window.previous_subplot_added = None
-        self._original_layout = None
-        # TODO: reset view to fit data
+        return self.mdi_manager.register_navigator_drag_payload(signal, nav_manager)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         self.dask_manager.shutdown()

@@ -113,7 +113,7 @@ def add_fft_selector(toolbar: "RoundedToolBar",
             signal_tree=signal_tree,
         )
         plot_window.owner_plot_window = plot.plot_window
-        m_window._auto_position_near_owner(plot_window)
+        m_window.mdi_manager.auto_position_near_owner(plot_window)
 
         fft_plot = plot_window.add_new_plot()
         place_holder_signal = hs.signals.Signal2D(
