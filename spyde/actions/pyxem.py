@@ -11,36 +11,50 @@ from spyde.external.pyqtgraph.ring_roi import RingROI
 
 
 def roi_to_mask(roi, signal) -> np.ndarray:
-    """Convert a PyQtGraph ROI to a float32 mask over the signal axes.
+    """Convert a PyQtGraph ROI to a float32 mask matching signal.data's last two axes.
 
-    Uses the signal axes scale/offset to build a pixel coordinate grid.
-    Returns shape (nkx, nky), dtype float32, values 0.0 or 1.0.
+    HyperSpy Signal2D stores data as (..., slow_k, fast_k) where:
+      signal_axes[0] = fast_k (innermost, kx)
+      signal_axes[1] = slow_k (next-innermost, ky)
+
+    pyqtgraph renders ImageItem in col-major order: data[i, j] lands at scene
+    position (x=i, y=j).  With data shape (ky_size, kx_size), axis 0 (ky) maps
+    to scene-x and axis 1 (kx) maps to scene-y.
+
+    Therefore ROI coordinates from the scene have:
+      roi.pos().x() / roi.size().x()  → ky coordinate (scene-x = ky)
+      roi.pos().y() / roi.size().y()  → kx coordinate (scene-y = kx)
+
+    The mask returned has shape (ky_size, kx_size) = (slow_k, fast_k), matching
+    data[..., ky, kx] so that da.tensordot(..., axes=([-2,-1],[0,1])) is correct.
     """
-    sig_axes = signal.axes_manager.signal_axes  # [kx_axis, ky_axis] — last two
-    nkx = sig_axes[1].size
-    nky = sig_axes[0].size
-    scale_x = sig_axes[1].scale
-    scale_y = sig_axes[0].scale
-    offset_x = sig_axes[1].offset
-    offset_y = sig_axes[0].offset
+    sig_axes = signal.axes_manager.signal_axes
+    # sig_axes[0] = fast/innermost = kx;  sig_axes[1] = slow/next = ky
+    ky_axis = sig_axes[1]
+    kx_axis = sig_axes[0]
 
-    rows = np.arange(nkx)
-    cols = np.arange(nky)
-    col_grid, row_grid = np.meshgrid(cols, rows)
+    ky_size = ky_axis.size
+    kx_size = kx_axis.size
 
-    x_data = col_grid * scale_x + offset_x
-    y_data = row_grid * scale_y + offset_y
+    # Build coordinate grids over (ky_size, kx_size) — matching data shape
+    ky_pixels = np.arange(ky_size)
+    kx_pixels = np.arange(kx_size)
+    # kx_grid[ky_idx, kx_idx] = kx_idx,  ky_grid[ky_idx, kx_idx] = ky_idx
+    kx_grid, ky_grid = np.meshgrid(kx_pixels, ky_pixels)
+
+    # Scene-x = ky coordinate;  scene-y = kx coordinate  (pyqtgraph col-major)
+    scene_x = ky_grid * ky_axis.scale + ky_axis.offset
+    scene_y = kx_grid * kx_axis.scale + kx_axis.offset
 
     if isinstance(roi, RingROI):
-        inner_roi = roi.rois[0]
         outer_roi = roi.rois[1]
         outer_pos = outer_roi.pos()
         outer_size = outer_roi.size()
         cx = outer_pos.x() + outer_size.x() / 2
         cy = outer_pos.y() + outer_size.y() / 2
-        inner_r = inner_roi.size().x() / 2
+        inner_r = roi.rois[0].size().x() / 2
         outer_r = outer_size.x() / 2
-        dist2 = (x_data - cx) ** 2 + (y_data - cy) ** 2
+        dist2 = (scene_x - cx) ** 2 + (scene_y - cy) ** 2
         mask_bool = (dist2 >= inner_r ** 2) & (dist2 <= outer_r ** 2)
 
     elif isinstance(roi, CircleROI):
@@ -49,7 +63,7 @@ def roi_to_mask(roi, signal) -> np.ndarray:
         cx = pos.x() + size.x() / 2
         cy = pos.y() + size.y() / 2
         r = size.x() / 2
-        dist2 = (x_data - cx) ** 2 + (y_data - cy) ** 2
+        dist2 = (scene_x - cx) ** 2 + (scene_y - cy) ** 2
         mask_bool = dist2 <= r ** 2
 
     elif isinstance(roi, RectROI):
@@ -57,7 +71,10 @@ def roi_to_mask(roi, signal) -> np.ndarray:
         size = roi.size()
         x0, x1 = pos.x(), pos.x() + size.x()
         y0, y1 = pos.y(), pos.y() + size.y()
-        mask_bool = (x_data >= x0) & (x_data <= x1) & (y_data >= y0) & (y_data <= y1)
+        mask_bool = (
+            (scene_x >= x0) & (scene_x <= x1) &
+            (scene_y >= y0) & (scene_y <= y1)
+        )
 
     else:
         raise TypeError(f"Unsupported ROI type: {type(roi)}")

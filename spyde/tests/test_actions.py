@@ -303,3 +303,34 @@ class TestVirtualImageROI:
         roi = RingROI(center=(2, 2), inner_rad=2, outer_rad=3)
         mask = roi_to_mask(roi, sig)
         assert mask[4, 4] == 0.0, f"Center pixel should be 0.0 for ring ROI, got {mask[4,4]}"
+
+    def test_mask_correct_with_anisotropic_axes(self, qapp):
+        """Regression: roi_to_mask must map scene-x→ky and scene-y→kx correctly.
+
+        For an anisotropic signal (different ky/kx scales), placing a rect ROI
+        at scene (x=0..4, y=0..8) should select the ky pixels 0..4 (axis 0 of
+        data) and all kx pixels (axis 1), not the other way around.
+        """
+        from spyde.actions.pyxem import roi_to_mask
+        import hyperspy.api as hs
+        import dask.array as da
+
+        data = da.zeros((4, 4, 8, 16), dtype=np.float32)
+        sig = hs.signals.Signal2D(data)
+        # sig_axes[0] = kx (innermost, size 16), sig_axes[1] = ky (size 8)
+        # scene-x = ky (axis 0 of slice, size 8)
+        # scene-y = kx (axis 1 of slice, size 16)
+        sig.axes_manager.signal_axes[0].scale = 1.0   # kx scale
+        sig.axes_manager.signal_axes[0].offset = 0.0
+        sig.axes_manager.signal_axes[1].scale = 1.0   # ky scale
+        sig.axes_manager.signal_axes[1].offset = 0.0
+
+        # ROI covering scene-x 0..4 (ky pixels 0..3) and scene-y 0..16 (all kx)
+        roi = RectROI(pos=(0, 0), size=(4, 16))
+        mask = roi_to_mask(roi, sig)
+        assert mask.shape == (8, 16), f"Expected (8,16), got {mask.shape}"
+
+        # Rows 0-3 (ky 0-3) should all be selected
+        assert np.all(mask[:4, :] == 1.0), "ky rows 0-3 should be fully selected"
+        # Rows 4-7 (ky 4-7) should not be selected
+        assert np.all(mask[4:, :] == 0.0), "ky rows 4-7 should not be selected"
