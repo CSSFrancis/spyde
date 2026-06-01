@@ -26,7 +26,7 @@ class TestVirtualImageKernel:
         result = future.result()
         assert result.shape == (4, 4)
 
-    def test_4d_values_match_tensordot_reference(self):
+    def test_4d_values_match_reference(self):
         from spyde.drawing.update_functions import compute_virtual_image_kernel
         rng = np.random.default_rng(0)
         data_np = rng.random((4, 4, 8, 8)).astype(np.float32)
@@ -34,7 +34,20 @@ class TestVirtualImageKernel:
         data = da.from_array(data_np, chunks=(2, 2, 8, 8))
         future = compute_virtual_image_kernel(data, mask, self.client, None)
         result = future.result()
-        expected = np.tensordot(data_np, mask, axes=([2, 3], [0, 1]))
+        expected = (data_np * mask).sum(axis=(-2, -1))
+        np.testing.assert_allclose(result, expected, rtol=1e-5)
+
+    def test_4d_values_chunked_signal_axes(self):
+        """Signal axes chunked (typical for tiled STEM data) must give correct result."""
+        from spyde.drawing.update_functions import compute_virtual_image_kernel
+        rng = np.random.default_rng(1)
+        data_np = rng.random((4, 4, 8, 8)).astype(np.float32)
+        mask = self._mask()
+        # Signal axes chunked into 4×4 tiles — this was the failing case
+        data = da.from_array(data_np, chunks=(1, 1, 4, 4))
+        future = compute_virtual_image_kernel(data, mask, self.client, None)
+        result = future.result()
+        expected = (data_np * mask).sum(axis=(-2, -1))
         np.testing.assert_allclose(result, expected, rtol=1e-5)
 
     def test_3d_input(self):

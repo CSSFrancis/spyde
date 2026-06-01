@@ -184,32 +184,36 @@ def compute_virtual_image_kernel(
     gpu_worker_address: "str | None",
 ) -> distributed.Future:
     """
-    Compute a virtual image by contracting the last two axes of data with mask.
+    Compute a virtual image by masking and summing the last two (signal) axes.
+
+    Equivalent to:
+        np.sum(data * mask[np.newaxis, np.newaxis, ...], axis=(-1, -2))
 
     Works for any number of navigation axes (3D, 4D, 5D, 6D datasets).
     Signal axes must be the last two (HyperSpy convention).
 
+    Broadcasting mask as a numpy array (not a dask array) means each worker
+    multiplies its navigation chunk directly against the in-memory mask without
+    any cross-chunk communication, then reduces over the last two axes within
+    the chunk. This is O(n_nav_chunks) independent tasks with no shuffle.
+
     Parameters
     ----------
-    data : dask array, shape (...nav..., nkx, nky)
-    mask : float32 numpy array, shape (nkx, nky)
+    data : dask array, shape (...nav..., ky, kx)
+    mask : float32 numpy array, shape (ky, kx)
     client : dask distributed Client
     gpu_worker_address : str or None
-        GPU worker address; None means CPU-only fallback.
 
     Returns
     -------
     distributed.Future resolving to np.ndarray of shape (...nav...)
     """
     mask = np.asarray(mask, dtype=np.float32)
-    ndim = data.ndim
-    sig_axes = [ndim - 2, ndim - 1]
-    da_mask = da.from_array(mask, chunks=mask.shape)
     if gpu_worker_address:
         with dask.annotate(resources={"GPU": 1}):
-            result = da.tensordot(data, da_mask, axes=(sig_axes, [0, 1]))
+            result = (data * mask).sum(axis=(-2, -1))
     else:
-        result = da.tensordot(data, da_mask, axes=(sig_axes, [0, 1]))
+        result = (data * mask).sum(axis=(-2, -1))
     return client.compute(result)
 
 
