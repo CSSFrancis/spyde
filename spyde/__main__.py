@@ -1001,11 +1001,15 @@ class MainWindow(QMainWindow):
         for pw in self.plot_subwindows:
             same_tree = (pw.signal_tree is active_tree)
             is_action_preview = (pw.owner_plot_window is not None)
+            action = getattr(pw, 'controlling_action', None)
+            action_wants_visible = (action is None or action.isChecked())
 
-            if same_tree:
+            if same_tree and action_wants_visible:
                 if not pw.isVisible():
                     pw.show()
                 pw.setGraphicsEffect(None)
+            elif same_tree and not action_wants_visible:
+                pw.hide()
             elif is_action_preview:
                 pw.hide()
             else:

@@ -600,6 +600,52 @@ class TestVirtualImageCommit:
         assert tree1.root is not tree2.root
 
 
+def test_action_preview_stays_hidden_when_action_unchecked(qtbot, stem_4d_dataset):
+    """An action-preview window with controlling_action unchecked must stay hidden after activation."""
+    from PySide6.QtWidgets import QApplication
+    win = stem_4d_dataset["window"]
+    nav_window = stem_4d_dataset["subwindows"][0]
+    win.mdi_area.setActiveSubWindow(nav_window)
+    qtbot.wait(100)
+
+    # Add a virtual image selector to get an action-preview window with a controlling_action
+    nav, sig = win.plots
+    tb = nav.plot_state.toolbar_top
+    # Find a checkable action that registers a plot window (e.g. virtual imaging)
+    target_action = None
+    for a in tb.actions():
+        if a.isCheckable():
+            target_action = a
+            break
+    if target_action is None:
+        pytest.skip("No checkable action found on toolbar_top")
+
+    # Check the action to open its preview window
+    n_before = len(win.plot_subwindows)
+    target_action.setChecked(True)
+    QApplication.processEvents()
+    qtbot.wait(100)
+
+    action_windows = [pw for pw in win.plot_subwindows[n_before:]
+                      if getattr(pw, 'controlling_action', None) is target_action]
+    if not action_windows:
+        pytest.skip("No preview window registered with controlling_action for this action")
+    preview = action_windows[0]
+    assert preview.isVisible(), "Preview should be visible when action is checked"
+
+    # Uncheck the action — window should hide
+    target_action.setChecked(False)
+    QApplication.processEvents()
+    qtbot.wait(50)
+    assert not preview.isVisible(), "Preview should hide when action is unchecked"
+
+    # Trigger on_subwindow_activated — must NOT re-show the preview
+    win.on_subwindow_activated(nav_window)
+    assert not preview.isVisible(), (
+        "Preview must stay hidden after on_subwindow_activated when controlling_action is unchecked"
+    )
+
+
 @pytest.mark.gpu
 class TestVirtualImageKernelGPU:
 
