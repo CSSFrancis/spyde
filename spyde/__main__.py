@@ -1002,7 +1002,8 @@ class MainWindow(QMainWindow):
             same_tree = (pw.signal_tree is active_tree)
             is_action_preview = (pw.owner_plot_window is not None)
             action = getattr(pw, 'controlling_action', None)
-            action_wants_visible = (action is None or action.isChecked())
+            # Non-checkable actions don't track toggle state — always show their windows
+            action_wants_visible = (action is None or not action.isCheckable() or action.isChecked())
 
             if same_tree and action_wants_visible:
                 if not pw.isVisible():
