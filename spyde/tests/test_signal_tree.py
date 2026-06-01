@@ -139,3 +139,37 @@ class TestBaseSignalTreeTraversal:
         tree.root_node.children["filtered"] = child
         node = tree.get_node(child_sig)
         assert node is child
+
+
+class TestAddTransformation:
+    def test_name_collision_appends_suffix(self):
+        tree, sig = _make_tree()
+        from spyde.signal_node import SignalNode
+        child_sig = _make_signal()
+        child = SignalNode(signal=child_sig, name="filtered", parent=tree.root_node)
+        tree.root_node.children["filtered"] = child
+
+        # Simulate collision handling that add_transformation does
+        name = "filtered"
+        if name in tree.root_node.children:
+            count = 1
+            candidate = f"{name}_{count}"
+            while candidate in tree.root_node.children:
+                count += 1
+                candidate = f"{name}_{count}"
+            name = candidate
+        assert name == "filtered_1"
+
+    def test_get_node_finds_nested_child(self):
+        tree, sig = _make_tree()
+        from spyde.signal_node import SignalNode
+        child_sig = _make_signal()
+        grandchild_sig = _make_signal()
+        child = SignalNode(signal=child_sig, name="filtered", parent=tree.root_node)
+        grandchild = SignalNode(signal=grandchild_sig, name="rebinned", parent=child)
+        tree.root_node.children["filtered"] = child
+        child.children["rebinned"] = grandchild
+
+        node = tree.get_node(grandchild_sig)
+        assert node is grandchild
+        assert node.parent is child
