@@ -499,6 +499,15 @@ class RoundedToolBar(StylizedToolBar):
 
     def closeEvent(self, ev: QtGui.QCloseEvent) -> None:
         """Clean up all associated widgets and event filters when the toolbar is closed."""
+        # Clear controlling_action on any plot windows we registered so that
+        # MDIManager._update_3state_visibility doesn't access the deleted QAction.
+        for data in self.action_widgets.values():
+            for pw in data.get("plot_windows", {}).values():
+                try:
+                    if hasattr(pw, "controlling_action"):
+                        pw.controlling_action = None
+                except Exception:
+                    pass
         self._cleanup_action_widgets()
         self.action_widgets.clear()
 

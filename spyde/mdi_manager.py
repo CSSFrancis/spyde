@@ -194,9 +194,15 @@ class MDIManager(QObject):
             same_tree = pw.signal_tree is active_tree
             is_action_preview = pw.owner_plot_window is not None
             action = getattr(pw, "controlling_action", None)
-            action_wants_visible = (
-                action is None or not action.isCheckable() or action.isChecked()
-            )
+            try:
+                action_wants_visible = (
+                    action is None or not action.isCheckable() or action.isChecked()
+                )
+            except RuntimeError:
+                # C++ QAction object was deleted (toolbar/PlotState torn down);
+                # clear the stale reference and treat as no controlling action.
+                pw.controlling_action = None
+                action_wants_visible = True
             if same_tree and action_wants_visible:
                 if not pw.isVisible():
                     pw.show()
