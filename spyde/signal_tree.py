@@ -138,10 +138,10 @@ class BaseSignalTree:
 
     @property
     def plot_windows(self) -> List["PlotWindow"]:
-        """
-        Return a list of all plots in the signal tree, including navigator and signal plots.
-        """
-        self.navigator_plot_manager.plot_windows
+        """Return all plot windows in the signal tree."""
+        if self.navigator_plot_manager is None:
+            return []
+        return self.navigator_plot_manager.plot_windows
 
 
 

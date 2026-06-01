@@ -333,14 +333,6 @@ class MainWindow(QMainWindow):
         self._dask_thread.quit()
         self._dask_thread.wait(2000)
 
-    def init_dask_cluster(self):
-        with log_startup_time("Dask LocalCluster + Client setup"):
-            cluster = LocalCluster(
-                n_workers=self.n_workers, threads_per_worker=self.threads_per_worker
-            )
-            self.client = Client(cluster)
-        print(f"Starting Dashboard at: {self.client.dashboard_link}")
-
     @property
     def plots(self) -> list[Plot]:
         """Get a flat list of all Plot instances in all plot windows."""
