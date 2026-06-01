@@ -732,14 +732,15 @@ class Plot(PlotItem):
 
         logger.info("Deleting current plot selectors and child plots")
         # need to delete the current selectors and child plots
-        for child_plot in (
-            self.plot_state.plot_selectors_children
-            + self.plot_state.signal_tree_selectors_children
-        ):
-            try:
-                child_plot.close()
-            except Exception:
-                pass
+        if self.plot_state is not None:
+            for child_plot in (
+                self.plot_state.plot_selectors_children
+                + self.plot_state.signal_tree_selectors_children
+            ):
+                try:
+                    child_plot.close()
+                except Exception:
+                    pass
 
     def _apply_pending_navigator_assignment(self) -> bool:
         """Replace this plot with the queued navigator signal, if any."""

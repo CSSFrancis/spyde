@@ -60,3 +60,18 @@ class TestCloseWindows:
 
         # assert the signalTree is removed from the main window
         assert len(win.signal_trees) == 0
+
+
+def test_close_preview_window_no_crash(qtbot, stem_4d_dataset):
+    """Closing a line-profile preview window must not raise AttributeError."""
+    from spyde.tests.test_line_profile import _add_line_profile_on_signal
+    win = stem_4d_dataset["window"]
+    n_before = len(win.plot_subwindows)
+    _add_line_profile_on_signal(qtbot, win)
+    preview_windows = win.plot_subwindows[n_before:]
+    assert len(preview_windows) == 1
+    preview = preview_windows[0]
+    try:
+        preview.close()
+    except AttributeError as e:
+        raise AssertionError(f"close() raised AttributeError: {e}") from e
