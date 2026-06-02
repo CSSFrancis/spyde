@@ -830,6 +830,31 @@ def orientation_mapping(
                 _refit_timer[0].start()
 
         refit_timer.timeout.connect(_do_refit)
+
+        def _on_param_changed(*args):
+            gamma_w = params_caret_box.get_parameter_widget("gamma")
+            min_i_w = params_caret_box.get_parameter_widget("min_intensity_refine")
+            scale_w = params_caret_box.get_parameter_widget("scale_override")
+            try:
+                _gamma[0] = float(gamma_w.text()) if gamma_w else 0.5
+            except ValueError:
+                pass
+            try:
+                _min_intensity[0] = float(min_i_w.text()) if min_i_w else 0.1
+            except ValueError:
+                pass
+            try:
+                v = float(scale_w.text()) if scale_w else 0.0
+                _scale[0] = v if v > 0 else None
+            except ValueError:
+                pass
+            _schedule_refit()
+
+        for param_key in ["gamma", "min_intensity_refine", "scale_override"]:
+            w = params_caret_box.get_parameter_widget(param_key)
+            if w is not None and hasattr(w, "textChanged"):
+                w.textChanged.connect(_on_param_changed)
+
         circle_roi.sigRegionChangeFinished.connect(_schedule_refit)
 
         nav_selector = getattr(plot, "parent_selector", None)
@@ -907,6 +932,21 @@ def orientation_mapping(
                  "callback": lambda: _on_open_refine_clicked()},
             ],
         },
+        "gamma": {
+            "name": "Gamma",
+            "type": "float",
+            "default": 0.5,
+        },
+        "min_intensity_refine": {
+            "name": "Min Spot Intensity",
+            "type": "float",
+            "default": 0.1,
+        },
+        "scale_override": {
+            "name": "Scale (Å⁻¹/px, 0=auto)",
+            "type": "float",
+            "default": 0.0,
+        },
         "_step5_header": {
             "name": "── Step 5: Run Fit ──",
             "type": "str",
@@ -937,7 +977,7 @@ def orientation_mapping(
             w.setEnabled(False)
             _step3_widgets.append(w)
 
-    for key in ["open_refine_btn"]:
+    for key in ["open_refine_btn", "gamma", "min_intensity_refine", "scale_override"]:
         w = params_caret_box.get_parameter_widget(key)
         if w is not None:
             w.setEnabled(False)
