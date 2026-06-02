@@ -9,6 +9,71 @@ if TYPE_CHECKING:
     from spyde.drawing.toolbars.toolbar import RoundedToolBar
 
 
+class FileDropWidget(QtWidgets.QWidget):
+    """A widget that accepts drag-and-drop or browse-selected files."""
+
+    filesChanged = QtCore.Signal(list)  # emits list of file paths
+
+    def __init__(self, extensions=None, parent=None):
+        super().__init__(parent)
+        self._extensions = [e.lower() for e in (extensions or [])]
+        self._files = []
+
+        self.setAcceptDrops(True)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(2)
+
+        self._label = QtWidgets.QLabel("Drop .cif file(s) here", self)
+        self._label.setWordWrap(True)
+        self._label.setStyleSheet("color: rgba(255,255,255,150); font-size: 10px;")
+        layout.addWidget(self._label)
+
+        self._browse_btn = QtWidgets.QPushButton("Browse...", self)
+        self._browse_btn.setStyleSheet(
+            "QPushButton { color: white; background-color: rgba(255,255,255,30); "
+            "border: 1px solid black; }"
+        )
+        self._browse_btn.clicked.connect(self._on_browse)
+        layout.addWidget(self._browse_btn)
+
+    def get_files(self):
+        return list(self._files)
+
+    def _on_browse(self):
+        ext_filter = " ".join(f"*{e}" for e in self._extensions) if self._extensions else "*"
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, "Select CIF file(s)", "", f"CIF files ({ext_filter})"
+        )
+        if paths:
+            self._set_files(paths)
+
+    def _set_files(self, paths):
+        self._files = list(paths)
+        names = [p.split("/")[-1].split("\\")[-1] for p in paths]
+        self._label.setText(", ".join(names))
+        self.filesChanged.emit(self._files)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if not self._extensions or any(
+                url.toLocalFile().lower().endswith(tuple(self._extensions))
+                for url in urls
+            ):
+                event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        paths = [
+            url.toLocalFile()
+            for url in event.mimeData().urls()
+            if not self._extensions
+            or url.toLocalFile().lower().endswith(tuple(self._extensions))
+        ]
+        if paths:
+            self._set_files(paths)
+
+
 class CaretGroup(QtWidgets.QGroupBox):
     """
     A polygonal QGroupBox with a centered triangular caret on one side,
@@ -463,6 +528,9 @@ class CaretParams(CaretGroup):
                     print(
                         "No toolbar/plot available; RectangleSelector ROI not created."
                     )
+            elif dtype == "file_drop":
+                extensions = item.get("extensions", [])
+                editor = FileDropWidget(extensions=extensions, parent=row_widget)
             else:  # default to string
                 editor = QtWidgets.QLineEdit(str(default), row_widget)
 
