@@ -625,7 +625,7 @@ def _update_refine_pattern(refine_plot, signal, nav_indices):
     refine_plot.update_data(pattern_data)
 
 
-def _get_best_fit_spots(signal, sim, nav_indices, gamma, max_radius):
+def _get_best_fit_spots(signal, sim, nav_indices, gamma, max_radius, min_intensity=0.0, scale_override=None):
     """
     Run get_orientation on a single diffraction pattern and return
     (coords_px, intensities) for the best-match simulation spots.
@@ -658,7 +658,7 @@ def _get_best_fit_spots(signal, sim, nav_indices, gamma, max_radius):
     best_rotation = orientation.data["orientation"].ravel()[0]
 
     sig_ax = signal.axes_manager.signal_axes
-    scale = sig_ax[0].scale
+    scale = scale_override if scale_override is not None else sig_ax[0].scale
     sim_at_best = sim.rotate_from_orientation(best_rotation)
     raw_coords = sim_at_best.coordinates
     intensities = sim_at_best.intensities
@@ -666,6 +666,13 @@ def _get_best_fit_spots(signal, sim, nav_indices, gamma, max_radius):
     coords_filtered, intensities_filtered = _filter_sim_by_radius(
         raw_coords, intensities, max_radius
     )
+
+    # Filter spots below minimum intensity threshold
+    if min_intensity > 0.0 and len(intensities_filtered) > 0:
+        keep = intensities_filtered >= min_intensity
+        coords_filtered = coords_filtered[keep]
+        intensities_filtered = intensities_filtered[keep]
+
     coords_px = coords_filtered / scale
     cx = pattern_data.shape[1] / 2.0
     cy = pattern_data.shape[0] / 2.0
@@ -783,6 +790,14 @@ def orientation_mapping(
                     nav_sel.roi.sigRegionChangeFinished.disconnect(_schedule_refit)
                 except RuntimeError:
                     pass
+            # Disconnect param change signals to prevent accumulation on re-open
+            for pk in ["gamma", "min_intensity_refine", "scale_override"]:
+                pw = params_caret_box.get_parameter_widget(pk)
+                if pw is not None and hasattr(pw, "textChanged"):
+                    try:
+                        pw.textChanged.disconnect(_on_param_changed)
+                    except RuntimeError:
+                        pass
 
         refine_pw.destroyed.connect(_on_refine_closed)
 
@@ -813,11 +828,14 @@ def orientation_mapping(
             if _sim[0] is None:
                 return
             r_px_now = circle_roi.size().x() / 2.0
-            _max_radius[0] = r_px_now * sig_ax[0].scale
+            effective_scale = _scale[0] if _scale[0] is not None else sig_ax[0].scale
+            _max_radius[0] = r_px_now * effective_scale
             nav_idx = _get_current_nav_indices(plot)
             try:
                 coords_px, intensities = _get_best_fit_spots(
-                    signal, _sim[0], nav_idx, _gamma[0], _max_radius[0]
+                    signal, _sim[0], nav_idx, _gamma[0], _max_radius[0],
+                    min_intensity=_min_intensity[0],
+                    scale_override=_scale[0],
                 )
                 spots = [{"pos": (c[0], c[1]), "size": max(3, intensities[i] * 12)}
                          for i, c in enumerate(coords_px)]
@@ -836,11 +854,11 @@ def orientation_mapping(
             min_i_w = params_caret_box.get_parameter_widget("min_intensity_refine")
             scale_w = params_caret_box.get_parameter_widget("scale_override")
             try:
-                _gamma[0] = float(gamma_w.text()) if gamma_w else 0.5
+                _gamma[0] = float(gamma_w.text()) if gamma_w else _gamma[0]
             except ValueError:
                 pass
             try:
-                _min_intensity[0] = float(min_i_w.text()) if min_i_w else 0.1
+                _min_intensity[0] = float(min_i_w.text()) if min_i_w else _min_intensity[0]
             except ValueError:
                 pass
             try:
