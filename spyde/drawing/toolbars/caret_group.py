@@ -24,7 +24,8 @@ class FileDropWidget(QtWidgets.QWidget):
         layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(2)
 
-        self._label = QtWidgets.QLabel("Drop .cif file(s) here", self)
+        ext_hint = ", ".join(self._extensions) if self._extensions else "any"
+        self._label = QtWidgets.QLabel(f"Drop {ext_hint} file(s) here", self)
         self._label.setWordWrap(True)
         self._label.setStyleSheet("color: rgba(255,255,255,150); font-size: 10px;")
         layout.addWidget(self._label)
@@ -42,8 +43,9 @@ class FileDropWidget(QtWidgets.QWidget):
 
     def _on_browse(self):
         ext_filter = " ".join(f"*{e}" for e in self._extensions) if self._extensions else "*"
+        filter_name = f"{', '.join(self._extensions).upper()} files" if self._extensions else "All files"
         paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
-            self, "Select CIF file(s)", "", f"CIF files ({ext_filter})"
+            self, f"Select file(s)", "", f"{filter_name} ({ext_filter})"
         )
         if paths:
             self._set_files(paths)
@@ -676,6 +678,10 @@ class CaretParams(CaretGroup):
                 print("Failed to compute RectangleSelector value:", e)
                 return None
 
+        if dtype == "file_drop":
+            w = self.kwargs.get(key)
+            return w.get_files() if w is not None else []
+
         w = self.kwargs.get(key)
         if w is None:
             return None
@@ -713,6 +719,8 @@ class CaretParams(CaretGroup):
                     params[key] = int(widget.text())
                 elif isinstance(widget, QtWidgets.QComboBox):
                     params[key] = widget.currentText()
+                elif dtype == "file_drop":
+                    params[key] = widget.get_files()
                 else:
                     params[key] = widget.text()
 
