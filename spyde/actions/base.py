@@ -325,31 +325,26 @@ def toggle_signal_tree(
     toolbar : RoundedToolBar
         The plot to toggle navigation plots.
     """
-    signal_tree = toolbar.plot.signal_tree._tree
+    from spyde.signal_node import SignalNode
 
-    # we can can simplify this tree into just buttons
-    # [root]: {child1: {..}, child2: {..}, ...}
+    root_node = toolbar.plot.signal_tree.root_node
 
-    def node2button(key, node):
-        button = RoundedButton(text=key, parent=None)
+    def node2button(node: SignalNode) -> RoundedButton:
+        button = RoundedButton(text=node.name, parent=None)
         button.clicked.connect(
-            lambda _, n=node: toolbar.plot.set_plot_state(n["signal"])
+            lambda _, sig=node.signal: toolbar.plot.set_plot_state(sig)
         )
         return button
 
-    def tree2buttons(tree):
-        new_tree = {}
-        if not tree:
-            return None
-        for key, node in tree.items():
-            button = node2button(key, node)
-            if "children" in node and node["children"]:
-                new_tree[button] = tree2buttons(node["children"])
-            else:
-                new_tree[button] = {}
-        return new_tree
+    def node2buttons(node: SignalNode) -> dict:
+        result = {}
+        for child in node.children.values():
+            btn = node2button(child)
+            sub = node2buttons(child)
+            result[btn] = sub if sub else {}
+        return result
 
-    button_tree_dict = tree2buttons(signal_tree)
+    button_tree_dict = node2buttons(root_node)
 
     if action_name not in toolbar.action_widgets:
         group = CaretGroup(

@@ -257,19 +257,19 @@ def add_virtual_image(
     icon = QIcon()
     icon.addPixmap(colored_pixmap)
 
-    # Mutable state captured in closures
-    _live_enabled = [True]
-    _cached_mask = [None]
-    _cached_roi = [None]  # ROI that produced _cached_mask — kept in sync
-    _timer_holder = []  # keeps QTimer refs alive
-    _generation = [0]  # monotonically incremented each time a new computation starts;
-                       # the done-callback checks its captured generation matches to
-                       # avoid id()-reuse false positives from Python GC.
-
     action_name = f"Virtual Image ({color})"
 
+    # Per-VI mutable state
+    _live_enabled = [True]
+    _cached_mask = [None]
+    _cached_roi = [None]
+    _timer_holder = []  # progress poll timer
+    _generation = [0]
+
     def _on_compute_clicked():
-        _trigger_computation()
+        # Compute button always fires this VI regardless of live flag.
+        # _compute_one is defined below; this defers the lookup so it works.
+        _compute_one(action_name)
 
     params = {
         "type": {
@@ -292,7 +292,6 @@ def add_virtual_image(
                 {"key": "compute_button", "label": "Compute", "callback": _on_compute_clicked},
             ],
         },
-        # commit_button REMOVED — now lives in the PlotWindow title bar
     }
 
     action, params_caret_box = toolbar.add_action(
@@ -318,8 +317,6 @@ def add_virtual_image(
     client = main_window.dask_manager.client
     gpu_worker = main_window.dask_manager.gpu_worker_address
 
-    # Create the virtual image preview PlotWindow using the same factory as all other
-    # plot windows — this applies FramelessWindowHint and removes the Qt border.
     from spyde.qt.compute_status_indicator import ComputeStatusIndicator
 
     virtual_plot_window = main_window.add_plot_window(
@@ -329,23 +326,111 @@ def add_virtual_image(
     virtual_plot_window.owner_plot_window = plot.plot_window
     main_window._auto_position_near_owner(virtual_plot_window)
     virtual_plot = virtual_plot_window.add_new_plot()
-    # Add image_item to the scene so update() can render into it.
-    # Normally set_plot_state() does this, but the virtual preview has no PlotState.
     if virtual_plot.image_item not in virtual_plot.items:
         virtual_plot.addItem(virtual_plot.image_item)
 
     indicator = ComputeStatusIndicator(color=color)
     virtual_plot_window.set_compute_indicator(indicator)
 
-    # Register plot window with the parent toolbar so visibility toggles with "Virtual Imaging"
     toolbar.parent_toolbar.register_action_plot_window(
         action_name="Virtual Imaging",
         plot_window=virtual_plot_window,
         key=action_name,
     )
 
+    # ── Shared batch-recompute timer ────────────────────────────────────────
+    # All VIs on this parent toolbar share a single 150 ms debounce timer stored
+    # in action_widgets["Virtual Imaging"]["_batch_timer"].  Any ROI move restarts
+    # the timer; when it fires one dask submit covers all active VIs together.
+    vi_entry = toolbar.parent_toolbar.action_widgets.setdefault("Virtual Imaging", {})
+    if "_batch_timer" not in vi_entry:
+        from PySide6.QtCore import QTimer as _QTimer
+        # Parent the timer to the toolbar so Qt manages its lifetime on the GUI
+        # thread and it is never destroyed from a Dask worker thread.
+        _batch_timer = _QTimer(toolbar.parent_toolbar)
+        _batch_timer.setInterval(150)
+        _batch_timer.setSingleShot(True)
+        vi_entry["_batch_timer"] = _batch_timer
+        vi_entry["_vi_registry"] = {}  # action_name → state dict
+    batch_timer: "QTimer" = vi_entry["_batch_timer"]
+    vi_registry: dict = vi_entry["_vi_registry"]
+
+    # Register this VI's mutable state so the batch callback can reach it
+    vi_registry[action_name] = {
+        "roi_ref": [None],       # holds the current roi object (updated on type change)
+        "virtual_plot": virtual_plot,
+        "virtual_plot_window": virtual_plot_window,
+        "indicator": indicator,
+        "cached_mask": _cached_mask,
+        "cached_roi": _cached_roi,
+        "generation": _generation,
+        "timer_holder": _timer_holder,
+        "signal": signal,
+        "live_enabled": _live_enabled,
+    }
+
+    def _compute_one(name: str):
+        """Compute a single VI by its action_name, regardless of live flag."""
+        from spyde.drawing.update_functions import compute_virtual_image_kernel
+        entry = vi_registry.get(name)
+        if entry is None:
+            return
+        current_roi = entry["roi_ref"][0]
+        if current_roi is None:
+            return
+        try:
+            mask = roi_to_mask(current_roi, entry["signal"])
+        except Exception:
+            return
+        entry["cached_mask"][0] = mask
+        entry["cached_roi"][0] = current_roi
+        entry["generation"][0] += 1
+        my_gen = entry["generation"][0]
+        vp = entry["virtual_plot"]
+        vpw = entry["virtual_plot_window"]
+        ind = entry["indicator"]
+        th = entry["timer_holder"]
+
+        th.clear()
+        future = compute_virtual_image_kernel(
+            entry["signal"].data, mask, client, gpu_worker
+        )
+        vp.current_data = future
+        _start_progress_poll(future, ind, client, th)
+        vpw.set_commit_enabled(False)
+
+        def _on_preview_done(fut, _gen=my_gen, _entry=entry, _vpw=vpw):
+            from PySide6 import QtCore as _QtCore
+            if _entry["generation"][0] != _gen:
+                return
+            _QtCore.QMetaObject.invokeMethod(
+                _vpw, "set_commit_enabled",
+                _QtCore.Qt.ConnectionType.QueuedConnection,
+                _QtCore.Q_ARG(bool, True),
+            )
+
+        future.add_done_callback(_on_preview_done)
+
+    def _batch_recompute_all():
+        """Recompute every registered VI whose live flag is on, in one pass."""
+        for name, entry in list(vi_registry.items()):
+            if not entry["live_enabled"][0]:
+                continue
+            _compute_one(name)
+
+    batch_timer.timeout.connect(_batch_recompute_all)
+
+    def _schedule_batch_recompute(force: bool = False):
+        """Restart the shared debounce timer (or fire immediately if force=True)."""
+        if force:
+            batch_timer.stop()
+            _batch_recompute_all()
+        else:
+            batch_timer.start()  # restart debounce window
+
     def _cleanup():
-        """Remove ROI from plot and action from toolbar when preview window closes."""
+        """Remove ROI from plot, de-register from batch registry, remove action."""
+        vi_registry.pop(action_name, None)
         try:
             toolbar.parent_toolbar.unregister_action_plot_item(
                 action_name="Virtual Imaging", key=action_name
@@ -363,7 +448,7 @@ def add_virtual_image(
         _orig_close()
     virtual_plot_window.close_window = _close_with_cleanup
 
-    # Build the ROI
+    # Build the initial ROI
     center, inner_rad, outer_rad = plot.get_annular_roi_parameters()
     if params_caret_box.kwargs["type"].currentText() == "annular":
         roi = RingROI(center=center, inner_rad=inner_rad, outer_rad=outer_rad, pen=pen)
@@ -372,13 +457,15 @@ def add_virtual_image(
     else:
         roi = RectROI(center, inner_rad, pen=pen)
 
+    vi_registry[action_name]["roi_ref"][0] = roi
+
     toolbar.parent_toolbar.register_action_plot_item(
         action_name="Virtual Imaging", item=roi, key=action_name
     )
 
     def arrange_widgets_on_move():
         rois = list(
-            toolbar.parent_toolbar.action_widgets["Virtual Imaging"]["plot_items"].values()
+            toolbar.parent_toolbar.action_widgets["Virtual Imaging"].get("plot_items", {}).values()
         )
         sizes = [r.size().x() for r in rois]
         sorted_index = np.argsort(sizes)
@@ -386,44 +473,9 @@ def add_virtual_image(
             r = rois[idx]
             r.setZValue(10 + i)
 
-    roi.sigRegionChangeFinished.connect(arrange_widgets_on_move)
-
-    def _trigger_computation(_roi=None):
-        if _roi is None:
-            _roi = roi
-        from spyde.drawing.update_functions import compute_virtual_image_kernel
-        _timer_holder.clear()
-        mask = roi_to_mask(_roi, signal)
-        _cached_mask[0] = mask
-        _cached_roi[0] = _roi
-
-        _generation[0] += 1
-        my_generation = _generation[0]
-
-        future = compute_virtual_image_kernel(signal.data, mask, client, gpu_worker)
-        virtual_plot.current_data = future
-        _start_progress_poll(future, indicator, client, _timer_holder)
-        virtual_plot_window.set_commit_enabled(False)
-
-        def _on_preview_done(fut):
-            from PySide6 import QtCore as _QtCore
-            # Only enable Commit if this is still the latest computation.
-            # Generation counter avoids id()-reuse false positives from Python GC
-            # (GC can reuse freed future addresses, making id(old) == id(new)).
-            if _generation[0] != my_generation:
-                return
-            _QtCore.QMetaObject.invokeMethod(
-                virtual_plot_window, "set_commit_enabled",
-                _QtCore.Qt.ConnectionType.QueuedConnection,
-                _QtCore.Q_ARG(bool, True),
-            )
-
-        future.add_done_callback(_on_preview_done)
-
     def _on_roi_finished(_roi=None):
-        if not _live_enabled[0]:
-            return
-        _trigger_computation(_roi)
+        arrange_widgets_on_move()
+        _schedule_batch_recompute()
 
     roi.sigRegionChangeFinished.connect(_on_roi_finished)
 
@@ -495,10 +547,10 @@ def add_virtual_image(
             roi = CircleROI(pos=pos, size=size, pen=pen)
         else:
             roi = RectROI(pos=pos, size=size, pen=pen)
+        vi_registry[action_name]["roi_ref"][0] = roi
         toolbar.parent_toolbar.register_action_plot_item(
             action_name="Virtual Imaging", item=roi, key=action_name
         )
-        roi.sigRegionChangeFinished.connect(arrange_widgets_on_move)
         roi.sigRegionChangeFinished.connect(_on_roi_finished)
 
     if hasattr(type_widget, "currentTextChanged"):

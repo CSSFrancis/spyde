@@ -658,6 +658,16 @@ class Plot(PlotItem):
                         data = data.astype(np.uint16)
                     self.image_item.setImage(data, autoLevels=True, autoDownsample=True)
                 elif data.ndim == 1:
+                    vb = self.getViewBox()
+                    vb.setAspectLocked(False)
+                    vb.enableAutoRange(x=True, y=True)
+                    vb.setMouseEnabled(x=True, y=True)
+                    # Remove any prior pan/zoom limits so the 1D profile fits naturally
+                    vb.setLimits(
+                        xMin=None, xMax=None, yMin=None, yMax=None,
+                        minXRange=None, maxXRange=None,
+                        minYRange=None, maxYRange=None,
+                    )
                     self.line_item.setData(data)
                 self.update_range()
             return
