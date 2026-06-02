@@ -600,7 +600,7 @@ def orientation_mapping(
     _min_intensity = [0.1]
     _scale = [None]
     _max_radius = [_compute_reciprocal_radius(signal)]
-    _refit_timer = []
+    _refit_timer = [None]
     _scatter_item = [None]
     _refine_plot_window = [None]
 
@@ -622,6 +622,19 @@ def orientation_mapping(
         if _phases:
             for w in _step3_widgets:
                 w.setEnabled(True)
+            label_w = params_caret_box.get_parameter_widget("_phase_list_label")
+            if label_w is not None:
+                label_w.setText(", ".join(p.name for p in _phases))
+
+    # Placeholder callbacks — filled in later tasks
+    def _on_generate_clicked():
+        pass
+
+    def _on_open_refine_clicked():
+        pass
+
+    def _on_run_fit_clicked():
+        pass
 
     params = {
         "cif_files": {
@@ -732,13 +745,3 @@ def orientation_mapping(
     cif_widget = params_caret_box.get_parameter_widget("cif_files")
     if cif_widget is not None and hasattr(cif_widget, "filesChanged"):
         cif_widget.filesChanged.connect(_on_cif_loaded)
-
-    # Placeholder callbacks — filled in later tasks
-    def _on_generate_clicked():
-        pass
-
-    def _on_open_refine_clicked():
-        pass
-
-    def _on_run_fit_clicked():
-        pass

@@ -1,5 +1,7 @@
 # spyde/tests/test_orientation_mapping.py
 import pytest
+from unittest.mock import MagicMock, patch
+import numpy as np
 from pytestqt.qtbot import QtBot
 from spyde.drawing.toolbars.caret_group import CaretParams
 from PySide6 import QtWidgets
@@ -20,10 +22,6 @@ def test_file_drop_widget_created(qtbot):
     drop_widget = widget.kwargs["cif_files"]
     assert hasattr(drop_widget, "get_files")
     assert drop_widget.get_files() == []
-
-
-from unittest.mock import MagicMock, patch
-import numpy as np
 
 
 def _make_mock_toolbar():
@@ -51,5 +49,4 @@ def test_orientation_mapping_creates_action(qtbot):
     toolbar = _make_mock_toolbar()
     orientation_mapping(toolbar, action_name="Orientation Mapping")
     toolbar.add_action.assert_called_once()
-    call_kwargs = toolbar.add_action.call_args
-    assert call_kwargs[1].get("name") == "Orientation Mapping" or call_kwargs[0][0] == "Orientation Mapping"
+    assert toolbar.add_action.call_args[1]["name"] == "Orientation Mapping"
