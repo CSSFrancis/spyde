@@ -1,6 +1,8 @@
+import threading
 import numpy as np
 from typing import Tuple
 
+from PySide6 import QtCore
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
 from PySide6.QtCore import Qt
 from pyqtgraph import RectROI, CircleROI, mkPen
@@ -622,23 +624,32 @@ def _extract_orientation_outputs(orientation_map, nav_axes, n_phases=1):
     results.append((orientation_map, "Orientation Map"))
 
     # Correlation score
-    corr = hs.signals.Signal2D(orientation_map.correlation.data)
-    _copy_nav_axes(corr, nav_axes)
-    corr.metadata.General.title = "Correlation Score"
-    results.append((corr, "Correlation Score"))
+    if hasattr(orientation_map, "correlation"):
+        corr = hs.signals.Signal2D(orientation_map.correlation.data)
+        _copy_nav_axes(corr, nav_axes)
+        corr.metadata.General.title = "Correlation Score"
+        results.append((corr, "Correlation Score"))
+    else:
+        print("OrientationMap has no 'correlation' attribute — skipping Correlation Score output.")
 
     # Mirror symmetry
-    mirror = hs.signals.Signal2D(orientation_map.mirror_symmetry.data)
-    _copy_nav_axes(mirror, nav_axes)
-    mirror.metadata.General.title = "Mirror Symmetry"
-    results.append((mirror, "Mirror Symmetry"))
+    if hasattr(orientation_map, "mirror_symmetry"):
+        mirror = hs.signals.Signal2D(orientation_map.mirror_symmetry.data)
+        _copy_nav_axes(mirror, nav_axes)
+        mirror.metadata.General.title = "Mirror Symmetry"
+        results.append((mirror, "Mirror Symmetry"))
+    else:
+        print("OrientationMap has no 'mirror_symmetry' attribute — skipping Mirror Symmetry output.")
 
     # Phase map — only for multi-phase
     if n_phases > 1:
-        phase_map = hs.signals.Signal2D(orientation_map.phase_index.data.astype(float))
-        _copy_nav_axes(phase_map, nav_axes)
-        phase_map.metadata.General.title = "Phase Map"
-        results.append((phase_map, "Phase Map"))
+        if hasattr(orientation_map, "phase_index"):
+            phase_map = hs.signals.Signal2D(orientation_map.phase_index.data.astype(float))
+            _copy_nav_axes(phase_map, nav_axes)
+            phase_map.metadata.General.title = "Phase Map"
+            results.append((phase_map, "Phase Map"))
+        else:
+            print("OrientationMap has no 'phase_index' attribute — skipping Phase Map output.")
 
     return results
 
@@ -930,8 +941,6 @@ def orientation_mapping(
         _schedule_refit()
 
     def _on_run_fit_clicked():
-        from PySide6 import QtCore as _QtCore
-
         if _sim[0] is None:
             print("No library generated. Run Step 3 first.")
             return
@@ -951,26 +960,33 @@ def orientation_mapping(
                     npt=100, npt_azim=360, inplace=False, mean=True
                 )
                 polar = polar ** gamma_val
-                orientation_map = polar.get_orientation(sim_val, n_best=-1, frac_keep=1)
+                orientation_map = polar.get_orientation(sim_val, frac_keep=1)
+                # Copy nav-axis calibration to the orientation map
+                for i, ax in enumerate(nav_axes):
+                    if i < orientation_map.axes_manager.navigation_dimension:
+                        out_ax = orientation_map.axes_manager.navigation_axes[i]
+                        out_ax.scale = ax.scale
+                        out_ax.offset = ax.offset
+                        out_ax.units = ax.units
+                        out_ax.name = ax.name
                 results = _extract_orientation_outputs(orientation_map, nav_axes, n_phases)
                 for result_signal, title in results:
                     result_signal.metadata.General.title = title
                     main_window._pending_signal_queue.append(result_signal)
-                _QtCore.QMetaObject.invokeMethod(
+                QtCore.QMetaObject.invokeMethod(
                     main_window, "_flush_pending_signals",
-                    _QtCore.Qt.ConnectionType.QueuedConnection,
+                    QtCore.Qt.ConnectionType.QueuedConnection,
                 )
             except Exception as e:
                 print(f"Orientation mapping failed: {e}")
             finally:
                 if run_btn is not None:
-                    _QtCore.QMetaObject.invokeMethod(
+                    QtCore.QMetaObject.invokeMethod(
                         run_btn, "setEnabled",
-                        _QtCore.Qt.ConnectionType.QueuedConnection,
-                        _QtCore.Q_ARG(bool, True),
+                        QtCore.Qt.ConnectionType.QueuedConnection,
+                        QtCore.Q_ARG(bool, True),
                     )
 
-        import threading
         fit_thread = threading.Thread(target=_do_fit, daemon=True)
         fit_thread.start()
 

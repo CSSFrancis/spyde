@@ -126,3 +126,9 @@ def test_extract_orientation_map_outputs():
     assert "Mirror Symmetry" in titles
     assert "Phase Map" in titles
     assert len(results) == 4
+
+    # Single-phase: Phase Map should not be in results
+    results_single = _extract_orientation_outputs(mock_om, nav_axes, n_phases=1)
+    titles_single = [r[1] for r in results_single]
+    assert "Phase Map" not in titles_single
+    assert len(results_single) == 3
