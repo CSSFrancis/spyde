@@ -82,3 +82,17 @@ def test_generate_library():
     assert call_args[0][0] is mock_phase
     assert call_args[1]["rotation"] is mock_rotations
     assert call_args[1]["with_direct_beam"] is False
+
+
+def test_filter_sim_by_radius():
+    """Spots beyond max_radius are excluded from the filtered simulation."""
+    from spyde.actions.pyxem import _filter_sim_by_radius
+
+    coords = np.array([[0.1, 0.2], [0.3, 0.3], [0.6, 0.0], [0.0, 0.8]])
+    intensities = np.array([1.0, 0.8, 0.5, 0.3])
+
+    filtered_coords, filtered_intensities = _filter_sim_by_radius(
+        coords, intensities, max_radius=0.5
+    )
+    assert len(filtered_coords) == 2
+    assert len(filtered_intensities) == 2

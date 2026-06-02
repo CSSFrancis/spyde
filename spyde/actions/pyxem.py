@@ -598,6 +598,79 @@ def _generate_library_from_phases(phases, accelerating_voltage, resolution,
     return sim
 
 
+def _filter_sim_by_radius(coords, intensities, max_radius):
+    """Return coords and intensities for spots within max_radius."""
+    r = np.sqrt(coords[:, 0] ** 2 + coords[:, 1] ** 2)
+    mask = r <= max_radius
+    return coords[mask], intensities[mask]
+
+
+def _get_current_nav_indices(plot):
+    """Return current navigation indices as a tuple of ints."""
+    selector = getattr(plot, "parent_selector", None)
+    if selector is not None:
+        try:
+            indices = selector.get_selected_indices()
+            return tuple(int(i) for i in np.atleast_1d(indices))
+        except Exception:
+            pass
+    nav_axes = plot.plot_state.current_signal.axes_manager.navigation_axes
+    return tuple(ax.size // 2 for ax in nav_axes)
+
+
+def _update_refine_pattern(refine_plot, signal, nav_indices):
+    """Load the diffraction pattern at nav_indices into refine_plot."""
+    idx = tuple(int(i) for i in nav_indices)
+    pattern_data = np.array(signal.data[idx])
+    refine_plot.update_data(pattern_data)
+
+
+def _get_best_fit_spots(signal, sim, nav_indices, gamma, max_radius):
+    """
+    Run get_orientation on a single diffraction pattern and return
+    (coords_px, intensities) for the best-match simulation spots.
+
+    coords_px : ndarray shape (N, 2) in pixel (row, col) coordinates
+    intensities : ndarray shape (N,)
+    """
+    import hyperspy.api as hs
+
+    idx = tuple(int(i) for i in nav_indices)
+    pattern_data = np.array(signal.data[idx])
+    pattern_signal = hs.signals.Signal2D(pattern_data)
+    for i, ax in enumerate(signal.axes_manager.signal_axes):
+        pattern_signal.axes_manager.signal_axes[i].scale = ax.scale
+        pattern_signal.axes_manager.signal_axes[i].offset = ax.offset
+        pattern_signal.axes_manager.signal_axes[i].units = ax.units
+
+    pattern_signal.set_signal_type("electron_diffraction")
+    polar = pattern_signal.get_azimuthal_integral2d(
+        npt=100, npt_azim=360, inplace=False, mean=True
+    )
+    polar = polar ** gamma
+
+    orientation = polar.get_orientation(sim)
+
+    best_phase_idx = int(orientation.data["phase_index"].ravel()[0])
+    best_rotation = orientation.data["orientation"].ravel()[0]
+
+    sig_ax = signal.axes_manager.signal_axes
+    scale = sig_ax[0].scale
+    sim_at_best = sim.rotate_from_orientation(best_rotation)
+    raw_coords = sim_at_best.coordinates
+    intensities = sim_at_best.intensities
+
+    coords_filtered, intensities_filtered = _filter_sim_by_radius(
+        raw_coords, intensities, max_radius
+    )
+    coords_px = coords_filtered / scale
+    cx = pattern_data.shape[1] / 2.0
+    cy = pattern_data.shape[0] / 2.0
+    coords_px[:, 0] += cx
+    coords_px[:, 1] += cy
+    return coords_px, intensities_filtered
+
+
 def _compute_reciprocal_radius(signal) -> float:
     """Derive max reciprocal radius from signal axes calibration."""
     sig_axes = signal.axes_manager.signal_axes
@@ -677,7 +750,75 @@ def orientation_mapping(
             print(f"Library generation failed: {e}")
 
     def _on_open_refine_clicked():
-        pass
+        from pyqtgraph import ScatterPlotItem
+        from pyqtgraph import CircleROI as PgCircleROI
+        from PySide6.QtCore import QTimer
+
+        refine_pw = main_window.add_plot_window(
+            is_navigator=False,
+            signal_tree=plot.signal_tree,
+        )
+        refine_pw.owner_plot_window = plot.plot_window
+        main_window._auto_position_near_owner(refine_pw)
+        refine_plot = refine_pw.add_new_plot()
+        if refine_plot.image_item not in refine_plot.items:
+            refine_plot.addItem(refine_plot.image_item)
+        _refine_plot_window[0] = refine_pw
+
+        nav_indices = _get_current_nav_indices(plot)
+        _update_refine_pattern(refine_plot, signal, nav_indices)
+
+        scatter = ScatterPlotItem(size=8, pen=mkPen("r", width=1), brush=None)
+        refine_plot.addItem(scatter)
+        _scatter_item[0] = scatter
+
+        sig_ax = signal.axes_manager.signal_axes
+        cx_px = sig_ax[0].size / 2.0
+        cy_px = sig_ax[1].size / 2.0
+        r_px = _max_radius[0] / sig_ax[0].scale
+        circle_roi = PgCircleROI(
+            pos=(cx_px - r_px, cy_px - r_px),
+            size=(2 * r_px, 2 * r_px),
+            pen=mkPen("y", width=1),
+        )
+        refine_plot.addItem(circle_roi)
+
+        refit_timer = QTimer()
+        refit_timer.setInterval(150)
+        refit_timer.setSingleShot(True)
+        _refit_timer[0] = refit_timer
+
+        def _do_refit():
+            if _sim[0] is None:
+                return
+            r_px_now = circle_roi.size().x() / 2.0
+            _max_radius[0] = r_px_now * sig_ax[0].scale
+            nav_idx = _get_current_nav_indices(plot)
+            try:
+                coords_px, intensities = _get_best_fit_spots(
+                    signal, _sim[0], nav_idx, _gamma[0], _max_radius[0]
+                )
+                spots = [{"pos": (c[0], c[1]), "size": max(3, intensities[i] * 12)}
+                         for i, c in enumerate(coords_px)]
+                _scatter_item[0].setData(spots)
+            except Exception as e:
+                print(f"Refit failed: {e}")
+
+        def _schedule_refit():
+            if _refit_timer[0] is not None:
+                _refit_timer[0].start()
+
+        refit_timer.timeout.connect(_do_refit)
+        circle_roi.sigRegionChangeFinished.connect(_schedule_refit)
+
+        nav_selector = getattr(plot, "parent_selector", None)
+        if nav_selector is not None and hasattr(nav_selector, "roi"):
+            nav_selector.roi.sigRegionChangeFinished.connect(_schedule_refit)
+
+        for w in _step5_widgets:
+            w.setEnabled(True)
+
+        _schedule_refit()
 
     def _on_run_fit_clicked():
         pass
