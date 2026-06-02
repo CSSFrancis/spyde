@@ -8,6 +8,8 @@ from pyqtgraph import RectROI, CircleROI, mkPen
 from spyde.drawing.toolbars.toolbar import RoundedToolBar
 from spyde.drawing.toolbars.plot_control_toolbar import resolve_icon_path
 from spyde.external.pyqtgraph.ring_roi import RingROI
+from diffsims.generators.simulation_generator import SimulationGenerator
+from orix.sampling import get_sample_reduced_fundamental
 
 
 def roi_to_mask(roi, signal) -> np.ndarray:
@@ -573,6 +575,28 @@ def compute_virtual_image(
     pass
 
 
+def _generate_library_from_phases(phases, accelerating_voltage, resolution,
+                                   minimum_intensity, reciprocal_radius):
+    """Generate a diffsims Simulation2D library from a list of orix Phase objects."""
+    generator = SimulationGenerator(
+        accelerating_voltage, minimum_intensity=minimum_intensity
+    )
+    rotations = [
+        get_sample_reduced_fundamental(
+            resolution=resolution, point_group=phase.point_group
+        )
+        for phase in phases
+    ]
+    sim = generator.calculate_diffraction2d(
+        phases if len(phases) > 1 else phases[0],
+        rotation=rotations if len(rotations) > 1 else rotations[0],
+        max_excitation_error=0.1,
+        reciprocal_radius=reciprocal_radius,
+        with_direct_beam=False,
+    )
+    return sim
+
+
 def _compute_reciprocal_radius(signal) -> float:
     """Derive max reciprocal radius from signal axes calibration."""
     sig_axes = signal.axes_manager.signal_axes
@@ -628,7 +652,25 @@ def orientation_mapping(
 
     # Placeholder callbacks — filled in later tasks
     def _on_generate_clicked():
-        pass
+        voltage_w = params_caret_box.get_parameter_widget("accelerating_voltage")
+        resolution_w = params_caret_box.get_parameter_widget("resolution")
+        min_intensity_w = params_caret_box.get_parameter_widget("minimum_intensity")
+        voltage = float(voltage_w.text() if voltage_w else 200.0)
+        resolution = float(resolution_w.text() if resolution_w else 1.0)
+        min_intensity = float(min_intensity_w.text() if min_intensity_w else 0.05)
+        reciprocal_radius = _compute_reciprocal_radius(signal)
+        try:
+            _sim[0] = _generate_library_from_phases(
+                phases=_phases,
+                accelerating_voltage=voltage,
+                resolution=resolution,
+                minimum_intensity=min_intensity,
+                reciprocal_radius=reciprocal_radius,
+            )
+            for w in _step4_widgets:
+                w.setEnabled(True)
+        except Exception as e:
+            print(f"Library generation failed: {e}")
 
     def _on_open_refine_clicked():
         pass

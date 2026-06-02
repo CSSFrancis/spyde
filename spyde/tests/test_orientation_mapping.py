@@ -50,3 +50,31 @@ def test_orientation_mapping_creates_action(qtbot):
     orientation_mapping(toolbar, action_name="Orientation Mapping")
     toolbar.add_action.assert_called_once()
     assert toolbar.add_action.call_args[1]["name"] == "Orientation Mapping"
+
+
+def test_generate_library(qtbot):
+    """_generate_library_from_phases returns a Simulation2D given valid phases."""
+    from spyde.actions.pyxem import _generate_library_from_phases
+
+    mock_sim = MagicMock()
+    mock_generator_cls = MagicMock()
+    mock_generator_cls.return_value.calculate_diffraction2d.return_value = mock_sim
+
+    mock_rotations = MagicMock()
+    mock_phase = MagicMock()
+    mock_phase.point_group = MagicMock()
+
+    with patch("spyde.actions.pyxem.SimulationGenerator", mock_generator_cls), \
+         patch("spyde.actions.pyxem.get_sample_reduced_fundamental",
+               return_value=mock_rotations):
+        result = _generate_library_from_phases(
+            phases=[mock_phase],
+            accelerating_voltage=200.0,
+            resolution=1.0,
+            minimum_intensity=0.05,
+            reciprocal_radius=0.64,
+        )
+
+    assert result is mock_sim
+    mock_generator_cls.assert_called_once_with(200.0, minimum_intensity=0.05)
+    mock_generator_cls.return_value.calculate_diffraction2d.assert_called_once()
