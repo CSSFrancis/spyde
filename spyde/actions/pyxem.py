@@ -752,7 +752,7 @@ def orientation_mapping(
 ):
     """5-step wizard for template-matching orientation mapping of 4D-STEM data."""
 
-    plot = toolbar.parent_toolbar.plot
+    plot = toolbar.plot
     signal = plot.plot_state.current_signal
     main_window = plot.main_window
     client = main_window.dask_manager.client
