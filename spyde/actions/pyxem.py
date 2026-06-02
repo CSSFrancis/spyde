@@ -571,3 +571,174 @@ def compute_virtual_image(
     """
     print("Computing virtual image...")
     pass
+
+
+def _compute_reciprocal_radius(signal) -> float:
+    """Derive max reciprocal radius from signal axes calibration."""
+    sig_axes = signal.axes_manager.signal_axes
+    half_extents = [ax.scale * ax.size / 2.0 for ax in sig_axes]
+    return min(half_extents)
+
+
+def orientation_mapping(
+    toolbar: RoundedToolBar,
+    action_name: str = "Orientation Mapping",
+    *args,
+    **kwargs,
+):
+    """5-step wizard for template-matching orientation mapping of 4D-STEM data."""
+
+    plot = toolbar.parent_toolbar.plot
+    signal = plot.plot_state.current_signal
+    main_window = plot.main_window
+    client = main_window.dask_manager.client
+
+    # ── Closure state ──────────────────────────────────────────────────────────
+    _phases = []
+    _sim = [None]
+    _gamma = [0.5]
+    _min_intensity = [0.1]
+    _scale = [None]
+    _max_radius = [_compute_reciprocal_radius(signal)]
+    _refit_timer = []
+    _scatter_item = [None]
+    _refine_plot_window = [None]
+
+    # ── Step-gating widget handles ─────────────────────────────────────────────
+    _step3_widgets = []
+    _step4_widgets = []
+    _step5_widgets = []
+
+    def _on_cif_loaded(files):
+        """Parse CIF files into orix Phase objects and unlock Step 3."""
+        from orix.crystal_map import Phase
+        _phases.clear()
+        for path in files:
+            try:
+                phase = Phase.from_cif(path)
+                _phases.append(phase)
+            except Exception as e:
+                print(f"Failed to load CIF {path}: {e}")
+        if _phases:
+            for w in _step3_widgets:
+                w.setEnabled(True)
+
+    params = {
+        "cif_files": {
+            "name": "CIF Files",
+            "type": "file_drop",
+            "extensions": [".cif"],
+        },
+        "accelerating_voltage": {
+            "name": "Voltage (kV)",
+            "type": "float",
+            "default": 200.0,
+        },
+        "_phase_list_label": {
+            "name": "Phases",
+            "type": "str",
+            "default": "(none loaded)",
+        },
+        "_step2_header": {
+            "name": "── Step 2 (optional): Center DP ──",
+            "type": "str",
+            "default": "",
+        },
+        "already_centered": {
+            "name": "Already Centered",
+            "type": "button",
+            "label": "✓ Already centered",
+            "callback": lambda: None,
+        },
+        "_step3_header": {
+            "name": "── Step 3: Generate Library ──",
+            "type": "str",
+            "default": "",
+        },
+        "resolution": {
+            "name": "Angle Density (°)",
+            "type": "float",
+            "default": 1.0,
+        },
+        "minimum_intensity": {
+            "name": "Min Intensity",
+            "type": "float",
+            "default": 0.05,
+        },
+        "generate_library_row": {
+            "name": "",
+            "type": "button_row",
+            "buttons": [
+                {"key": "generate_btn", "label": "Generate Library",
+                 "callback": lambda: _on_generate_clicked()},
+            ],
+        },
+        "_step4_header": {
+            "name": "── Step 4: Refine Parameters ──",
+            "type": "str",
+            "default": "",
+        },
+        "open_refine_row": {
+            "name": "",
+            "type": "button_row",
+            "buttons": [
+                {"key": "open_refine_btn", "label": "Open Refine Preview",
+                 "callback": lambda: _on_open_refine_clicked()},
+            ],
+        },
+        "_step5_header": {
+            "name": "── Step 5: Run Fit ──",
+            "type": "str",
+            "default": "",
+        },
+        "run_fit_row": {
+            "name": "",
+            "type": "button_row",
+            "buttons": [
+                {"key": "run_fit_btn", "label": "Run Fit",
+                 "callback": lambda: _on_run_fit_clicked()},
+            ],
+        },
+    }
+
+    action, params_caret_box = toolbar.add_action(
+        name=action_name,
+        icon_path=resolve_icon_path("drawing/toolbars/icons/orientation_mapping.svg"),
+        function=lambda *a, **kw: None,
+        toggle=True,
+        parameters=params,
+    )
+
+    # Collect step-gated widgets and disable them
+    for key in ["resolution", "minimum_intensity", "generate_btn"]:
+        w = params_caret_box.get_parameter_widget(key)
+        if w is not None:
+            w.setEnabled(False)
+            _step3_widgets.append(w)
+
+    for key in ["open_refine_btn"]:
+        w = params_caret_box.get_parameter_widget(key)
+        if w is not None:
+            w.setEnabled(False)
+            _step4_widgets.append(w)
+
+    for key in ["run_fit_btn"]:
+        w = params_caret_box.get_parameter_widget(key)
+        if w is not None:
+            w.setEnabled(False)
+            _step5_widgets.append(w)
+
+    # Wire CIF drop widget
+    cif_widget = params_caret_box.get_parameter_widget("cif_files")
+    if cif_widget is not None and hasattr(cif_widget, "filesChanged"):
+        cif_widget.filesChanged.connect(_on_cif_loaded)
+
+    # Placeholder callbacks — filled in later tasks
+    def _on_generate_clicked():
+        pass
+
+    def _on_open_refine_clicked():
+        pass
+
+    def _on_run_fit_clicked():
+        pass
