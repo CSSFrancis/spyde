@@ -149,4 +149,3 @@ functions:
     toolbar_side: bottom
     navigation: False
     toggle: True
-    parameters: {}

@@ -604,6 +604,9 @@ def _extract_orientation_outputs(orientation_map, nav_axes, n_phases=1):
     """
     Extract result signals from an OrientationMap.
 
+    OrientationMap.data has shape (nav..., n_best, 4) with column_names
+    ['index', 'correlation', 'rotation', 'factor'].  Best match = n_best index 0.
+
     Returns list of (BaseSignal, title_str) tuples.
     """
     import hyperspy.api as hs
@@ -620,36 +623,32 @@ def _extract_orientation_outputs(orientation_map, nav_axes, n_phases=1):
 
     results = []
 
-    # Orientation map (IPF color) — passed through directly
+    # Orientation map itself (contains IPF + crystal map info)
     results.append((orientation_map, "Orientation Map"))
 
-    # Correlation score
-    if hasattr(orientation_map, "correlation"):
-        corr = hs.signals.Signal2D(orientation_map.correlation.data)
+    # Extract best-match correlation (column index 1) at n_best=0
+    try:
+        col_names = getattr(orientation_map, "column_names", [])
+        corr_col = col_names.index("correlation") if "correlation" in col_names else 1
+        corr_data = orientation_map.data[..., 0, corr_col]  # (nav_y, nav_x)
+        corr = hs.signals.Signal2D(corr_data)
         _copy_nav_axes(corr, nav_axes)
         corr.metadata.General.title = "Correlation Score"
         results.append((corr, "Correlation Score"))
-    else:
-        print("OrientationMap has no 'correlation' attribute — skipping Correlation Score output.")
+    except Exception as e:
+        print(f"Could not extract Correlation Score: {e}")
 
-    # Mirror symmetry
-    if hasattr(orientation_map, "mirror_symmetry"):
-        mirror = hs.signals.Signal2D(orientation_map.mirror_symmetry.data)
-        _copy_nav_axes(mirror, nav_axes)
-        mirror.metadata.General.title = "Mirror Symmetry"
-        results.append((mirror, "Mirror Symmetry"))
-    else:
-        print("OrientationMap has no 'mirror_symmetry' attribute — skipping Mirror Symmetry output.")
-
-    # Phase map — only for multi-phase
+    # Phase map: column index 0 ('index') for multi-phase
     if n_phases > 1:
-        if hasattr(orientation_map, "phase_index"):
-            phase_map = hs.signals.Signal2D(orientation_map.phase_index.data.astype(float))
+        try:
+            idx_col = col_names.index("index") if "index" in col_names else 0
+            phase_data = orientation_map.data[..., 0, idx_col].astype(float)
+            phase_map = hs.signals.Signal2D(phase_data)
             _copy_nav_axes(phase_map, nav_axes)
             phase_map.metadata.General.title = "Phase Map"
             results.append((phase_map, "Phase Map"))
-        else:
-            print("OrientationMap has no 'phase_index' attribute — skipping Phase Map output.")
+        except Exception as e:
+            print(f"Could not extract Phase Map: {e}")
 
     return results
 
@@ -779,35 +778,25 @@ def _make_slider_row(parent, label_text, min_val, max_val, default, decimals=2):
     return row, spin
 
 
+# Module-level set of toolbar ids that have already had the OM caret built.
+_OM_BUILT_TOOLBARS: set = set()
+
+
 def orientation_mapping(
     toolbar: RoundedToolBar,
     action_name: str = "Orientation Mapping",
     *args,
     **kwargs,
 ):
-    """5-step wizard (tabbed) for template-matching orientation mapping of 4D-STEM data.
-
-    Called once to build the UI (first call), and again by the caret submit button
-    to run the fit on subsequent calls.
-    """
+    """5-step wizard (tabbed) for template-matching orientation mapping of 4D-STEM data."""
     from PySide6 import QtWidgets as _QW, QtCore as _QC
-    from spyde.drawing.toolbars.caret_group import FileDropWidget
+    from spyde.drawing.toolbars.caret_group import CaretGroup, FileDropWidget
 
-    # ── On submit (Run Fit) calls after UI is built ────────────────────────────
-    # The caret's submit button calls this function again. Check for stored state.
-    _state = getattr(toolbar, "_om_state", None)
-    if _state is not None:
-        # Second+ call = submit → run fit
-        _do_run_fit(_state)
+    # Guard: build the caret only once per toolbar instance.
+    tid = id(toolbar)
+    if tid in _OM_BUILT_TOOLBARS:
         return
-
-    # ── First call: build the UI inside the already-created caret ─────────────
-    # toolbars.yaml has `parameters: {}` so the caret was already created by
-    # _create_parameter_popout; retrieve it from action_widgets.
-    caret_entry = getattr(toolbar, "action_widgets", {}).get(action_name, {})
-    caret = caret_entry.get("widget")
-    if caret is None:
-        return
+    _OM_BUILT_TOOLBARS.add(tid)
 
     plot = toolbar.plot
     signal = plot.plot_state.current_signal
@@ -815,7 +804,7 @@ def orientation_mapping(
     sig_ax = signal.axes_manager.signal_axes
     sig_scale = sig_ax[0].scale  # Å⁻¹/px
 
-    # ── State dict stored on toolbar so submit calls can access it ─────────────
+    # ── State dict ─────────────────────────────────────────────────────────────
     state = {
         "plot": plot,
         "signal": signal,
@@ -832,16 +821,32 @@ def orientation_mapping(
         "run_status": [None],
         "run_btn": [None],
     }
+
+    # ── Build a CaretGroup directly and register it with the toolbar ───────────
+    # We do NOT call toolbar.add_action again (that would create a second icon).
+    # Instead we build the caret widget and register it via add_action_widget,
+    # which wires the existing toggle action's toggled signal to show/hide it.
     toolbar._om_state = state
 
-    # ── Remove auto-created placeholder row and submit button ──────────────────
+    caret = CaretGroup(
+        title=action_name,
+        toolbar=toolbar,
+        action_name=action_name,
+    )
+    toolbar.add_action_widget(action_name, caret, None)
+
+    # _bind_action_to_widget calls action.setChecked(False), resetting the state
+    # of the toggle that just triggered this function. Re-check the action and
+    # show the caret — the user pressed the button to open the wizard.
+    om_action = toolbar._find_action(action_name)
+    if om_action is not None:
+        om_action.setChecked(True)  # restore — was just reset by _bind_action_to_widget
+    caret.show()
+    pos_fn = toolbar.action_widgets.get(action_name, {}).get("position_fn")
+    if pos_fn is not None:
+        pos_fn()
+
     layout = caret.layout()
-    while layout.count():
-        item = layout.takeAt(0)
-        w = item.widget()
-        if w is not None:
-            w.setParent(None)
-            w.deleteLater()
 
     # ── Helper builders ────────────────────────────────────────────────────────
     W = 240
