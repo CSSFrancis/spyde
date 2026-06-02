@@ -598,6 +598,51 @@ def _generate_library_from_phases(phases, accelerating_voltage, resolution,
     return sim
 
 
+def _extract_orientation_outputs(orientation_map, nav_axes, n_phases=1):
+    """
+    Extract result signals from an OrientationMap.
+
+    Returns list of (BaseSignal, title_str) tuples.
+    """
+    import hyperspy.api as hs
+
+    def _copy_nav_axes(sig, nav_axes):
+        for i, ax in enumerate(nav_axes):
+            if i < sig.axes_manager.navigation_dimension:
+                out_ax = sig.axes_manager.navigation_axes[i]
+                out_ax.scale = ax.scale
+                out_ax.offset = ax.offset
+                out_ax.units = ax.units
+                out_ax.name = ax.name
+        return sig
+
+    results = []
+
+    # Orientation map (IPF color) — passed through directly
+    results.append((orientation_map, "Orientation Map"))
+
+    # Correlation score
+    corr = hs.signals.Signal2D(orientation_map.correlation.data)
+    _copy_nav_axes(corr, nav_axes)
+    corr.metadata.General.title = "Correlation Score"
+    results.append((corr, "Correlation Score"))
+
+    # Mirror symmetry
+    mirror = hs.signals.Signal2D(orientation_map.mirror_symmetry.data)
+    _copy_nav_axes(mirror, nav_axes)
+    mirror.metadata.General.title = "Mirror Symmetry"
+    results.append((mirror, "Mirror Symmetry"))
+
+    # Phase map — only for multi-phase
+    if n_phases > 1:
+        phase_map = hs.signals.Signal2D(orientation_map.phase_index.data.astype(float))
+        _copy_nav_axes(phase_map, nav_axes)
+        phase_map.metadata.General.title = "Phase Map"
+        results.append((phase_map, "Phase Map"))
+
+    return results
+
+
 def _filter_sim_by_radius(coords, intensities, max_radius):
     """Return coords and intensities for spots within max_radius."""
     r = np.sqrt(coords[:, 0] ** 2 + coords[:, 1] ** 2)
@@ -885,7 +930,49 @@ def orientation_mapping(
         _schedule_refit()
 
     def _on_run_fit_clicked():
-        pass
+        from PySide6 import QtCore as _QtCore
+
+        if _sim[0] is None:
+            print("No library generated. Run Step 3 first.")
+            return
+
+        gamma_val = _gamma[0]
+        sim_val = _sim[0]
+        nav_axes = list(signal.axes_manager.navigation_axes)
+        n_phases = len(_phases) if _phases else 1
+
+        run_btn = params_caret_box.get_parameter_widget("run_fit_btn")
+        if run_btn is not None:
+            run_btn.setEnabled(False)
+
+        def _do_fit():
+            try:
+                polar = signal.get_azimuthal_integral2d(
+                    npt=100, npt_azim=360, inplace=False, mean=True
+                )
+                polar = polar ** gamma_val
+                orientation_map = polar.get_orientation(sim_val, n_best=-1, frac_keep=1)
+                results = _extract_orientation_outputs(orientation_map, nav_axes, n_phases)
+                for result_signal, title in results:
+                    result_signal.metadata.General.title = title
+                    main_window._pending_signal_queue.append(result_signal)
+                _QtCore.QMetaObject.invokeMethod(
+                    main_window, "_flush_pending_signals",
+                    _QtCore.Qt.ConnectionType.QueuedConnection,
+                )
+            except Exception as e:
+                print(f"Orientation mapping failed: {e}")
+            finally:
+                if run_btn is not None:
+                    _QtCore.QMetaObject.invokeMethod(
+                        run_btn, "setEnabled",
+                        _QtCore.Qt.ConnectionType.QueuedConnection,
+                        _QtCore.Q_ARG(bool, True),
+                    )
+
+        import threading
+        fit_thread = threading.Thread(target=_do_fit, daemon=True)
+        fit_thread.start()
 
     params = {
         "cif_files": {

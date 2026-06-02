@@ -103,3 +103,26 @@ def test_filter_sim_by_radius():
     intensities_boundary = np.array([1.0])
     fc, fi = _filter_sim_by_radius(coords_boundary, intensities_boundary, 0.5)
     assert len(fc) == 1
+
+
+def test_extract_orientation_map_outputs():
+    """_extract_orientation_outputs returns a list of (signal, title) tuples."""
+    from spyde.actions.pyxem import _extract_orientation_outputs
+
+    mock_om = MagicMock()
+    mock_om.correlation = MagicMock()
+    mock_om.correlation.data = np.zeros((4, 4))
+    mock_om.mirror_symmetry = MagicMock()
+    mock_om.mirror_symmetry.data = np.zeros((4, 4))
+    mock_om.phase_index = MagicMock()
+    mock_om.phase_index.data = np.zeros((4, 4), dtype=int)
+
+    nav_axes = []
+
+    results = _extract_orientation_outputs(mock_om, nav_axes, n_phases=2)
+    titles = [r[1] for r in results]
+    assert "Orientation Map" in titles
+    assert "Correlation Score" in titles
+    assert "Mirror Symmetry" in titles
+    assert "Phase Map" in titles
+    assert len(results) == 4
