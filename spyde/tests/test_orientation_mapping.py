@@ -24,32 +24,45 @@ def test_file_drop_widget_created(qtbot):
     assert drop_widget.get_files() == []
 
 
-def _make_mock_toolbar():
-    """Build a minimal mock toolbar that orientation_mapping expects."""
+def _make_mock_toolbar(qtbot):
+    """Build a minimal mock toolbar that orientation_mapping expects.
+
+    orientation_mapping now reads the caret from toolbar.action_widgets (set by
+    the toolbar infrastructure from YAML) rather than calling toolbar.add_action
+    itself. We set up a real CaretParams widget as the caret so layout manipulation
+    inside orientation_mapping works correctly.
+    """
+    from PySide6 import QtWidgets
+    from spyde.drawing.toolbars.caret_group import CaretParams
+
     toolbar = MagicMock()
     plot = MagicMock()
     signal = MagicMock()
-    ax0 = MagicMock(); ax0.scale = 0.01; ax0.size = 128
-    ax1 = MagicMock(); ax1.scale = 0.01; ax1.size = 128
+    ax0 = MagicMock(); ax0.scale = 0.01; ax0.size = 128; ax0.offset = 0.0
+    ax1 = MagicMock(); ax1.scale = 0.01; ax1.size = 128; ax1.offset = 0.0
     signal.axes_manager.signal_axes = [ax0, ax1]
     signal.axes_manager.navigation_axes = []
     plot.plot_state.current_signal = signal
     plot.main_window = MagicMock()
-    plot.main_window.dask_manager.client = MagicMock()
-    plot.main_window.dask_manager.gpu_worker_address = None
-    toolbar.parent_toolbar.plot = plot
     toolbar.plot = plot
-    toolbar.num_actions.return_value = 0
-    toolbar.add_action.return_value = (MagicMock(), MagicMock())
-    return toolbar
+
+    # Simulate what _create_parameter_popout does: caret stored in action_widgets
+    caret = CaretParams(parameters={})
+    qtbot.addWidget(caret)
+    toolbar.action_widgets = {"Orientation Mapping": {"widget": caret}}
+    toolbar._om_state = None  # no prior state
+    return toolbar, caret
 
 
-def test_orientation_mapping_creates_action(qtbot):
+def test_orientation_mapping_builds_ui(qtbot):
     from spyde.actions.pyxem import orientation_mapping
-    toolbar = _make_mock_toolbar()
+    toolbar, caret = _make_mock_toolbar(qtbot)
     orientation_mapping(toolbar, action_name="Orientation Mapping")
-    toolbar.add_action.assert_called_once()
-    assert toolbar.add_action.call_args[1]["name"] == "Orientation Mapping"
+    # State should be stored on toolbar after first call
+    assert hasattr(toolbar, "_om_state")
+    assert toolbar._om_state is not None
+    # Caret layout should have content (step bar + stack)
+    assert caret.layout().count() > 0
 
 
 def test_generate_library():

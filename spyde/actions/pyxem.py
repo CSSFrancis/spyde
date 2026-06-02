@@ -744,373 +744,429 @@ def _compute_reciprocal_radius(signal) -> float:
     return min(half_extents)
 
 
+def _make_slider_row(parent, label_text, min_val, max_val, default, decimals=2):
+    """Return (row_widget, spinbox) for a labelled float slider+spinbox row."""
+    from PySide6 import QtWidgets as _QW, QtCore as _QC
+    SCALE = 10 ** decimals
+    row = _QW.QWidget(parent)
+    h = _QW.QHBoxLayout(row)
+    h.setContentsMargins(0, 0, 0, 0)
+    h.setSpacing(4)
+    lbl = _QW.QLabel(label_text, row)
+    lbl.setStyleSheet("color: white; font-size: 10px;")
+    spin = _QW.QDoubleSpinBox(row)
+    spin.setRange(min_val, max_val)
+    spin.setDecimals(decimals)
+    spin.setSingleStep(10 ** -decimals)
+    spin.setValue(default)
+    spin.setFixedWidth(64)
+    spin.setStyleSheet(
+        "QDoubleSpinBox { color: white; background: rgba(255,255,255,40); "
+        "border: 1px solid black; font-size: 10px; }"
+    )
+    slider = _QW.QSlider(_QC.Qt.Orientation.Horizontal, row)
+    slider.setRange(int(min_val * SCALE), int(max_val * SCALE))
+    slider.setValue(int(default * SCALE))
+    def _spin_to_slider(v, _s=slider, _sc=SCALE):
+        _s.blockSignals(True); _s.setValue(int(v * _sc)); _s.blockSignals(False)
+    def _slider_to_spin(v, _sp=spin, _sc=SCALE):
+        _sp.blockSignals(True); _sp.setValue(v / _sc); _sp.blockSignals(False)
+    spin.valueChanged.connect(_spin_to_slider)
+    slider.valueChanged.connect(_slider_to_spin)
+    h.addWidget(lbl)
+    h.addWidget(slider, 1)
+    h.addWidget(spin)
+    return row, spin
+
+
 def orientation_mapping(
     toolbar: RoundedToolBar,
     action_name: str = "Orientation Mapping",
     *args,
     **kwargs,
 ):
-    """5-step wizard for template-matching orientation mapping of 4D-STEM data."""
+    """5-step wizard (tabbed) for template-matching orientation mapping of 4D-STEM data.
+
+    Called once to build the UI (first call), and again by the caret submit button
+    to run the fit on subsequent calls.
+    """
+    from PySide6 import QtWidgets as _QW, QtCore as _QC
+    from spyde.drawing.toolbars.caret_group import FileDropWidget
+
+    # ── On submit (Run Fit) calls after UI is built ────────────────────────────
+    # The caret's submit button calls this function again. Check for stored state.
+    _state = getattr(toolbar, "_om_state", None)
+    if _state is not None:
+        # Second+ call = submit → run fit
+        _do_run_fit(_state)
+        return
+
+    # ── First call: build the UI inside the already-created caret ─────────────
+    # toolbars.yaml has `parameters: {}` so the caret was already created by
+    # _create_parameter_popout; retrieve it from action_widgets.
+    caret_entry = getattr(toolbar, "action_widgets", {}).get(action_name, {})
+    caret = caret_entry.get("widget")
+    if caret is None:
+        return
 
     plot = toolbar.plot
     signal = plot.plot_state.current_signal
     main_window = plot.main_window
-    client = main_window.dask_manager.client
+    sig_ax = signal.axes_manager.signal_axes
+    sig_scale = sig_ax[0].scale  # Å⁻¹/px
 
-    # ── Closure state ──────────────────────────────────────────────────────────
-    _phases = []
-    _sim = [None]
-    _gamma = [0.5]
-    _min_intensity = [0.1]
-    _scale = [None]
-    _max_radius = [_compute_reciprocal_radius(signal)]
-    _refit_timer = [None]
-    _scatter_item = [None]
-    _refine_plot_window = [None]
+    # ── State dict stored on toolbar so submit calls can access it ─────────────
+    state = {
+        "plot": plot,
+        "signal": signal,
+        "main_window": main_window,
+        "phases": [],
+        "sim": [None],
+        "gamma": [0.5],
+        "min_intensity": [0.1],
+        "scale_override": [None],
+        "max_radius": [_compute_reciprocal_radius(signal)],
+        "refit_timer": [None],
+        "scatter_item": [None],
+        "circle_roi": [None],
+        "run_status": [None],
+        "run_btn": [None],
+    }
+    toolbar._om_state = state
 
-    # ── Step-gating widget handles ─────────────────────────────────────────────
-    _step3_widgets = []
-    _step4_widgets = []
-    _step5_widgets = []
+    # ── Remove auto-created placeholder row and submit button ──────────────────
+    layout = caret.layout()
+    while layout.count():
+        item = layout.takeAt(0)
+        w = item.widget()
+        if w is not None:
+            w.setParent(None)
+            w.deleteLater()
+
+    # ── Helper builders ────────────────────────────────────────────────────────
+    W = 240
+
+    def _lbl(text, parent):
+        l = _QW.QLabel(text, parent)
+        l.setStyleSheet("color: white; font-size: 10px;")
+        l.setWordWrap(True)
+        return l
+
+    def _btn(text, parent, enabled=True):
+        b = _QW.QPushButton(text, parent)
+        b.setEnabled(enabled)
+        b.setStyleSheet(
+            "QPushButton { color: white; background: rgba(255,255,255,30); "
+            "border: 1px solid rgba(255,255,255,60); padding: 3px 6px; }"
+            "QPushButton:disabled { color: rgba(255,255,255,60); "
+            "background: rgba(255,255,255,10); }"
+        )
+        return b
+
+    def _hrow(*widgets):
+        w = _QW.QWidget()
+        h = _QW.QHBoxLayout(w); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(4)
+        for wi in widgets:
+            if isinstance(wi, int):
+                h.addStretch(wi)
+            else:
+                h.addWidget(wi)
+        return w
+
+    def _spin(parent, lo, hi, val, dec, suf=""):
+        s = _QW.QDoubleSpinBox(parent)
+        s.setRange(lo, hi); s.setValue(val); s.setDecimals(dec)
+        if suf: s.setSuffix(suf)
+        s.setFixedWidth(72)
+        s.setStyleSheet(
+            "QDoubleSpinBox { color: white; background: rgba(255,255,255,40); "
+            "border: 1px solid rgba(255,255,255,60); font-size: 10px; }"
+        )
+        return s
+
+    # ── CheckButtonGroup-style step selector ───────────────────────────────────
+    STEPS = ["1 Load", "2 Library", "3 Refine", "4 Run"]
+    BTN_SS_OFF = (
+        "QPushButton { color: rgba(255,255,255,160); background: rgba(255,255,255,15); "
+        "border: 1px solid rgba(255,255,255,40); padding: 2px 4px; font-size: 9px; "
+        "border-radius: 0px; }"
+    )
+    BTN_SS_ON = (
+        "QPushButton { color: white; background: rgba(100,160,255,180); "
+        "border: 1px solid rgba(120,180,255,200); padding: 2px 4px; font-size: 9px; "
+        "border-radius: 0px; font-weight: bold; }"
+    )
+    step_bar = _QW.QWidget(caret)
+    step_bar.setFixedWidth(W)
+    sb_h = _QW.QHBoxLayout(step_bar); sb_h.setContentsMargins(0, 0, 0, 0); sb_h.setSpacing(1)
+    step_btns = []
+    for s in STEPS:
+        b = _QW.QPushButton(s, step_bar)
+        b.setStyleSheet(BTN_SS_OFF)
+        b.setSizePolicy(_QW.QSizePolicy.Policy.Expanding, _QW.QSizePolicy.Policy.Fixed)
+        sb_h.addWidget(b)
+        step_btns.append(b)
+
+    # Stacked pages
+    stack = _QW.QStackedWidget(caret)
+    stack.setFixedWidth(W)
+
+    def _select_step(idx):
+        for i, b in enumerate(step_btns):
+            b.setStyleSheet(BTN_SS_ON if i == idx else BTN_SS_OFF)
+        stack.setCurrentIndex(idx)
+
+    for i, b in enumerate(step_btns):
+        b.clicked.connect(lambda _, i=i: _select_step(i))
+
+    # ── Page 0: Load CIF ──────────────────────────────────────────────────────
+    p0 = _QW.QWidget(); v0 = _QW.QVBoxLayout(p0); v0.setContentsMargins(4, 4, 4, 4); v0.setSpacing(4)
+    cif_drop = FileDropWidget(extensions=[".cif"], parent=p0)
+    phase_lbl = _lbl("Phases: (none loaded)", p0)
+    voltage_s = _spin(p0, 60, 300, 200, 0, " kV")
+    v0.addWidget(_lbl("CIF file(s):", p0))
+    v0.addWidget(cif_drop)
+    v0.addWidget(phase_lbl)
+    v0.addWidget(_hrow(_lbl("Voltage:", p0), voltage_s))
+    stack.addWidget(p0)
+
+    # ── Page 1: Generate Library ──────────────────────────────────────────────
+    p1 = _QW.QWidget(); v1 = _QW.QVBoxLayout(p1); v1.setContentsMargins(4, 4, 4, 4); v1.setSpacing(4)
+    res_s = _spin(p1, 0.1, 10.0, 1.0, 1, "°")
+    min_int_s = _spin(p1, 0.0, 1.0, 0.05, 3)
+    gen_btn = _btn("Generate Library", p1, enabled=False)
+    lib_lbl = _lbl("", p1)
+    v1.addWidget(_hrow(_lbl("Angle density:", p1), res_s))
+    v1.addWidget(_hrow(_lbl("Min intensity:", p1), min_int_s))
+    v1.addWidget(gen_btn)
+    v1.addWidget(lib_lbl)
+    stack.addWidget(p1)
+
+    # ── Page 2: Refine ────────────────────────────────────────────────────────
+    p2 = _QW.QWidget(); v2 = _QW.QVBoxLayout(p2); v2.setContentsMargins(4, 4, 4, 4); v2.setSpacing(4)
+    gamma_row, gamma_s = _make_slider_row(p2, "Gamma", 0.1, 1.0, 0.5, decimals=2)
+    min_i_row, min_i_s = _make_slider_row(p2, "Min intens.", 0.0, 1.0, 0.1, decimals=2)
+    # Scale: start at signal scale, allow ±10%
+    sc_lo = round(sig_scale * 0.9, 6)
+    sc_hi = round(sig_scale * 1.1, 6)
+    sc_step_dec = max(2, -int(np.floor(np.log10(sig_scale * 0.01))) + 1) if sig_scale > 0 else 4
+    scale_row, scale_s = _make_slider_row(p2, "Scale", sc_lo, sc_hi, sig_scale, decimals=sc_step_dec)
+    refine_lbl = _lbl("Generate library first.", p2)
+    for r in [gamma_row, min_i_row, scale_row]:
+        r.setEnabled(False)
+    v2.addWidget(refine_lbl)
+    v2.addWidget(gamma_row)
+    v2.addWidget(min_i_row)
+    v2.addWidget(scale_row)
+    stack.addWidget(p2)
+
+    # ── Page 3: Run ───────────────────────────────────────────────────────────
+    p3 = _QW.QWidget(); v3 = _QW.QVBoxLayout(p3); v3.setContentsMargins(4, 4, 4, 4); v3.setSpacing(4)
+    run_lbl = _lbl("", p3)
+    run_btn_w = _btn("Submit", p3, enabled=False)
+    v3.addWidget(_lbl("Run full orientation mapping on the dataset.", p3))
+    v3.addWidget(run_btn_w)
+    v3.addWidget(run_lbl)
+    stack.addWidget(p3)
+    state["run_status"][0] = run_lbl
+    state["run_btn"][0] = run_btn_w
+
+    layout.addWidget(step_bar)
+    layout.addWidget(stack)
+    caret.finalize_layout()
+    _select_step(0)
+
+    # ── Wire callbacks ─────────────────────────────────────────────────────────
 
     def _on_cif_loaded(files):
-        """Parse CIF files into orix Phase objects and unlock Step 3."""
         from orix.crystal_map import Phase
-        _phases.clear()
+        state["phases"].clear()
         for path in files:
             try:
                 phase = Phase.from_cif(path)
-                _phases.append(phase)
+                state["phases"].append(phase)
             except Exception as e:
                 print(f"Failed to load CIF {path}: {e}")
-        if _phases:
-            for w in _step3_widgets:
-                w.setEnabled(True)
-            label_w = params_caret_box.get_parameter_widget("_phase_list_label")
-            if label_w is not None:
-                label_w.setText(", ".join(p.name for p in _phases))
+        if state["phases"]:
+            phase_lbl.setText("Phases: " + ", ".join(p.name for p in state["phases"]))
+            gen_btn.setEnabled(True)
+        else:
+            phase_lbl.setText("Phases: (none loaded)")
+            gen_btn.setEnabled(False)
 
-    # Placeholder callbacks — filled in later tasks
-    def _on_generate_clicked():
-        if not _phases:
-            print("No phases loaded. Drop a CIF file first.")
+    cif_drop.filesChanged.connect(_on_cif_loaded)
+
+    def _on_generate():
+        if not state["phases"]:
             return
-        voltage_w = params_caret_box.get_parameter_widget("accelerating_voltage")
-        resolution_w = params_caret_box.get_parameter_widget("resolution")
-        min_intensity_w = params_caret_box.get_parameter_widget("minimum_intensity")
-        voltage       = float((voltage_w.text() if voltage_w else "") or 200.0)
-        resolution    = float((resolution_w.text() if resolution_w else "") or 1.0)
-        min_intensity = float((min_intensity_w.text() if min_intensity_w else "") or 0.05)
-        reciprocal_radius = _compute_reciprocal_radius(signal)
+        gen_btn.setEnabled(False)
+        lib_lbl.setText("Generating…")
         try:
-            _sim[0] = _generate_library_from_phases(
-                phases=_phases,
-                accelerating_voltage=voltage,
-                resolution=resolution,
-                minimum_intensity=min_intensity,
-                reciprocal_radius=reciprocal_radius,
+            state["sim"][0] = _generate_library_from_phases(
+                phases=state["phases"],
+                accelerating_voltage=voltage_s.value(),
+                resolution=res_s.value(),
+                minimum_intensity=min_int_s.value(),
+                reciprocal_radius=_compute_reciprocal_radius(signal),
             )
-            for w in _step4_widgets:
-                w.setEnabled(True)
+            lib_lbl.setText("✓ Library ready")
+            gen_btn.setText("✓ Regenerate")
+            gen_btn.setEnabled(True)
+            for r in [gamma_row, min_i_row, scale_row]:
+                r.setEnabled(True)
+            refine_lbl.setText("Overlay active. Adjust sliders to refine.")
+            run_btn_w.setEnabled(True)
+            _activate_overlay()
+            _select_step(2)
         except Exception as e:
-            print(f"Library generation failed: {e}")
+            lib_lbl.setText(f"Failed: {e}")
+            gen_btn.setEnabled(True)
 
-    def _on_open_refine_clicked():
-        if _refine_plot_window[0] is not None:
-            _refine_plot_window[0].setFocus()
-            return
+    gen_btn.clicked.connect(_on_generate)
+
+    def _activate_overlay():
+        """Add ScatterPlotItem + CircleROI to the signal plot (data coords)."""
         from pyqtgraph import ScatterPlotItem
         from pyqtgraph import CircleROI as PgCircleROI
-        from PySide6.QtCore import QTimer
+        from PySide6.QtCore import QTimer as _QT
 
-        refine_pw = main_window.add_plot_window(
-            is_navigator=False,
-            signal_tree=plot.signal_tree,
-        )
-        refine_pw.owner_plot_window = plot.plot_window
-        main_window._auto_position_near_owner(refine_pw)
-        refine_plot = refine_pw.add_new_plot()
-        if refine_plot.image_item not in refine_plot.items:
-            refine_plot.addItem(refine_plot.image_item)
-        _refine_plot_window[0] = refine_pw
+        if state["scatter_item"][0] is not None:
+            return
 
-        def _on_refine_closed():
-            if _refit_timer[0] is not None:
-                _refit_timer[0].stop()
-                _refit_timer[0] = None
-            _scatter_item[0] = None
-            _refine_plot_window[0] = None
-            nav_sel = getattr(plot, "parent_selector", None)
-            if nav_sel is not None and hasattr(nav_sel, "roi"):
-                try:
-                    nav_sel.roi.sigRegionChangeFinished.disconnect(_schedule_refit)
-                except RuntimeError:
-                    pass
-            # Disconnect param change signals to prevent accumulation on re-open
-            for pk in ["gamma", "min_intensity_refine", "scale_override"]:
-                pw = params_caret_box.get_parameter_widget(pk)
-                if pw is not None and hasattr(pw, "textChanged"):
-                    try:
-                        pw.textChanged.disconnect(_on_param_changed)
-                    except RuntimeError:
-                        pass
+        scatter = ScatterPlotItem(size=10, pen=mkPen("r", width=1.5), brush=None)
+        plot.addItem(scatter)
+        state["scatter_item"][0] = scatter
 
-        refine_pw.destroyed.connect(_on_refine_closed)
-
-        nav_indices = _get_current_nav_indices(plot)
-        _update_refine_pattern(refine_plot, signal, nav_indices)
-
-        scatter = ScatterPlotItem(size=8, pen=mkPen("r", width=1), brush=None)
-        refine_plot.addItem(scatter)
-        _scatter_item[0] = scatter
-
-        sig_ax = signal.axes_manager.signal_axes
-        cx_px = sig_ax[0].size / 2.0
-        cy_px = sig_ax[1].size / 2.0
-        r_px = _max_radius[0] / sig_ax[0].scale
+        # CircleROI in data (scene) coordinates — center of diffraction pattern
+        r_data = state["max_radius"][0]
+        cx_data = sig_ax[0].size / 2.0 * sig_ax[0].scale + sig_ax[0].offset
+        cy_data = sig_ax[1].size / 2.0 * sig_ax[1].scale + sig_ax[1].offset
         circle_roi = PgCircleROI(
-            pos=(cx_px - r_px, cy_px - r_px),
-            size=(2 * r_px, 2 * r_px),
+            pos=(cx_data - r_data, cy_data - r_data),
+            size=(2 * r_data, 2 * r_data),
             pen=mkPen("y", width=1),
         )
-        refine_plot.addItem(circle_roi)
+        plot.addItem(circle_roi)
+        state["circle_roi"][0] = circle_roi
 
-        refit_timer = QTimer()
-        refit_timer.setInterval(150)
-        refit_timer.setSingleShot(True)
-        _refit_timer[0] = refit_timer
+        timer = _QT()
+        timer.setInterval(150)
+        timer.setSingleShot(True)
+        state["refit_timer"][0] = timer
 
         def _do_refit():
-            if _sim[0] is None:
+            if state["sim"][0] is None:
                 return
-            r_px_now = circle_roi.size().x() / 2.0
-            effective_scale = _scale[0] if _scale[0] is not None else sig_ax[0].scale
-            _max_radius[0] = r_px_now * effective_scale
+            r_now = circle_roi.size().x() / 2.0
+            state["max_radius"][0] = r_now
+            sc_override = scale_s.value() if abs(scale_s.value() - sig_scale) > 1e-9 else None
+            state["scale_override"][0] = sc_override
             nav_idx = _get_current_nav_indices(plot)
             try:
                 coords_px, intensities = _get_best_fit_spots(
-                    signal, _sim[0], nav_idx, _gamma[0], _max_radius[0],
-                    min_intensity=_min_intensity[0],
-                    scale_override=_scale[0],
+                    signal, state["sim"][0], nav_idx,
+                    state["gamma"][0], state["max_radius"][0],
+                    min_intensity=state["min_intensity"][0],
+                    scale_override=sc_override,
                 )
-                spots = [{"pos": (c[0], c[1]), "size": max(3, intensities[i] * 12)}
-                         for i, c in enumerate(coords_px)]
-                _scatter_item[0].setData(spots)
+                # Convert pixel coords → data/scene coords for overlay on signal plot
+                sx, ox = sig_ax[0].scale, sig_ax[0].offset
+                sy, oy = sig_ax[1].scale, sig_ax[1].offset
+                spots = [
+                    {"pos": (float(c[0]) * sx + ox, float(c[1]) * sy + oy),
+                     "size": max(4, float(intensities[i]) * 14)}
+                    for i, c in enumerate(coords_px)
+                ]
+                state["scatter_item"][0].setData(spots)
             except Exception as e:
                 print(f"Refit failed: {e}")
 
-        def _schedule_refit():
-            if _refit_timer[0] is not None:
-                _refit_timer[0].start()
+        def _schedule():
+            if state["refit_timer"][0] is not None:
+                state["refit_timer"][0].start()
 
-        refit_timer.timeout.connect(_do_refit)
+        timer.timeout.connect(_do_refit)
+        circle_roi.sigRegionChangeFinished.connect(_schedule)
 
-        def _on_param_changed(*args):
-            gamma_w = params_caret_box.get_parameter_widget("gamma")
-            min_i_w = params_caret_box.get_parameter_widget("min_intensity_refine")
-            scale_w = params_caret_box.get_parameter_widget("scale_override")
-            try:
-                _gamma[0] = float(gamma_w.text()) if gamma_w else _gamma[0]
-            except ValueError:
-                pass
-            try:
-                _min_intensity[0] = float(min_i_w.text()) if min_i_w else _min_intensity[0]
-            except ValueError:
-                pass
-            try:
-                v = float(scale_w.text()) if scale_w else 0.0
-                _scale[0] = v if v > 0 else None
-            except ValueError:
-                pass
-            _schedule_refit()
+        nav_sel = getattr(plot, "parent_selector", None)
+        if nav_sel is not None and hasattr(nav_sel, "roi"):
+            nav_sel.roi.sigRegionChangeFinished.connect(_schedule)
 
-        for param_key in ["gamma", "min_intensity_refine", "scale_override"]:
-            w = params_caret_box.get_parameter_widget(param_key)
-            if w is not None and hasattr(w, "textChanged"):
-                w.textChanged.connect(_on_param_changed)
+        def _on_slider(_v=None):
+            state["gamma"][0] = gamma_s.value()
+            state["min_intensity"][0] = min_i_s.value()
+            _schedule()
 
-        circle_roi.sigRegionChangeFinished.connect(_schedule_refit)
+        gamma_s.valueChanged.connect(_on_slider)
+        min_i_s.valueChanged.connect(_on_slider)
+        scale_s.valueChanged.connect(_on_slider)
 
-        nav_selector = getattr(plot, "parent_selector", None)
-        if nav_selector is not None and hasattr(nav_selector, "roi"):
-            nav_selector.roi.sigRegionChangeFinished.connect(_schedule_refit)
+        _schedule()
 
-        for w in _step5_widgets:
-            w.setEnabled(True)
+    run_btn_w.clicked.connect(lambda: _do_run_fit(state))
 
-        _schedule_refit()
 
-    def _on_run_fit_clicked():
-        if _sim[0] is None:
-            print("No library generated. Run Step 3 first.")
-            return
+def _do_run_fit(state):
+    """Execute the full orientation mapping fit (called from submit or run button)."""
+    if state["sim"][0] is None:
+        if state["run_status"][0] is not None:
+            state["run_status"][0].setText("Generate library first.")
+        return
 
-        gamma_val = _gamma[0]
-        sim_val = _sim[0]
-        nav_axes = list(signal.axes_manager.navigation_axes)
-        n_phases = len(_phases) if _phases else 1
+    signal = state["signal"]
+    main_window = state["main_window"]
+    gamma_val = state["gamma"][0]
+    sim_val = state["sim"][0]
+    nav_axes = list(signal.axes_manager.navigation_axes)
+    n_phases = len(state["phases"]) if state["phases"] else 1
 
-        run_btn = params_caret_box.get_parameter_widget("run_fit_btn")
-        if run_btn is not None:
-            run_btn.setEnabled(False)
+    run_btn = state["run_btn"][0]
+    run_lbl = state["run_status"][0]
+    if run_btn is not None:
+        run_btn.setEnabled(False)
+    if run_lbl is not None:
+        run_lbl.setText("Running…")
 
-        def _do_fit():
-            try:
-                polar = signal.get_azimuthal_integral2d(
-                    npt=100, npt_azim=360, inplace=False, mean=True
-                )
-                polar = polar ** gamma_val
-                orientation_map = polar.get_orientation(sim_val, frac_keep=1)
-                # Copy nav-axis calibration to the orientation map
-                for i, ax in enumerate(nav_axes):
-                    if i < orientation_map.axes_manager.navigation_dimension:
-                        out_ax = orientation_map.axes_manager.navigation_axes[i]
-                        out_ax.scale = ax.scale
-                        out_ax.offset = ax.offset
-                        out_ax.units = ax.units
-                        out_ax.name = ax.name
-                results = _extract_orientation_outputs(orientation_map, nav_axes, n_phases)
-                for result_signal, title in results:
-                    result_signal.metadata.General.title = title
-                    main_window._pending_signal_queue.append(result_signal)
+    def _do_fit():
+        try:
+            polar = signal.get_azimuthal_integral2d(
+                npt=100, npt_azim=360, inplace=False, mean=True
+            )
+            polar = polar ** gamma_val
+            orientation_map = polar.get_orientation(sim_val, frac_keep=1)
+            for i, ax in enumerate(nav_axes):
+                if i < orientation_map.axes_manager.navigation_dimension:
+                    out_ax = orientation_map.axes_manager.navigation_axes[i]
+                    out_ax.scale = ax.scale; out_ax.offset = ax.offset
+                    out_ax.units = ax.units; out_ax.name = ax.name
+            results = _extract_orientation_outputs(orientation_map, nav_axes, n_phases)
+            for result_signal, title in results:
+                result_signal.metadata.General.title = title
+                main_window._pending_signal_queue.append(result_signal)
+            QtCore.QMetaObject.invokeMethod(
+                main_window, "_flush_pending_signals",
+                QtCore.Qt.ConnectionType.QueuedConnection,
+            )
+            if run_lbl is not None:
                 QtCore.QMetaObject.invokeMethod(
-                    main_window, "_flush_pending_signals",
+                    run_lbl, "setText",
                     QtCore.Qt.ConnectionType.QueuedConnection,
+                    QtCore.Q_ARG(str, "✓ Done"),
                 )
-            except Exception as e:
-                print(f"Orientation mapping failed: {e}")
-            finally:
-                if run_btn is not None:
-                    QtCore.QMetaObject.invokeMethod(
-                        run_btn, "setEnabled",
-                        QtCore.Qt.ConnectionType.QueuedConnection,
-                        QtCore.Q_ARG(bool, True),
-                    )
+        except Exception as e:
+            print(f"Orientation mapping failed: {e}")
+            if run_lbl is not None:
+                QtCore.QMetaObject.invokeMethod(
+                    run_lbl, "setText",
+                    QtCore.Qt.ConnectionType.QueuedConnection,
+                    QtCore.Q_ARG(str, f"Failed: {e}"),
+                )
+        finally:
+            if run_btn is not None:
+                QtCore.QMetaObject.invokeMethod(
+                    run_btn, "setEnabled",
+                    QtCore.Qt.ConnectionType.QueuedConnection,
+                    QtCore.Q_ARG(bool, True),
+                )
 
-        fit_thread = threading.Thread(target=_do_fit, daemon=True)
-        fit_thread.start()
-
-    params = {
-        "cif_files": {
-            "name": "CIF Files",
-            "type": "file_drop",
-            "extensions": [".cif"],
-        },
-        "accelerating_voltage": {
-            "name": "Voltage (kV)",
-            "type": "float",
-            "default": 200.0,
-        },
-        "_phase_list_label": {
-            "name": "Phases",
-            "type": "str",
-            "default": "(none loaded)",
-        },
-        "_step2_header": {
-            "name": "── Step 2 (optional): Center DP ──",
-            "type": "str",
-            "default": "",
-        },
-        "already_centered": {
-            "name": "Already Centered",
-            "type": "button",
-            "label": "✓ Already centered",
-            "callback": lambda: None,
-        },
-        "_step3_header": {
-            "name": "── Step 3: Generate Library ──",
-            "type": "str",
-            "default": "",
-        },
-        "resolution": {
-            "name": "Angle Density (°)",
-            "type": "float",
-            "default": 1.0,
-        },
-        "minimum_intensity": {
-            "name": "Min Intensity",
-            "type": "float",
-            "default": 0.05,
-        },
-        "generate_library_row": {
-            "name": "",
-            "type": "button_row",
-            "buttons": [
-                {"key": "generate_btn", "label": "Generate Library",
-                 "callback": lambda: _on_generate_clicked()},
-            ],
-        },
-        "_step4_header": {
-            "name": "── Step 4: Refine Parameters ──",
-            "type": "str",
-            "default": "",
-        },
-        "open_refine_row": {
-            "name": "",
-            "type": "button_row",
-            "buttons": [
-                {"key": "open_refine_btn", "label": "Open Refine Preview",
-                 "callback": lambda: _on_open_refine_clicked()},
-            ],
-        },
-        "gamma": {
-            "name": "Gamma",
-            "type": "float",
-            "default": 0.5,
-        },
-        "min_intensity_refine": {
-            "name": "Min Spot Intensity",
-            "type": "float",
-            "default": 0.1,
-        },
-        "scale_override": {
-            "name": "Scale (Å⁻¹/px, 0=auto)",
-            "type": "float",
-            "default": 0.0,
-        },
-        "_step5_header": {
-            "name": "── Step 5: Run Fit ──",
-            "type": "str",
-            "default": "",
-        },
-        "run_fit_row": {
-            "name": "",
-            "type": "button_row",
-            "buttons": [
-                {"key": "run_fit_btn", "label": "Run Fit",
-                 "callback": lambda: _on_run_fit_clicked()},
-            ],
-        },
-    }
-
-    action, params_caret_box = toolbar.add_action(
-        name=action_name,
-        icon_path=resolve_icon_path("drawing/toolbars/icons/orientation_mapping.svg"),
-        function=lambda *a, **kw: None,
-        toggle=True,
-        parameters=params,
-    )
-
-    # Collect step-gated widgets and disable them
-    for key in ["resolution", "minimum_intensity", "generate_btn"]:
-        w = params_caret_box.get_parameter_widget(key)
-        if w is not None:
-            w.setEnabled(False)
-            _step3_widgets.append(w)
-
-    for key in ["open_refine_btn", "gamma", "min_intensity_refine", "scale_override"]:
-        w = params_caret_box.get_parameter_widget(key)
-        if w is not None:
-            w.setEnabled(False)
-            _step4_widgets.append(w)
-
-    for key in ["run_fit_btn"]:
-        w = params_caret_box.get_parameter_widget(key)
-        if w is not None:
-            w.setEnabled(False)
-            _step5_widgets.append(w)
-
-    # Wire CIF drop widget
-    cif_widget = params_caret_box.get_parameter_widget("cif_files")
-    if cif_widget is not None and hasattr(cif_widget, "filesChanged"):
-        cif_widget.filesChanged.connect(_on_cif_loaded)
+    threading.Thread(target=_do_fit, daemon=True).start()
