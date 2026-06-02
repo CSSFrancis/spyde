@@ -576,7 +576,8 @@ def compute_virtual_image(
 
 
 def _generate_library_from_phases(phases, accelerating_voltage, resolution,
-                                   minimum_intensity, reciprocal_radius):
+                                   minimum_intensity, reciprocal_radius,
+                                   max_excitation_error=0.1):
     """Generate a diffsims Simulation2D library from a list of orix Phase objects."""
     generator = SimulationGenerator(
         accelerating_voltage, minimum_intensity=minimum_intensity
@@ -590,7 +591,7 @@ def _generate_library_from_phases(phases, accelerating_voltage, resolution,
     sim = generator.calculate_diffraction2d(
         phases if len(phases) > 1 else phases[0],
         rotation=rotations if len(rotations) > 1 else rotations[0],
-        max_excitation_error=0.1,
+        max_excitation_error=max_excitation_error,
         reciprocal_radius=reciprocal_radius,
         with_direct_beam=False,
     )
@@ -652,12 +653,15 @@ def orientation_mapping(
 
     # Placeholder callbacks — filled in later tasks
     def _on_generate_clicked():
+        if not _phases:
+            print("No phases loaded. Drop a CIF file first.")
+            return
         voltage_w = params_caret_box.get_parameter_widget("accelerating_voltage")
         resolution_w = params_caret_box.get_parameter_widget("resolution")
         min_intensity_w = params_caret_box.get_parameter_widget("minimum_intensity")
-        voltage = float(voltage_w.text() if voltage_w else 200.0)
-        resolution = float(resolution_w.text() if resolution_w else 1.0)
-        min_intensity = float(min_intensity_w.text() if min_intensity_w else 0.05)
+        voltage       = float((voltage_w.text() if voltage_w else "") or 200.0)
+        resolution    = float((resolution_w.text() if resolution_w else "") or 1.0)
+        min_intensity = float((min_intensity_w.text() if min_intensity_w else "") or 0.05)
         reciprocal_radius = _compute_reciprocal_radius(signal)
         try:
             _sim[0] = _generate_library_from_phases(
