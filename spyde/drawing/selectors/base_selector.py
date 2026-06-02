@@ -145,8 +145,14 @@ class BaseSelector:
         Get the selected indices and clip them to the data shape.
         """
         indices = self._get_selected_indices()
-        signal_shape = self.current_plot.plot_state.current_signal.axes_manager.signal_shape
-        clipped_indices = np.clip(indices, 0, np.array(signal_shape) - 1)
+        axes_manager = self.current_plot.plot_state.current_signal.axes_manager
+        # Selectors on navigator plots operate in navigation space; selectors on
+        # pure signal plots (no navigation axes) operate in signal space.
+        if axes_manager.navigation_dimension > 0:
+            clip_shape = axes_manager.navigation_shape
+        else:
+            clip_shape = axes_manager.signal_shape
+        clipped_indices = np.clip(indices, 0, np.array(clip_shape) - 1)
         return clipped_indices
 
     def _get_selected_indices(self):

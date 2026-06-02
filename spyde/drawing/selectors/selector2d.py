@@ -44,18 +44,23 @@ class CrosshairSelector(BaseSelector):
             *args,
             **kwargs,
         )
-        # auto position and size — centered on the image FOV, 1% of image width
-        # CrosshairROI pos is its lower-left corner, so subtract half the size to center it
+        # Place the crosshair at the image center. pixel_size is in screen pixels;
+        # _update_for_zoom converts it to data units on first view range change.
+        CROSSHAIR_SCREEN_PX = 10
         image_item = parent.current_plot_item.image_item
         transform = image_item.transform()
         img_w = image_item.width()
         img_h = image_item.height()
         center = transform.map(QtCore.QPointF(img_w / 2, img_h / 2))
-        width = max(1, img_w // 100)
-        pos = center - QtCore.QPointF(width / 2, width / 2)
+        # Approximate initial scene half-size from the image transform scale so the
+        # ROI is positioned centered; _update_for_zoom will refine this immediately.
+        sx = transform.m11() if transform.m11() != 0 else 1.0
+        sy = transform.m22() if transform.m22() != 0 else 1.0
+        init_scene_half = max(abs(sx), abs(sy)) * CROSSHAIR_SCREEN_PX / 2
+        pos = center - QtCore.QPointF(init_scene_half, init_scene_half)
         self.roi = CrosshairROI(
             pos=pos,
-            pixel_size=width,
+            pixel_size=CROSSHAIR_SCREEN_PX,
             view=parent.current_plot_item.getViewBox(),
             pen=self.roi_pen,
             handlePen=self.handlePen,
