@@ -652,6 +652,9 @@ def _get_best_fit_spots(signal, sim, nav_indices, gamma, max_radius):
     orientation = polar.get_orientation(sim)
 
     best_phase_idx = int(orientation.data["phase_index"].ravel()[0])
+    # TODO: multi-phase — use best_phase_idx to select the correct phase from sim
+    # e.g. sim[best_phase_idx].rotate_from_orientation(best_rotation)
+    # For now, single-phase only (rotate_from_orientation called on full sim)
     best_rotation = orientation.data["orientation"].ravel()[0]
 
     sig_ax = signal.axes_manager.signal_axes
@@ -750,6 +753,9 @@ def orientation_mapping(
             print(f"Library generation failed: {e}")
 
     def _on_open_refine_clicked():
+        if _refine_plot_window[0] is not None:
+            _refine_plot_window[0].setFocus()
+            return
         from pyqtgraph import ScatterPlotItem
         from pyqtgraph import CircleROI as PgCircleROI
         from PySide6.QtCore import QTimer
@@ -764,6 +770,21 @@ def orientation_mapping(
         if refine_plot.image_item not in refine_plot.items:
             refine_plot.addItem(refine_plot.image_item)
         _refine_plot_window[0] = refine_pw
+
+        def _on_refine_closed():
+            if _refit_timer[0] is not None:
+                _refit_timer[0].stop()
+                _refit_timer[0] = None
+            _scatter_item[0] = None
+            _refine_plot_window[0] = None
+            nav_sel = getattr(plot, "parent_selector", None)
+            if nav_sel is not None and hasattr(nav_sel, "roi"):
+                try:
+                    nav_sel.roi.sigRegionChangeFinished.disconnect(_schedule_refit)
+                except RuntimeError:
+                    pass
+
+        refine_pw.destroyed.connect(_on_refine_closed)
 
         nav_indices = _get_current_nav_indices(plot)
         _update_refine_pattern(refine_plot, signal, nav_indices)

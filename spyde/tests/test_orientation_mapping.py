@@ -96,3 +96,10 @@ def test_filter_sim_by_radius():
     )
     assert len(filtered_coords) == 2
     assert len(filtered_intensities) == 2
+    assert np.allclose(filtered_coords, coords[:2])
+    assert np.allclose(filtered_intensities, intensities[:2])
+    # boundary case: point exactly at radius should be included
+    coords_boundary = np.array([[0.5, 0.0]])
+    intensities_boundary = np.array([1.0])
+    fc, fi = _filter_sim_by_radius(coords_boundary, intensities_boundary, 0.5)
+    assert len(fc) == 1
