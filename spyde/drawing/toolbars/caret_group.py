@@ -165,6 +165,79 @@ class CaretGroup(QtWidgets.QGroupBox):
         self._update_margins()
         self._update_mask()
 
+    @staticmethod
+    def make_tab_stack(
+        tab_labels: list,
+        parent=None,
+        width: int = 240,
+        on_tab_changed=None,
+    ):
+        """
+        Build the standard step-button bar + QStackedWidget used by wizard-style actions.
+
+        Parameters
+        ----------
+        tab_labels : list of str
+            Labels for each tab button (e.g. ``["Auto", "Manual"]``).
+        parent : QWidget, optional
+            Parent widget for both the bar and the stack.
+        width : int
+            Fixed pixel width for both widgets. Default 240.
+        on_tab_changed : callable(index) | None
+            Called whenever the active tab changes.
+
+        Returns
+        -------
+        (step_bar, stack, select_fn)
+            step_bar  — QWidget containing the horizontal button row
+            stack     — QStackedWidget; call stack.addWidget(page) for each tab
+            select_fn — callable(index) that switches tabs and calls on_tab_changed
+        """
+        BTN_OFF = (
+            "QPushButton { color: rgba(255,255,255,160); background: rgba(255,255,255,15); "
+            "border: 1px solid rgba(255,255,255,40); padding: 2px 4px; font-size: 9px; "
+            "border-radius: 0px; }"
+        )
+        BTN_ON = (
+            "QPushButton { color: white; background: rgba(100,160,255,180); "
+            "border: 1px solid rgba(120,180,255,200); padding: 2px 4px; font-size: 9px; "
+            "border-radius: 0px; font-weight: bold; }"
+        )
+
+        step_bar = QtWidgets.QWidget(parent)
+        step_bar.setFixedWidth(width)
+        sb_h = QtWidgets.QHBoxLayout(step_bar)
+        sb_h.setContentsMargins(0, 0, 0, 0)
+        sb_h.setSpacing(1)
+
+        step_btns = []
+        for label in tab_labels:
+            b = QtWidgets.QPushButton(label, step_bar)
+            b.setStyleSheet(BTN_OFF)
+            b.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Expanding,
+                QtWidgets.QSizePolicy.Policy.Fixed,
+            )
+            sb_h.addWidget(b)
+            step_btns.append(b)
+
+        stack = QtWidgets.QStackedWidget(parent)
+        stack.setFixedWidth(width)
+        _current_idx = [-1]  # mutable so select_fn closure can track previous tab
+
+        def select_fn(idx: int):
+            for i, b in enumerate(step_btns):
+                b.setStyleSheet(BTN_ON if i == idx else BTN_OFF)
+            stack.setCurrentIndex(idx)
+            if callable(on_tab_changed) and idx != _current_idx[0]:
+                _current_idx[0] = idx
+                on_tab_changed(idx)
+
+        for i, b in enumerate(step_btns):
+            b.clicked.connect(lambda _, i=i: select_fn(i))
+
+        return step_bar, stack, select_fn
+
     def set_side(self, side: str):
         if side not in ("top", "bottom", "left", "right"):
             return
@@ -338,8 +411,6 @@ class CaretParams(CaretGroup):
 
     This is built from a parameters definition dictionary, which specifies the parameters to create,
     their types, default values, and optional display conditions based on other parameters.
-
-
     """
 
     def __init__(
@@ -388,6 +459,8 @@ class CaretParams(CaretGroup):
         self._rect_rois = {}  # key -> RectROI (for RectangleSelector)
 
         print("Creating CaretParams with parameters:", parameters)
+
+        self._params_layout = self.layout()
 
         # Build rows (always create; visibility controlled by conditions)
         for key, item in (self._parameters_def or {}).items():
@@ -453,7 +526,7 @@ class CaretParams(CaretGroup):
                     self.kwargs[bkey] = btn
                     self._param_types[bkey] = "button"
                 self._rows[key] = row_widget
-                self.layout().addWidget(row_widget)
+                self._params_layout.addWidget(row_widget)
                 continue
             elif dtype == "RectangleSelector":
                 # Add a rectangle ROI to the associated plot; visible only when action toggled.
@@ -555,11 +628,11 @@ class CaretParams(CaretGroup):
                     self._dependents.setdefault(controller, []).append(key)
 
             # Add row to main layout
-            self.layout().addWidget(row_widget)
+            self._params_layout.addWidget(row_widget)
 
         # Submit button
         self.submit_button = RoundedButton(text="Submit", parent=self)
-        self.layout().addWidget(self.submit_button)
+        self._params_layout.addWidget(self.submit_button)
 
         # Layout/style wiring
         layout = self.layout()
@@ -582,6 +655,95 @@ class CaretParams(CaretGroup):
 
         # Important: ensure sizeHint accounts for all rows + caret before first show
         self.finalize_layout()
+
+        self._tab_stack = None      # QStackedWidget, set by add_extra_tab
+        self._tab_select_fn = None  # callable(idx), set by add_extra_tab
+        self._on_first_show_cb = None  # callable(), invoked once on first showEvent
+
+    def add_extra_tab(self, label: str, widget: QtWidgets.QWidget, on_tab_changed=None):
+        """
+        Add a named tab alongside the existing Auto parameters page.
+
+        On the first call this restructures the layout: the existing parameter
+        rows and submit button are moved into a container widget that becomes
+        page 0 ("Auto"), and the supplied widget becomes page 1.  Subsequent
+        calls add further pages.
+
+        Parameters
+        ----------
+        label : str
+            Tab button label for the new page.
+        widget : QWidget
+            Content widget for the new page.
+        on_tab_changed : callable(index) | None
+            Called whenever the active tab changes (receives page index).
+        """
+        outer_layout = self.layout()
+
+        if self._tab_stack is None:
+            # First extra tab: restructure layout around a tab bar + stacked widget.
+            # Collect all current top-level children (rows + submit button).
+            children = []
+            while outer_layout.count():
+                item = outer_layout.takeAt(0)
+                if item.widget():
+                    children.append(item.widget())
+
+            # Wrap them in a container that becomes page 0.
+            auto_page = QtWidgets.QWidget(self)
+            auto_layout = QtWidgets.QVBoxLayout(auto_page)
+            auto_layout.setContentsMargins(0, 0, 0, 0)
+            auto_layout.setSpacing(2)
+            for child in children:
+                child.setParent(auto_page)
+                auto_layout.addWidget(child)
+
+            step_bar, stack, select_fn = CaretGroup.make_tab_stack(
+                ["Auto", label],
+                parent=self,
+                width=self.width() or 220,
+                on_tab_changed=on_tab_changed,
+            )
+            stack.addWidget(auto_page)
+            stack.addWidget(widget)
+
+            outer_layout.addWidget(step_bar)
+            outer_layout.addWidget(stack)
+
+            self._tab_stack = stack
+            self._tab_select_fn = select_fn
+        else:
+            # Subsequent extra tabs: just add more pages.
+            old_labels = [
+                self._tab_stack.widget(i).objectName() or f"Tab {i}"
+                for i in range(self._tab_stack.count())
+            ]
+            step_bar, stack, select_fn = CaretGroup.make_tab_stack(
+                old_labels + [label],
+                parent=self,
+                width=self.width() or 220,
+                on_tab_changed=on_tab_changed,
+            )
+            # Re-parent pages
+            pages = [self._tab_stack.widget(i) for i in range(self._tab_stack.count())]
+            for page in pages:
+                stack.addWidget(page)
+            stack.addWidget(widget)
+
+            # Swap the old stack for the new one in the layout
+            outer_layout.replaceWidget(self._tab_stack, stack)
+            self._tab_stack.setParent(None)
+            self._tab_stack = stack
+            self._tab_select_fn = select_fn
+
+        self.finalize_layout()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._on_first_show_cb is not None:
+            cb = self._on_first_show_cb
+            self._on_first_show_cb = None  # fire exactly once
+            cb()
 
     def _connect_visibility_triggers(self):
         from functools import partial

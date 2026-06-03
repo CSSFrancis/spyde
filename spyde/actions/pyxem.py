@@ -1,10 +1,11 @@
 import threading
 import numpy as np
-from typing import Tuple
+from typing import Tuple, List, Optional
 
-from PySide6 import QtCore
+from PySide6 import QtCore, QtWidgets, QtGui
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
 from PySide6.QtCore import Qt
+import pyqtgraph as pg
 from pyqtgraph import RectROI, CircleROI, mkPen
 
 from spyde.drawing.toolbars.toolbar import RoundedToolBar
@@ -154,6 +155,563 @@ def _start_progress_poll(future, indicator, client, timer_holder: list):
     timer.start()
 
 
+_CZB_BUILT_TOOLBARS: set = set()
+
+
+def center_zero_beam_setup(
+    toolbar: RoundedToolBar,
+    action_name: str = "Center Zero Beam",
+    *args,
+    **kwargs,
+):
+    """
+    Augment the YAML-created CaretParams with a Manual tab on first toggle.
+
+    The CaretParams (with its RectangleSelector ROI) is created at PlotState
+    init time from the YAML parameters.  This function, called on first trigger,
+    adds a Manual tab to it and wires the map window show/hide logic.
+    """
+    tid = id(toolbar)
+    if tid in _CZB_BUILT_TOOLBARS:
+        return
+    _CZB_BUILT_TOOLBARS.add(tid)
+
+    caret_params = toolbar.action_widgets.get(action_name, {}).get("widget")
+    if caret_params is None:
+        return
+
+    main_window = toolbar.plot.main_window
+    manual_state = {"map_window": [None], "toolbar_ref": toolbar}
+
+    def _on_czb_tab_changed(idx):
+        mw = manual_state["map_window"][0]
+        if idx == 1:  # Manual tab selected
+            if mw is None:
+                mw = _czb_create_map_window(toolbar, manual_state, main_window)
+            mw.show()
+            _czb_install_click_hook(toolbar, manual_state)
+        else:
+            if mw is not None:
+                mw.hide()
+            _czb_remove_click_hook(manual_state)
+
+    manual_page = _czb_build_manual_page(caret_params, toolbar, manual_state, 220)
+    caret_params.add_extra_tab("Manual", manual_page, on_tab_changed=_on_czb_tab_changed)
+
+    # Store state on toolbar to prevent GC
+    toolbar._czb_state = manual_state
+
+    # Wire action toggle: hide map window when the action is closed
+    action = toolbar._find_action(action_name)
+    if action is not None:
+        action.toggled.connect(
+            lambda checked: _czb_on_action_toggled(checked, manual_state)
+        )
+
+    # Reposition after Qt has processed the resize from finalize_layout.
+    pos_fn = toolbar.action_widgets.get(action_name, {}).get("position_fn")
+    if pos_fn is not None:
+        QtCore.QTimer.singleShot(0, pos_fn)
+
+
+def _czb_on_action_toggled(checked: bool, manual_state: dict):
+    """When the action is closed, hide the map window and remove the click hook."""
+    if not checked:
+        mw = manual_state["map_window"][0]
+        if mw is not None:
+            mw.hide()
+        _czb_remove_click_hook(manual_state)
+
+
+def _czb_create_map_window(toolbar, manual_state, main_window):
+    """Create the floating X-shift / Y-shift map using a styled PlotWindow."""
+    import pyqtgraph as _pg
+    from spyde.drawing.plots.plot_window import PlotWindow
+    from PySide6.QtCore import Qt as _Qt
+
+    pw = PlotWindow(main_window=main_window)
+    pw.setWindowTitle("Manual Beam Centers")
+    side = main_window.screen_size.height() // 6  # half the default plot height
+    pw.resize(side * 2, side)
+    main_window.mdi_area.addSubWindow(pw)
+    try:
+        pw.setWindowFlags(pw.windowFlags() | _Qt.WindowType.FramelessWindowHint)
+        pw.setStyleSheet("QMdiSubWindow { border: none; }")
+    except Exception:
+        pass
+
+    glw = pw.plot_widget
+
+    x_plot = glw.addPlot(row=0, col=0, title="X Shift (px)")
+    x_plot.setAspectLocked(True)
+    x_img = _pg.ImageItem(colorMap="CET-D1")
+    x_plot.addItem(x_img)
+    x_scatter = _pg.ScatterPlotItem(
+        size=10, symbol="+",
+        pen=_pg.mkPen("y", width=2), brush=_pg.mkBrush(None)
+    )
+    x_scatter.setZValue(10)
+    x_plot.addItem(x_scatter)
+    x_plot.getViewBox().setMenuEnabled(False)
+
+    y_plot = glw.addPlot(row=0, col=1, title="Y Shift (px)")
+    y_plot.setAspectLocked(True)
+    y_img = _pg.ImageItem(colorMap="CET-D1")
+    y_plot.addItem(y_img)
+    y_scatter = _pg.ScatterPlotItem(
+        size=10, symbol="+",
+        pen=_pg.mkPen("y", width=2), brush=_pg.mkBrush(None)
+    )
+    y_scatter.setZValue(10)
+    y_plot.addItem(y_scatter)
+    y_plot.getViewBox().setMenuEnabled(False)
+
+    x_scatter.sigClicked.connect(
+        lambda sc, pts: _czb_on_scatter_clicked(pts, manual_state)
+    )
+    y_scatter.sigClicked.connect(
+        lambda sc, pts: _czb_on_scatter_clicked(pts, manual_state)
+    )
+
+    manual_state["x_img"] = x_img
+    manual_state["y_img"] = y_img
+    manual_state["x_scatter"] = x_scatter
+    manual_state["y_scatter"] = y_scatter
+
+    # Install Delete key filter on the map window's graphics viewport
+    class _MapKeyFilter(QtCore.QObject):
+        def eventFilter(self, obj, event):
+            if event.type() == QtCore.QEvent.Type.KeyPress:
+                if event.key() == Qt.Key.Key_Delete:
+                    fn = manual_state.get("delete_fn")
+                    if fn:
+                        fn()
+                    return True
+            return False
+
+    key_filt = _MapKeyFilter(pw)
+    # Install on the plot_widget viewport so it catches keys when the map has focus
+    glw.viewport().installEventFilter(key_filt)
+    manual_state["map_key_filter"] = key_filt
+
+    pw.show()
+    manual_state["map_window"][0] = pw
+    # Draw any points already recorded before the map window was opened
+    _czb_refresh(toolbar, manual_state)
+    return pw
+
+
+class _ShiftClickViewFilter(QtCore.QObject):
+    """
+    Event filter installed on the QGraphicsView that owns the signal plot.
+
+    Intercepts Shift+Left click (MouseButtonPress with ShiftModifier) before
+    pyqtgraph processes it, so ROIs and other items cannot consume it first.
+    Returns True to consume the event so pyqtgraph does not also act on it.
+    """
+
+    def __init__(self, view, callback, parent=None):
+        super().__init__(parent)
+        self._view = view
+        self._callback = callback
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.Type.MouseButtonPress:
+            if (event.button() == Qt.MouseButton.LeftButton and
+                    event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+                # event.pos() is in viewport coordinates; map to scene.
+                scene_pos = self._view.mapToScene(event.position().toPoint())
+                self._callback(scene_pos)
+                return True  # consume — prevent pyqtgraph from panning/selecting
+        return False
+
+
+def _czb_install_click_hook(toolbar, manual_state):
+    """Install viewport event filter for Shift+click and wire navigator-change crosshair."""
+    _czb_remove_click_hook(manual_state)
+    plot = toolbar.plot
+    if plot is None:
+        return
+
+    scene = plot.vb.scene() if plot.vb is not None else None
+    if scene is None:
+        return
+    views = scene.views()
+    if not views:
+        return
+    view = views[0]
+    viewport = view.viewport()
+
+    def _on_shift_click(scene_pos):
+        vb = plot.vb
+        view_pos = vb.mapSceneToView(scene_pos)
+        img_transform, ok = plot.image_item.transform().inverted()
+        if not ok:
+            return
+        local_pos = img_transform.map(view_pos)
+        cx_px = local_pos.x()
+        cy_px = local_pos.y()
+
+        nav_idx = _czb_get_nav_indices(plot)
+        if nav_idx is None:
+            return
+        nav_x, nav_y = nav_idx
+
+        # Replace existing point at this nav position, or append a new one.
+        pts = manual_state.get("control_points", [])
+        for i, (nx, ny, *_) in enumerate(pts):
+            if nx == nav_x and ny == nav_y:
+                pts[i] = (nav_x, nav_y, cx_px, cy_px)
+                break
+        else:
+            pts.append((nav_x, nav_y, cx_px, cy_px))
+        manual_state["control_points"] = pts
+        manual_state["selected_idx"] = None
+        _czb_update_signal_crosshair(plot, manual_state)
+        _czb_refresh(toolbar, manual_state)
+
+    filt = _ShiftClickViewFilter(view, _on_shift_click)
+    viewport.installEventFilter(filt)
+    manual_state["click_filter"] = filt
+    manual_state["click_view"] = viewport
+
+    # Wire axes_manager indices_changed — only once per signal.
+    # _czb_remove_click_hook disconnects the old handler before we reconnect.
+    signal = plot.plot_state.current_signal if plot.plot_state else None
+    if signal is not None and manual_state.get("nav_signal") is not signal:
+        def _on_nav_changed():
+            _czb_update_signal_crosshair(plot, manual_state)
+            current_nav = _czb_get_nav_indices(plot)
+            _czb_refresh_scatter(manual_state, current_nav)
+
+        signal.axes_manager.events.indices_changed.connect(_on_nav_changed, kwargs=[])
+        manual_state["nav_handler"] = _on_nav_changed
+        manual_state["nav_signal"] = signal
+
+    # Show crosshair for current position immediately
+    _czb_update_signal_crosshair(plot, manual_state)
+
+
+def _czb_remove_click_hook(manual_state):
+    filt = manual_state.get("click_filter")
+    viewport = manual_state.get("click_view")
+    if filt is not None and viewport is not None:
+        try:
+            viewport.removeEventFilter(filt)
+        except Exception:
+            pass
+    manual_state["click_filter"] = None
+    manual_state["click_view"] = None
+
+    # Disconnect navigator change handler
+    handler = manual_state.get("nav_handler")
+    nav_signal = manual_state.get("nav_signal")
+    if handler is not None and nav_signal is not None:
+        try:
+            nav_signal.axes_manager.events.indices_changed.disconnect(handler)
+        except Exception:
+            pass
+    manual_state["nav_handler"] = None
+    manual_state["nav_signal"] = None
+
+    # Remove signal-plot crosshair
+    _czb_remove_signal_crosshair(manual_state)
+
+
+def _czb_update_signal_crosshair(plot, manual_state):
+    """
+    Remove any existing crosshair lines, then place fresh draggable InfiniteLine
+    crosshairs if the current navigator position has a recorded control point.
+
+    Two InfiniteLine objects (H + V) are used instead of CrosshairROI because
+    InfiniteLine is always visible regardless of zoom level and is always centered
+    on the specified position.
+    """
+    import pyqtgraph as _pg
+
+    _czb_remove_signal_crosshair(manual_state)
+
+    nav_idx = _czb_get_nav_indices(plot)
+    if nav_idx is None:
+        return
+
+    nav_x, nav_y = nav_idx
+
+    cx_px, cy_px = None, None
+    for nx, ny, cx, cy in manual_state.get("control_points", []):
+        if nx == nav_x and ny == nav_y:
+            cx_px, cy_px = cx, cy
+            break
+
+    if cx_px is None:
+        return
+
+    # Map image pixel coords → scene/data coords via image_item transform.
+    img_transform = plot.image_item.transform()
+    data_pos = img_transform.map(QtCore.QPointF(cx_px, cy_px))
+    dx, dy = data_pos.x(), data_pos.y()
+
+    pen = _pg.mkPen("y", width=2)
+    h_line = _pg.InfiniteLine(pos=dy, angle=0, pen=pen, movable=True)
+    v_line = _pg.InfiniteLine(pos=dx, angle=90, pen=pen, movable=True)
+    plot.addItem(h_line)
+    plot.addItem(v_line)
+    manual_state["signal_crosshair"] = (h_line, v_line)
+
+    bound_nav_x, bound_nav_y = nav_x, nav_y
+
+    def _on_line_moved():
+        if manual_state.get("signal_crosshair") is not (h_line, v_line):
+            return
+        # Current intersection in data coords
+        cur_dx = v_line.value()
+        cur_dy = h_line.value()
+        inv, ok = plot.image_item.transform().inverted()
+        if not ok:
+            return
+        px_pos = inv.map(QtCore.QPointF(cur_dx, cur_dy))
+        pts = manual_state.get("control_points", [])
+        for i, (nx, ny, *_) in enumerate(pts):
+            if nx == bound_nav_x and ny == bound_nav_y:
+                pts[i] = (nx, ny, px_pos.x(), px_pos.y())
+                break
+        _czb_refresh(manual_state["toolbar_ref"], manual_state)
+
+    h_line.sigPositionChanged.connect(_on_line_moved)
+    v_line.sigPositionChanged.connect(_on_line_moved)
+
+
+def _czb_remove_signal_crosshair(manual_state):
+    crosshair = manual_state.get("signal_crosshair")
+    plot = manual_state.get("toolbar_ref").plot if manual_state.get("toolbar_ref") else None
+    if crosshair is not None and plot is not None:
+        h_line, v_line = crosshair
+        for line in (h_line, v_line):
+            try:
+                plot.removeItem(line)
+            except Exception:
+                pass
+    manual_state["signal_crosshair"] = None
+
+
+def _czb_get_nav_indices(plot) -> Optional[tuple]:
+    """Return (nav_x_idx, nav_y_idx) from the navigator crosshair selector.
+
+    axes_manager.indices is NOT updated by navigator crosshair movement in SpyDE —
+    the selector owns the current position. We read it from the signal_tree's
+    navigator_plot_manager selectors.
+    """
+    if plot is None:
+        return None
+    signal_tree = getattr(plot, "signal_tree", None)
+    if signal_tree is None:
+        return None
+    npm = getattr(signal_tree, "navigator_plot_manager", None)
+    if npm is None:
+        return None
+    selectors = npm.all_navigation_selectors
+    if not selectors:
+        return None
+
+    def _read_indices(sel):
+        """Extract current_indices from a selector, handling IntegratingSelector2D."""
+        # IntegratingSelector2D wraps a CrosshairSelector
+        inner = getattr(sel, "_crosshair_selector", None)
+        if inner is not None:
+            return getattr(inner, "current_indices", None)
+        return getattr(sel, "current_indices", None)
+
+    for sel in reversed(selectors):
+        indices = _read_indices(sel)
+        if indices is None:
+            continue
+        flat = np.asarray(indices).flatten()
+        if len(flat) >= 2:
+            return (int(flat[0]), int(flat[1]))
+        if len(flat) == 1:
+            return (int(flat[0]), 0)
+    return None
+
+
+def _czb_on_scatter_clicked(points, manual_state):
+    if not points:
+        manual_state["selected_idx"] = None
+    else:
+        pos = points[0].pos()
+        px, py = pos.x(), pos.y()
+        for i, (nx, ny, *_) in enumerate(manual_state.get("control_points", [])):
+            if abs(nx - px) < 0.5 and abs(ny - py) < 0.5:
+                manual_state["selected_idx"] = i
+                break
+    _czb_refresh_scatter(manual_state)
+
+
+def _czb_fit_plane(control_points, nav_shape):
+    nav_y_size, nav_x_size = nav_shape
+    ys, xs = np.mgrid[0:nav_y_size, 0:nav_x_size]
+    if not control_points:
+        return np.zeros(nav_shape), np.zeros(nav_shape)
+    pts = np.array(control_points)
+    nx, ny, cx, cy = pts[:, 0], pts[:, 1], pts[:, 2], pts[:, 3]
+    A = np.column_stack([nx, ny, np.ones(len(nx))])
+    ax, *_ = np.linalg.lstsq(A, cx, rcond=None)
+    ay, *_ = np.linalg.lstsq(A, cy, rcond=None)
+    x_plane = ax[0] * xs + ax[1] * ys + ax[2]
+    y_plane = ay[0] * xs + ay[1] * ys + ay[2]
+    return x_plane, y_plane
+
+
+def _czb_refresh(toolbar, manual_state):
+    count_lbl = manual_state.get("count_label")
+    if count_lbl is not None:
+        count_lbl.setText(f"Points: {len(manual_state.get('control_points', []))}")
+
+    x_img = manual_state.get("x_img")
+    y_img = manual_state.get("y_img")
+    if x_img is None or y_img is None:
+        return
+
+    plot = toolbar.plot
+    if plot is None or plot.plot_state is None:
+        return
+    signal = plot.plot_state.current_signal
+    if signal is None:
+        return
+    nav_axes = signal.axes_manager.navigation_axes
+    if len(nav_axes) < 2:
+        return
+    nav_shape = (nav_axes[1].size, nav_axes[0].size)
+    x_plane, y_plane = _czb_fit_plane(manual_state.get("control_points", []), nav_shape)
+    x_img.setImage(x_plane.T, autoLevels=True)
+    y_img.setImage(y_plane.T, autoLevels=True)
+    current_nav = _czb_get_nav_indices(plot)
+    _czb_refresh_scatter(manual_state, current_nav)
+
+
+def _czb_refresh_scatter(manual_state, current_nav=None):
+    """Redraw scatter dots on both maps. Yellow = control point, cyan = current nav position."""
+    x_scatter = manual_state.get("x_scatter")
+    y_scatter = manual_state.get("y_scatter")
+    if x_scatter is None:
+        return
+    pts = manual_state.get("control_points", [])
+    if not pts:
+        x_scatter.setData([], [])
+        y_scatter.setData([], [])
+        return
+    import pyqtgraph as _pg
+    arr = np.array(pts)
+    nx, ny = arr[:, 0], arr[:, 1]
+    brushes = []
+    for i, (px, py, *_) in enumerate(pts):
+        if current_nav is not None and px == current_nav[0] and py == current_nav[1]:
+            brushes.append(_pg.mkBrush("c"))   # cyan = current position
+        else:
+            brushes.append(_pg.mkBrush("y"))   # yellow = other control point
+    x_scatter.setData(x=nx, y=ny, brush=brushes)
+    y_scatter.setData(x=nx, y=ny, brush=brushes)
+
+
+def _czb_build_manual_page(caret, toolbar, manual_state, width):
+    """Build the Manual tab page widget."""
+    manual_state.setdefault("control_points", [])
+    manual_state.setdefault("selected_idx", None)
+
+    page = QtWidgets.QWidget(caret)
+    page.setFixedWidth(width)
+    vlay = QtWidgets.QVBoxLayout(page)
+    vlay.setContentsMargins(4, 4, 4, 4)
+    vlay.setSpacing(4)
+
+    info = QtWidgets.QLabel(
+        "Shift+click on the diffraction pattern\n"
+        "to record the beam center at the current\n"
+        "navigator position.\n"
+        "Click a point on the map, then click\n"
+        "'Delete Selected' to remove it."
+    )
+    info.setStyleSheet("color: white; font-size: 10px;")
+    info.setWordWrap(True)
+    vlay.addWidget(info)
+
+    count_lbl = QtWidgets.QLabel("Points: 0")
+    count_lbl.setStyleSheet("color: white; font-size: 10px;")
+    vlay.addWidget(count_lbl)
+    manual_state["count_label"] = count_lbl
+
+    def _delete_selected():
+        idx = manual_state.get("selected_idx")
+        pts = manual_state.get("control_points", [])
+        if idx is not None and 0 <= idx < len(pts):
+            pts.pop(idx)
+            manual_state["selected_idx"] = None
+            _czb_refresh(toolbar, manual_state)
+
+    delete_btn = QtWidgets.QPushButton("Delete Selected")
+    delete_btn.setStyleSheet(
+        "QPushButton { color: white; background: rgba(255,255,255,30); border: 1px solid black; }"
+    )
+    delete_btn.clicked.connect(_delete_selected)
+    vlay.addWidget(delete_btn)
+
+    clear_btn = QtWidgets.QPushButton("Clear All Points")
+    clear_btn.setStyleSheet(
+        "QPushButton { color: white; background: rgba(255,255,255,30); border: 1px solid black; }"
+    )
+
+    def _clear():
+        manual_state["control_points"] = []
+        manual_state["selected_idx"] = None
+        _czb_refresh(toolbar, manual_state)
+
+    clear_btn.clicked.connect(_clear)
+    vlay.addWidget(clear_btn)
+
+    submit_btn = QtWidgets.QPushButton("Submit")
+    submit_btn.setStyleSheet(
+        "QPushButton { color: white; background: rgba(255,255,255,30); border: 1px solid black; }"
+    )
+    submit_btn.clicked.connect(lambda: _czb_submit(toolbar, manual_state))
+    vlay.addWidget(submit_btn)
+
+    # Store delete function so it can also be triggered from a key filter on the map viewport
+    manual_state["delete_fn"] = _delete_selected
+
+    return page
+
+
+def _czb_submit(toolbar, manual_state):
+    pts = manual_state.get("control_points", [])
+    if not pts:
+        print("No control points defined; nothing to apply.")
+        return
+    import hyperspy.api as hs
+    signal = toolbar.plot.plot_state.current_signal
+    if signal is None:
+        return
+    signal.set_signal_type("electron_diffraction")
+    nav_axes = signal.axes_manager.navigation_axes
+    nav_shape = (nav_axes[1].size, nav_axes[0].size)
+    x_plane, y_plane = _czb_fit_plane(pts, nav_shape)
+    data = np.stack([x_plane, y_plane], axis=-1)
+    shifts = hs.signals.Signal1D(data)
+    for i, ax in enumerate(nav_axes):
+        out_ax = shifts.axes_manager.navigation_axes[i]
+        out_ax.scale = ax.scale
+        out_ax.offset = ax.offset
+        out_ax.units = ax.units
+        out_ax.name = ax.name
+    new_signal = toolbar.plot.signal_tree.add_transformation(
+        parent_signal=signal,
+        node_name="Centered (Manual)",
+        method="center_direct_beam",
+        shifts=shifts,
+        inplace=False,
+    )
+    new_signal.calibration.center = None
+    toolbar.plot.set_plot_state(new_signal)
+
+
 def center_zero_beam(
     toolbar: RoundedToolBar,
     make_flat_field: bool = False,
@@ -213,13 +771,10 @@ def center_zero_beam(
     toolbar.plot.set_plot_state(new_signal)
 
 
-def virtual_imaging(*args, **kwargs):
-    """
-    Placeholder for virtual imaging action.
 
-    """
+
+def virtual_imaging(*args, **kwargs):
     print("Virtual imaging action triggered.")
-    pass
 
 
 def add_virtual_image(
@@ -768,8 +1323,8 @@ def _ipf_triangle_xy(phase):
         ly = np.atleast_1d(np.array(ly, dtype=float))
         center_x = float(np.mean(lx))
         center_y = float(np.mean(ly))
-        # Displace each label slightly away from the triangle centroid
-        DISPLACE = 0.06
+        # Displace each label away from the triangle centroid
+        DISPLACE = 0.25
         label_xy = np.vstack([
             lx + DISPLACE * (lx - center_x),
             ly + DISPLACE * (ly - center_y),
@@ -781,7 +1336,7 @@ def _ipf_triangle_xy(phase):
 
 def _get_best_fit_spots(signal, sim, nav_indices, gamma, max_radius, min_intensity=0.0,
                         scale_override=None, matching_cache=None, pattern_override=None,
-                        normalize_templates=True):
+                        normalize_templates=False, rot_mask=None):
     """
     Run orientation matching on a single diffraction pattern and return
     (coords_data, intensities, ipf_xy) for the best-match simulation spots.
@@ -823,16 +1378,36 @@ def _get_best_fit_spots(signal, sim, nav_indices, gamma, max_radius, min_intensi
         # Apply gamma, convert to (azim, radial) for _mixed_matching_lib_to_polar
         polar = np.nan_to_num(polar ** gamma).T.astype(float)  # (NA, NR)
 
-        n_templates = int_norm.shape[0]
+        int_templates = int_norm if normalize_templates else matching_cache["intensities_raw"]
+
+        # Apply rotation mask: subset templates to only those inside IPF mask circles
+        if rot_mask is not None and rot_mask.any():
+            mask_idx = np.where(rot_mask)[0]
+            integrated_use    = integrated[mask_idx]
+            r_tmpl_use        = r_tmpl[mask_idx]
+            theta_tmpl_use    = theta_tmpl[mask_idx]
+            int_templates_use = int_templates[mask_idx]
+        else:
+            mask_idx          = None
+            integrated_use    = integrated
+            r_tmpl_use        = r_tmpl
+            theta_tmpl_use    = theta_tmpl
+            int_templates_use = int_templates
+
+        n_templates = integrated_use.shape[0]
         result = _mixed_matching_lib_to_polar(
             polar,
-            integrated_templates=integrated,
-            r_templates=r_tmpl,
-            theta_templates=theta_tmpl,
-            intensities_templates=int_norm if normalize_templates else matching_cache["intensities_raw"],
+            integrated_templates=integrated_use,
+            r_templates=r_tmpl_use,
+            theta_templates=theta_tmpl_use,
+            intensities_templates=int_templates_use,
             n_keep=None, frac_keep=1.0, n_best=n_templates, transpose=False,
         )
         # result shape (n_templates, 4): [library_index, correlation, rotation_idx, mirror]
+        # lib_idx values are indices into the *subset* if mask_idx is set; remap to global.
+        if mask_idx is not None:
+            result[:, 0] = mask_idx[result[:, 0].astype(int)].astype(result.dtype)
+
         # Best match is result[0] (sorted descending by correlation).
         row = result[0]
         lib_idx = int(row[0])
@@ -1038,7 +1613,8 @@ def orientation_mapping(
         "ipf_widget": [None],
         "run_status": [None],
         "run_btn": [None],
-        "normalize_templates": [True],
+        "normalize_templates": [False],
+        "ipf_mask_circles": [],   # list of [cx, cy, r] in IPF stereographic coords
         "matching_cache": [None],  # pre-computed slices+templates from _build_matching_cache
         "refit_generation": [0],   # incremented on each schedule; threads skip stale runs
         "gen_relay": [None],       # kept alive so queued signal survives until GUI thread delivers it
@@ -1104,42 +1680,11 @@ def orientation_mapping(
         return s
 
     # ── CheckButtonGroup-style step selector ───────────────────────────────────
-    STEPS = ["1 Load", "2 Library", "3 Refine", "4 Run"]
-    BTN_SS_OFF = (
-        "QPushButton { color: rgba(255,255,255,160); background: rgba(255,255,255,15); "
-        "border: 1px solid rgba(255,255,255,40); padding: 2px 4px; font-size: 9px; "
-        "border-radius: 0px; }"
-    )
-    BTN_SS_ON = (
-        "QPushButton { color: white; background: rgba(100,160,255,180); "
-        "border: 1px solid rgba(120,180,255,200); padding: 2px 4px; font-size: 9px; "
-        "border-radius: 0px; font-weight: bold; }"
-    )
-    step_bar = _QW.QWidget(caret)
-    step_bar.setFixedWidth(W)
-    sb_h = _QW.QHBoxLayout(step_bar); sb_h.setContentsMargins(0, 0, 0, 0); sb_h.setSpacing(1)
-    step_btns = []
-    for s in STEPS:
-        b = _QW.QPushButton(s, step_bar)
-        b.setStyleSheet(BTN_SS_OFF)
-        b.setSizePolicy(_QW.QSizePolicy.Policy.Expanding, _QW.QSizePolicy.Policy.Fixed)
-        sb_h.addWidget(b)
-        step_btns.append(b)
-
-    # Stacked pages
-    stack = _QW.QStackedWidget(caret)
-    stack.setFixedWidth(W)
-
-    def _select_step(idx):
-        for i, b in enumerate(step_btns):
-            b.setStyleSheet(BTN_SS_ON if i == idx else BTN_SS_OFF)
-        stack.setCurrentIndex(idx)
+    def _on_om_tab_changed(idx):
         on_refine = idx == 2
-        # Show/hide IPF window with Refine tab
         ipf_w = state["ipf_widget"][0]
         if ipf_w is not None:
             ipf_w.show() if on_refine else ipf_w.hide()
-        # Show/hide diffraction overlay items with Refine tab
         sc = state["scatter_item"][0]
         if sc is not None:
             sc.setVisible(on_refine)
@@ -1147,8 +1692,12 @@ def orientation_mapping(
         if roi is not None:
             roi.setVisible(on_refine)
 
-    for i, b in enumerate(step_btns):
-        b.clicked.connect(lambda _, i=i: _select_step(i))
+    step_bar, stack, _select_step = CaretGroup.make_tab_stack(
+        ["1 Load", "2 Library", "3 Refine", "4 Run"],
+        parent=caret,
+        width=W,
+        on_tab_changed=_on_om_tab_changed,
+    )
 
     # ── Page 0: Load CIF ──────────────────────────────────────────────────────
     p0 = _QW.QWidget(); v0 = _QW.QVBoxLayout(p0); v0.setContentsMargins(4, 4, 4, 4); v0.setSpacing(4)
@@ -1175,7 +1724,7 @@ def orientation_mapping(
 
     # ── Page 2: Refine ────────────────────────────────────────────────────────
     p2 = _QW.QWidget(); v2 = _QW.QVBoxLayout(p2); v2.setContentsMargins(4, 4, 4, 4); v2.setSpacing(4)
-    gamma_row, gamma_s, gamma_sl = _make_slider_row(p2, "Gamma", 0.1, 1.5, 0.5, decimals=2)
+    gamma_row, gamma_s, gamma_sl = _make_slider_row(p2, "Gamma", 0.1, 1.5, 1.0, decimals=2)
     # Min intensity as percentage of brightest spot (0–100%)
     min_i_row, min_i_s, min_i_sl = _make_slider_row(p2, "Min intens.", 0.0, 100.0, 10.0, decimals=1, suffix="%")
     # Scale: start at signal scale, allow ±10%
@@ -1184,7 +1733,7 @@ def orientation_mapping(
     sc_step_dec = max(2, -int(np.floor(np.log10(sig_scale * 0.01))) + 1) if sig_scale > 0 else 4
     scale_row, scale_s, scale_sl = _make_slider_row(p2, "Scale", sc_lo, sc_hi, sig_scale, decimals=sc_step_dec)
     norm_chk = _QW.QCheckBox("Normalize templates", p2)
-    norm_chk.setChecked(True)
+    norm_chk.setChecked(False)
     norm_chk.setStyleSheet("QCheckBox { color: white; font-size: 10px; }")
     refine_lbl = _lbl("Generate library first.", p2)
     for r in [gamma_row, min_i_row, scale_row]:
@@ -1452,6 +2001,120 @@ def orientation_mapping(
         )
         ipf_pw.addItem(ipf_marker)
 
+        # ── IPF mask circles (click to add, scroll to resize, Del to remove) ──
+        # Each entry in state["ipf_mask_circles"] is [cx, cy, r].
+        # Drawn as CircleROI-style items on ipf_pw.
+        _mask_circle_items = []   # list of pg.CircleROI, parallel to state["ipf_mask_circles"]
+        _selected_mask = [None]   # index of currently selected circle (for Del)
+
+        def _redraw_mask_circles():
+            for item in _mask_circle_items:
+                try:
+                    ipf_pw.removeItem(item)
+                except Exception:
+                    pass
+            _mask_circle_items.clear()
+            for i, (cx, cy, r) in enumerate(state["ipf_mask_circles"]):
+                is_sel = (i == _selected_mask[0])
+                pen = _pg.mkPen("y" if is_sel else "c", width=1.5)
+                brush = _pg.mkBrush(0, 200, 255, 40 if not is_sel else 70)
+                item = _pg.CircleROI(
+                    pos=(cx - r, cy - r), size=(2 * r, 2 * r),
+                    pen=pen, movable=False, resizable=False,
+                )
+                item.removeHandle(0)  # remove the default resize handle
+                ipf_pw.addItem(item)
+                _mask_circle_items.append(item)
+
+        def _add_mask_circle(cx, cy):
+            # Default radius = ~10% of the triangle extent
+            gi = _ipf_grid_info[0]
+            default_r = 0.05
+            if gi is not None:
+                mins, maxs = gi[5], gi[6]
+                default_r = float((maxs - mins).mean()) * 0.08
+            state["ipf_mask_circles"].append([cx, cy, default_r])
+            _selected_mask[0] = len(state["ipf_mask_circles"]) - 1
+            _redraw_mask_circles()
+            _schedule()
+
+        def _remove_selected_mask():
+            idx = _selected_mask[0]
+            if idx is not None and 0 <= idx < len(state["ipf_mask_circles"]):
+                state["ipf_mask_circles"].pop(idx)
+                _selected_mask[0] = None
+                _redraw_mask_circles()
+                _schedule()
+
+        def _select_nearest_mask(cx, cy):
+            best_i, best_d2 = None, float("inf")
+            for i, (mcx, mcy, mr) in enumerate(state["ipf_mask_circles"]):
+                d2 = (cx - mcx) ** 2 + (cy - mcy) ** 2
+                if d2 < best_d2:
+                    best_d2, best_i = d2, i
+            _selected_mask[0] = best_i
+            _redraw_mask_circles()
+
+        def _on_ipf_click(event):
+            from PySide6.QtCore import Qt as _Qt
+            if event.button() == _Qt.MouseButton.LeftButton:
+                pos = ipf_pw.plotItem.vb.mapSceneToView(event.scenePos())
+                cx, cy = float(pos.x()), float(pos.y())
+                # If click is near an existing circle centre, select it; else add new
+                if state["ipf_mask_circles"]:
+                    nearest_i = min(
+                        range(len(state["ipf_mask_circles"])),
+                        key=lambda i: (state["ipf_mask_circles"][i][0] - cx) ** 2
+                                    + (state["ipf_mask_circles"][i][1] - cy) ** 2
+                    )
+                    mcx, mcy, mr = state["ipf_mask_circles"][nearest_i]
+                    if (cx - mcx) ** 2 + (cy - mcy) ** 2 <= mr ** 2:
+                        _select_nearest_mask(cx, cy)
+                        return
+                _add_mask_circle(cx, cy)
+
+        def _on_ipf_scroll(event):
+            # Map cursor to data coords (event.position() is in viewport coords)
+            scene_pos = ipf_pw.viewport().mapToGlobal(event.position().toPoint())
+            scene_pos = ipf_pw.mapFromGlobal(scene_pos)
+            pos = ipf_pw.plotItem.vb.mapSceneToView(scene_pos)
+            cx_cur, cy_cur = float(pos.x()), float(pos.y())
+            # Find which circle the cursor is inside (if any)
+            hit_idx = None
+            for i, (mcx, mcy, mr) in enumerate(state["ipf_mask_circles"]):
+                if (cx_cur - mcx) ** 2 + (cy_cur - mcy) ** 2 <= mr ** 2:
+                    hit_idx = i
+                    break
+            if hit_idx is None:
+                return False  # not consumed — let pyqtgraph zoom
+            _selected_mask[0] = hit_idx
+            delta = event.angleDelta().y()
+            factor = 1.1 if delta > 0 else (1.0 / 1.1)
+            state["ipf_mask_circles"][hit_idx][2] *= factor
+            _redraw_mask_circles()
+            _schedule()
+            return True  # consumed
+
+        def _on_ipf_key(event):
+            from PySide6.QtCore import Qt as _Qt2
+            if event.key() == _Qt2.Key.Key_Delete:
+                _remove_selected_mask()
+
+        ipf_pw.scene().sigMouseClicked.connect(_on_ipf_click)
+        ipf_pw.keyPressEvent = _on_ipf_key
+        ipf_pw.setFocusPolicy(_QC.Qt.FocusPolicy.ClickFocus)
+
+        # Use an event filter on the viewport to catch wheel events for mask resize
+        class _WheelFilter(_QC.QObject):
+            def eventFilter(self, obj, event):
+                if event.type() == _QC.QEvent.Type.Wheel:
+                    consumed = _on_ipf_scroll(event)
+                    return bool(consumed)  # consume only if cursor was inside a circle
+                return False
+        _wheel_filter = _WheelFilter(ipf_pw)
+        ipf_pw.viewport().installEventFilter(_wheel_filter)
+        state["_ipf_wheel_filter"] = _wheel_filter  # keep alive
+
         def _apply_spots(spots, ipf_x, ipf_y, heatmap):
             sc = state["scatter_item"][0]
             if sc is not None:
@@ -1466,7 +2129,9 @@ def orientation_mapping(
                 safe_verts = np.clip(verts, 0, len(cor_per_rot) - 1)
                 grid_vals = np.einsum("nj,nj->n", np.take(cor_per_rot, safe_verts), bw).astype(float)
                 grid_vals[outside] = np.nan
-                img = grid_vals.reshape(GRID_N, GRID_N)
+                # meshgrid(gx, gy) is row=y, col=x → reshape gives (y, x).
+                # pyqtgraph ImageItem expects (x, y), so transpose.
+                img = grid_vals.reshape(GRID_N, GRID_N).T
 
                 # inferno-style RGBA
                 rgba = np.zeros((GRID_N, GRID_N, 4), dtype=np.uint8)
@@ -1497,6 +2162,19 @@ def orientation_mapping(
             state["refit_generation"][0] += 1
             my_gen = state["refit_generation"][0]
 
+            # Build rotation mask from IPF circles (done on GUI thread; arrays are read-only)
+            _rot_mask = None
+            gi = _ipf_grid_info[0]
+            circles = list(state["ipf_mask_circles"])
+            if gi is not None and circles:
+                rot_xs, rot_ys = gi[8], gi[9]
+                mask = np.zeros(len(rot_xs), dtype=bool)
+                for cx, cy, r in circles:
+                    dist2 = (rot_xs - cx) ** 2 + (rot_ys - cy) ** 2
+                    mask |= dist2 <= r ** 2
+                if mask.any():
+                    _rot_mask = mask
+
             def _run():
                 if state["refit_generation"][0] != my_gen:
                     return  # superseded by a newer request
@@ -1510,6 +2188,7 @@ def orientation_mapping(
                         matching_cache=state["matching_cache"][0],
                         pattern_override=_current_pattern,
                         normalize_templates=state["normalize_templates"][0],
+                        rot_mask=_rot_mask,
                     )
                     if state["refit_generation"][0] != my_gen:
                         return

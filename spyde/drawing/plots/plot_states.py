@@ -125,32 +125,46 @@ class PlotState:
             tb.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
             tb.show()
 
-        functions, icons, names, toolbar_sides, toggles, params, sub_functions = (
+        functions, icons, names, toolbar_sides, toggles, params, sub_functions, setup_fns = (
             get_toolbar_actions_for_plot(self)
         )
 
         # Add actions to the appropriate toolbars
-        for func, icon, name, side, toggle, param, sub_function in zip(
-            functions, icons, names, toolbar_sides, toggles, params, sub_functions
+        for func, icon, name, side, toggle, param, sub_function, setup_fn in zip(
+            functions, icons, names, toolbar_sides, toggles, params, sub_functions, setup_fns
         ):
             print(f"Adding toolbar action: {name} to {side} toolbar")
             print(f"Function: {func}, Icon: {icon}, Toggle: {toggle}, Params: {param}")
             if side == "right":
-                self.toolbar_right.add_action(
+                _, action_widget = self.toolbar_right.add_action(
                     name, icon, func, toggle, param, sub_function
                 )
             elif side == "left":
-                self.toolbar_left.add_action(
+                _, action_widget = self.toolbar_left.add_action(
                     name, icon, func, toggle, param, sub_function
                 )
             elif side == "top":
-                self.toolbar_top.add_action(
+                _, action_widget = self.toolbar_top.add_action(
                     name, icon, func, toggle, param, sub_function
                 )
             elif side == "bottom":
-                self.toolbar_bottom.add_action(
+                _, action_widget = self.toolbar_bottom.add_action(
                     name, icon, func, toggle, param, sub_function
                 )
+            else:
+                action_widget = None
+
+            # Wire optional one-time setup callback onto the CaretParams widget.
+            if setup_fn is not None and action_widget is not None:
+                from spyde.drawing.toolbars.caret_group import CaretParams
+                if isinstance(action_widget, CaretParams):
+                    tb = (
+                        self.toolbar_right if side == "right"
+                        else self.toolbar_left if side == "left"
+                        else self.toolbar_top if side == "top"
+                        else self.toolbar_bottom
+                    )
+                    action_widget._on_first_show_cb = lambda fn=setup_fn, t=tb, n=name: fn(t, action_name=n)
 
         for tb in [
             self.toolbar_right,

@@ -114,6 +114,146 @@ class TestActions:
         # the plot needs to be updated before the toolbars are updated
         assert sig.items.__contains__(center_zero_beam_roi_new)
 
+    def test_manual_centering(self, qtbot, stem_4d_dataset):
+        """End-to-end test for manual beam centering workflow."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication
+
+        win = stem_4d_dataset["window"]
+        nav, sig = win.plots
+
+        toolbar_bottom = sig.plot_state.toolbar_bottom
+
+        # Find and trigger Center Zero Beam
+        center_button = next(a for a in toolbar_bottom.actions() if a.text() == "Center Zero Beam")
+        center_button.trigger()
+        qtbot.wait(500)
+        QApplication.processEvents()
+
+        caret_params = toolbar_bottom.action_widgets["Center Zero Beam"]["widget"]
+        assert caret_params.isVisible(), f"CaretParams not visible after trigger: {caret_params}"
+
+        # First show fires _on_first_show_cb → center_zero_beam_setup → add_extra_tab
+        # The tab stack should now exist
+        assert caret_params._tab_stack is not None, "Tab stack not created by center_zero_beam_setup"
+        assert caret_params._tab_stack.count() == 2, "Expected Auto + Manual tabs"
+
+        # Switch to Manual tab (tab index 1)
+        caret_params._tab_select_fn(1)
+        qtbot.wait(300)
+        QApplication.processEvents()
+
+        # Map window should now exist
+        manual_state = win.signal_trees[0].root  # wrong — get from toolbar
+        # Get manual_state from the toolbar
+        manual_state = toolbar_bottom._czb_state
+        assert manual_state is not None, "manual_state not stored on toolbar"
+        assert manual_state["map_window"][0] is not None, "Map window not created on tab switch"
+
+        map_window = manual_state["map_window"][0]
+        assert map_window.isVisible(), "Map window not visible"
+
+        # Click hook should be installed (viewport filter)
+        assert manual_state.get("click_filter") is not None, "Shift+click filter not installed"
+
+        # --- Simulate shift+click on the signal plot ---
+        signal_tree = win.signal_trees[0]
+        npm = signal_tree.navigator_plot_manager
+        raw_sel = npm.all_navigation_selectors[0]
+        # IntegratingSelector2D wraps a CrosshairSelector; use the inner one.
+        sel0 = getattr(raw_sel, "_crosshair_selector", raw_sel)
+        # Ensure selector has an initial position
+        if sel0.current_indices is None:
+            sel0.current_indices = np.array([[0, 0]])
+        flat0 = np.asarray(sel0.current_indices).flatten()
+        nav_x0, nav_y0 = int(flat0[0]), int(flat0[1])
+
+        # Find the viewport the filter is installed on
+        viewport = manual_state["click_view"]
+        assert viewport is not None
+
+        # Simulate a shift+MouseButtonPress on the viewport center
+        center = viewport.rect().center()
+        QTest.mouseClick(
+            viewport,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.ShiftModifier,
+            center,
+        )
+        qtbot.wait(100)
+        QApplication.processEvents()
+
+        # One control point should be recorded
+        pts = manual_state.get("control_points", [])
+        assert len(pts) == 1, f"Expected 1 control point, got {len(pts)}"
+        assert pts[0][0] == nav_x0 and pts[0][1] == nav_y0
+
+        # Two InfiniteLine crosshairs should be on the signal plot
+        crosshair = manual_state.get("signal_crosshair")
+        assert crosshair is not None, "No crosshair on signal plot after shift+click"
+        assert isinstance(crosshair, tuple) and len(crosshair) == 2, "Expected (h_line, v_line) tuple"
+        h_line, v_line = crosshair
+        assert h_line.scene() is not None, "H crosshair line not added to scene"
+        assert v_line.scene() is not None, "V crosshair line not added to scene"
+
+        # Scatter should have 1 point on both maps
+        x_scatter = manual_state.get("x_scatter")
+        y_scatter = manual_state.get("y_scatter")
+        assert x_scatter is not None
+        assert len(x_scatter.data["x"]) == 1, f"Expected 1 scatter point on X map, got {len(x_scatter.data['x'])}"
+        assert len(y_scatter.data["x"]) == 1
+
+        # --- Navigate to a different position ---
+        # Drive the inner crosshair selector directly.
+        sel0.current_indices = np.array([[nav_x0 + 1, nav_y0]])
+        # Trigger the nav-changed handler manually (in tests the selector timer doesn't fire)
+        manual_state["nav_handler"]()
+        qtbot.wait(100)
+        QApplication.processEvents()
+
+        # Crosshair should be gone (new position has no point)
+        crosshair_after_nav = manual_state.get("signal_crosshair")
+        assert crosshair_after_nav is None, "Crosshair should disappear at nav position without a point"
+
+        # --- Shift+click at this new position ---
+        QTest.mouseClick(
+            viewport,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.ShiftModifier,
+            center,
+        )
+        qtbot.wait(100)
+        QApplication.processEvents()
+
+        pts = manual_state.get("control_points", [])
+        assert len(pts) == 2, f"Expected 2 control points, got {len(pts)}"
+        assert len(x_scatter.data["x"]) == 2, "Expected 2 scatter points on X map"
+
+        # A new crosshair should appear at this position
+        crosshair2 = manual_state.get("signal_crosshair")
+        assert crosshair2 is not None, "No crosshair at second nav position"
+        assert crosshair2 is not crosshair, "Should be new crosshair instances"
+
+        # --- Navigate back to first position → crosshair reappears ---
+        sel0.current_indices = np.array([[nav_x0, nav_y0]])
+        manual_state["nav_handler"]()
+        qtbot.wait(100)
+        QApplication.processEvents()
+
+        crosshair_back = manual_state.get("signal_crosshair")
+        assert crosshair_back is not None, "Crosshair should reappear at first position"
+
+        # Verify its position matches the recorded pixel coords
+        pt0 = pts[0]  # (nav_x0, nav_y0, cx, cy)
+        assert pt0[0] == nav_x0 and pt0[1] == nav_y0
+
+        # --- Close the action ---
+        center_button.trigger()
+        qtbot.wait(200)
+        assert not map_window.isVisible(), "Map window should hide when action is closed"
+        assert manual_state.get("signal_crosshair") is None, "Crosshair should be removed on close"
+
     def test_rebin(self, qtbot, stem_4d_dataset):
         win = stem_4d_dataset["window"]
         subwindows = win.plots

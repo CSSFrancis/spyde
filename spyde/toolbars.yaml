@@ -68,6 +68,7 @@ functions:
     description: Centers the zero beam in diffraction patterns.
     icon: drawing/toolbars/icons/center_zero_beam.svg
     function: spyde.actions.pyxem.center_zero_beam
+    setup_function: spyde.actions.pyxem.center_zero_beam_setup
     plot_dim: [ 2 ]
     toolbar_side: bottom
     navigation: False

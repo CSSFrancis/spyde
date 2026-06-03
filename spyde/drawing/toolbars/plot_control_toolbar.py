@@ -35,14 +35,14 @@ def resolve_icon_path(icon_value: str) -> str:
 def get_toolbar_actions_for_plot(
     plot_state: "PlotState",
 ) -> tuple[
-    list, list[str], list[str], list[str], list[bool], list[dict], list[list[tuple]]
+    list, list[str], list[str], list[str], list[bool], list[dict], list[list[tuple]], list
 ]:
     """
     Build the action metadata lists for a given PlotState by filtering TOOLBAR_ACTIONS.
 
     Returns
     -------
-    (functions, icons, names, toolbar_sides, toggles, parameters, sub_toolbars)
+    (functions, icons, names, toolbar_sides, toggles, parameters, sub_toolbars, setup_functions)
       functions: list[Callable] (each partially applied with action_name)
       icons: list[str] (resolved icon paths)
       names: list[str] (action identifiers)
@@ -50,6 +50,7 @@ def get_toolbar_actions_for_plot(
       toggles: list[bool] (whether action is checkable)
       parameters: list[dict] (parameter definitions for CaretParams popouts)
       sub_toolbars: list[list[tuple]] (each inner list holds sub-action tuples)
+      setup_functions: list[Callable | None] (optional one-time first-show callbacks)
     """
     functions = []
     icons = []
@@ -58,6 +59,7 @@ def get_toolbar_actions_for_plot(
     toggles = []
     parameters = []
     sub_toolbars = []  # Parallel list: each entry is a list of subfunction tuples
+    setup_functions = []
 
     for action, meta in TOOLBAR_ACTIONS["functions"].items():
         signal_types = meta.get("signal_types")
@@ -90,6 +92,14 @@ def get_toolbar_actions_for_plot(
         toggles.append(meta.get("toggle", False))
         parameters.append(params)
 
+        # Optional one-time setup function called on first show of the CaretParams.
+        setup_fn = None
+        setup_path = meta.get("setup_function")
+        if setup_path:
+            s_module, _, s_attr = setup_path.rpartition(".")
+            setup_fn = getattr(importlib.import_module(s_module), s_attr)
+        setup_functions.append(setup_fn)
+
         # Collect optional subfunctions
         sub_defs = meta.get("subfunctions", {})
         sub_entries = []
@@ -115,4 +125,4 @@ def get_toolbar_actions_for_plot(
         sub_toolbars.append(sub_entries)
         print("SubTB:", sub_toolbars)
 
-    return functions, icons, names, toolbar_sides, toggles, parameters, sub_toolbars
+    return functions, icons, names, toolbar_sides, toggles, parameters, sub_toolbars, setup_functions
