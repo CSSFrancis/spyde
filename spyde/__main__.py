@@ -352,6 +352,9 @@ class MainWindow(QMainWindow):
             "small_ptychography",
             "zrnb_precipitate",
             "pdcusi_insitu",
+            "sped_ag",
+            "fe_multi_phase_grains",
+
         ]
         for n in names:
             action = example_data.addAction(n)
@@ -625,6 +628,9 @@ class MainWindow(QMainWindow):
         Load example data for testing purposes.
         """
         signal = getattr(pyxem.data, name)(allow_download=True, lazy=True)
+
+        if name == "sped_ag":
+            signal.axes_manager.signal_axes.set(offset =-0.374196254*4, scale=0.00668207597*4)
         self.add_signal(signal)
         print("Example data loaded:", name)
 

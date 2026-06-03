@@ -661,79 +661,294 @@ def _filter_sim_by_radius(coords, intensities, max_radius):
 
 
 def _get_current_nav_indices(plot):
-    """Return current navigation indices as a tuple of ints."""
+    """Return current navigation indices as a flat tuple of ints (HyperSpy axis order).
+
+    Tries get_selected_indices() first (BaseSelector subclasses), then falls back to
+    _get_selected_indices() (IntegratingSelectorMixin subclasses like IntegratingSelector2D).
+    """
     selector = getattr(plot, "parent_selector", None)
+    if selector is None:
+        selector = getattr(getattr(plot, "plot_window", None), "parent_selector", None)
     if selector is not None:
-        try:
-            indices = selector.get_selected_indices()
-            return tuple(int(i) for i in np.atleast_1d(indices))
-        except Exception:
-            pass
+        # Prefer the clipped method to keep indices in bounds.
+        # IntegratingSelector2D only has _get_selected_indices (unclipped),
+        # so clip manually using the signal's navigation shape.
+        for method_name in ("get_selected_indices", "_get_selected_indices"):
+            method = getattr(selector, method_name, None)
+            if method is not None:
+                try:
+                    indices = np.asarray(method())
+                    flat = np.mean(indices, axis=0).ravel()
+                    # CrosshairSelector returns [[col, row]] (x, y in image space).
+                    # Clip col to x-nav size and row to y-nav size.
+                    nav_axes = plot.plot_state.current_signal.axes_manager.navigation_axes
+                    # nav_axes[0]=x(col, innermost), nav_axes[1]=y(row, outermost)
+                    clipped = tuple(
+                        int(np.clip(flat[i], 0, nav_axes[i].size - 1))
+                        for i in range(len(flat))
+                    )
+                    return clipped
+                except Exception:
+                    continue
     nav_axes = plot.plot_state.current_signal.axes_manager.navigation_axes
     return tuple(ax.size // 2 for ax in nav_axes)
 
 
 def _update_refine_pattern(refine_plot, signal, nav_indices):
     """Load the diffraction pattern at nav_indices into refine_plot."""
-    idx = tuple(int(i) for i in nav_indices)
+    idx = tuple(int(i) for i in reversed(nav_indices))
     pattern_data = np.array(signal.data[idx])
     refine_plot.update_data(pattern_data)
 
 
-def _get_best_fit_spots(signal, sim, nav_indices, gamma, max_radius, min_intensity=0.0, scale_override=None):
+def _build_matching_cache(signal, sim):
     """
-    Run get_orientation on a single diffraction pattern and return
-    (coords_px, intensities) for the best-match simulation spots.
-
-    coords_px : ndarray shape (N, 2) in pixel (row, col) coordinates
-    intensities : ndarray shape (N,)
+    Pre-compute slices and templates that only depend on signal geometry and library.
+    With numba cache=True in pyxem, get_slices2d is ~0.1 s and JIT compiles are
+    skipped after the first run, so this is cheap after a fresh install.
     """
-    import hyperspy.api as hs
+    from pyxem.utils.indexation_utils import _get_integrated_polar_templates, _norm_rows
 
-    idx = tuple(int(i) for i in nav_indices)
-    pattern_data = np.array(signal.data[idx])
-    pattern_signal = hs.signals.Signal2D(pattern_data)
-    for i, ax in enumerate(signal.axes_manager.signal_axes):
-        pattern_signal.axes_manager.signal_axes[i].scale = ax.scale
-        pattern_signal.axes_manager.signal_axes[i].offset = ax.offset
-        pattern_signal.axes_manager.signal_axes[i].units = ax.units
+    NR, NA = 100, 360
 
-    pattern_signal.set_signal_type("electron_diffraction")
-    polar = pattern_signal.get_azimuthal_integral2d(
-        npt=100, npt_azim=360, inplace=False, mean=True
+    slices, factors, factors_slice, radial_range = signal.calibration.get_slices2d(NR, NA)
+
+    r0, r1 = float(radial_range[0]), float(radial_range[1])
+    radial_axis = r0 + (r1 - r0) / NR * np.arange(NR)
+    azim_axis   = np.linspace(-np.pi, np.pi, NA, endpoint=False)
+
+    r_templates, theta_templates, intensities_templates = sim.polar_flatten_simulations(
+        radial_axes=radial_axis, azimuthal_axes=azim_axis,
     )
-    polar = polar ** gamma
+    integrated = _get_integrated_polar_templates(NR, r_templates, intensities_templates, True)
+    intensities_raw  = intensities_templates.copy().astype(float)
+    intensities_norm = _norm_rows(intensities_raw.copy())
 
-    orientation = polar.get_orientation(sim)
+    return {
+        "slices": slices,
+        "factors": factors,
+        "factors_slice": factors_slice,
+        "r_templates": r_templates,
+        "theta_templates": theta_templates,
+        "intensities_norm": intensities_norm,
+        "intensities_raw": intensities_raw,
+        "integrated": integrated,
+        "NR": NR, "NA": NA,
+    }
 
-    best_phase_idx = int(orientation.data["phase_index"].ravel()[0])
-    # TODO: multi-phase — use best_phase_idx to select the correct phase from sim
-    # e.g. sim[best_phase_idx].rotate_from_orientation(best_rotation)
-    # For now, single-phase only (rotate_from_orientation called on full sim)
-    best_rotation = orientation.data["orientation"].ravel()[0]
 
-    sig_ax = signal.axes_manager.signal_axes
-    scale = scale_override if scale_override is not None else sig_ax[0].scale
-    sim_at_best = sim.rotate_from_orientation(best_rotation)
-    raw_coords = sim_at_best.coordinates
-    intensities = sim_at_best.intensities
+def _ipf_xy_for_rotation(rotation, phases):
+    """Return stereographic (x, y) of rotation*z projected into the fundamental sector."""
+    from orix.vector import Vector3d
+    from orix.projections import StereographicProjection
+    # phases may be a single Phase or a list — always use first
+    phase = phases[0] if hasattr(phases, '__len__') else phases
+    vec = rotation * Vector3d.zvector()
+    vec = vec.in_fundamental_sector(phase.point_group)
+    s = StereographicProjection()
+    x, y = s.vector2xy(vec)
+    return float(np.atleast_1d(x)[0]), float(np.atleast_1d(y)[0])
+
+
+def _ipf_triangle_xy(phase):
+    """Return (xy_edges, label_xy, label_texts) for the IPF fundamental sector outline."""
+    from orix.projections import StereographicProjection
+    from pyxem.signals.indexation_results import _closed_edges_in_hemisphere, _get_ipf_axes_labels
+    s = StereographicProjection()
+    sector = phase.point_group.fundamental_sector
+    edges = _closed_edges_in_hemisphere(sector.edges, sector)
+    ex, ey = s.vector2xy(edges)
+    xy_edges = np.vstack((ex, ey)).T
+    try:
+        raw_labels = _get_ipf_axes_labels(sector.vertices, symmetry=phase.point_group)
+        # Strip LaTeX delimiters ($) — pyqtgraph can't render them
+        labels = [l.replace("$", "") for l in raw_labels]
+        lx, ly = s.vector2xy(sector.vertices)
+        lx = np.atleast_1d(np.array(lx, dtype=float))
+        ly = np.atleast_1d(np.array(ly, dtype=float))
+        center_x = float(np.mean(lx))
+        center_y = float(np.mean(ly))
+        # Displace each label slightly away from the triangle centroid
+        DISPLACE = 0.06
+        label_xy = np.vstack([
+            lx + DISPLACE * (lx - center_x),
+            ly + DISPLACE * (ly - center_y),
+        ]).T
+    except Exception:
+        labels, label_xy = [], np.empty((0, 2))
+    return xy_edges, label_xy, labels
+
+
+def _get_best_fit_spots(signal, sim, nav_indices, gamma, max_radius, min_intensity=0.0,
+                        scale_override=None, matching_cache=None, pattern_override=None,
+                        normalize_templates=True):
+    """
+    Run orientation matching on a single diffraction pattern and return
+    (coords_data, intensities, ipf_xy) for the best-match simulation spots.
+
+    coords_data : ndarray shape (N, 2) in Å⁻¹ centered at the direct beam.
+    intensities : ndarray shape (N,)
+    ipf_xy      : (x, y) tuple in stereographic coords for the best-match rotation.
+
+    matching_cache : dict from _build_matching_cache — holds pre-computed slices
+        and templates so this function only does ~5 ms of work per call.
+        If None, falls back to the slow HyperSpy path (~7 s per call).
+    """
+    original_scale = signal.axes_manager.signal_axes[0].scale
+    from pyxem.utils.indexation_utils import _mixed_matching_lib_to_polar
+    from pyxem.utils._azimuthal_integrations import _slice_radial_integrate
+
+    if pattern_override is not None:
+        pattern_data = np.asarray(pattern_override).astype(float)
+    else:
+        # nav_indices are (x, y) HyperSpy order (innermost first).
+        # Reverse to (y, x) numpy order for data indexing.
+        idx = tuple(int(i) for i in reversed(nav_indices))
+        pattern_data = np.array(signal.data[idx]).astype(float)
+
+    if matching_cache is not None:
+        # Fast path: raw numpy, no HyperSpy Signal overhead
+        slices        = matching_cache["slices"]
+        factors       = matching_cache["factors"]
+        factors_slice = matching_cache["factors_slice"]
+        r_tmpl        = matching_cache["r_templates"]
+        theta_tmpl    = matching_cache["theta_templates"]
+        int_norm      = matching_cache["intensities_norm"]
+        integrated    = matching_cache["integrated"]
+        NR, NA        = matching_cache["NR"], matching_cache["NA"]
+
+        polar = _slice_radial_integrate(
+            pattern_data, factors, factors_slice, slices, NR, NA, mean=True
+        )
+        # Apply gamma, convert to (azim, radial) for _mixed_matching_lib_to_polar
+        polar = np.nan_to_num(polar ** gamma).T.astype(float)  # (NA, NR)
+
+        n_templates = int_norm.shape[0]
+        result = _mixed_matching_lib_to_polar(
+            polar,
+            integrated_templates=integrated,
+            r_templates=r_tmpl,
+            theta_templates=theta_tmpl,
+            intensities_templates=int_norm if normalize_templates else matching_cache["intensities_raw"],
+            n_keep=None, frac_keep=1.0, n_best=n_templates, transpose=False,
+        )
+        # result shape (n_templates, 4): [library_index, correlation, rotation_idx, mirror]
+        # Best match is result[0] (sorted descending by correlation).
+        row = result[0]
+        lib_idx = int(row[0])
+        rot_idx = int(row[2])
+        mirror  = float(row[3])
+
+        # Get the raw simulation coordinates for the best-match entry
+        _rot, _phase_idx, coords_dv = sim.get_simulation(lib_idx)
+        raw_coords  = coords_dv.data[:, :2].copy().astype(float)
+        intensities = np.array(coords_dv.intensity, dtype=float)
+
+        # Replicate vectors_from_orientation_map (pyxem/signals/indexation_results.py):
+        #   1. flip y, 2. rotate by mirror*angle, 3. negate, 4. mirror*y
+        NA_full   = NA
+        angle_deg = rot_idx / NA_full * 360.0 - 180.0
+        angle_rad = np.deg2rad(mirror * angle_deg)
+        cos_a, sin_a = np.cos(angle_rad), np.sin(angle_rad)
+        rx = raw_coords[:, 0];  ry = -raw_coords[:, 1]
+        kx = rx * cos_a - ry * sin_a;  ky = rx * sin_a + ry * cos_a
+        kx, ky = -kx, -ky;  ky = mirror * ky
+        raw_coords = np.stack([kx, ky], axis=1)
+
+        # IPF heatmap: project every template rotation * z into the fundamental
+        # sector, weighted by normalised correlation score.
+        try:
+            from orix.vector import Vector3d as _V3
+            from orix.projections import StereographicProjection as _SP
+            _phase = sim.phases if not hasattr(sim.phases, '__len__') else sim.phases
+            if hasattr(_phase, '__len__'):
+                _phase = _phase[0]
+            _sp = _SP()
+            # All rotations in the simulation library
+            all_rots = sim.rotations if not hasattr(sim.rotations, '__len__') else sim.rotations
+            if hasattr(all_rots, '__len__'):
+                all_rots = all_rots[0] if len(all_rots) == 1 else all_rots
+            vecs = all_rots * _V3.zvector()
+            vecs_fs = vecs.in_fundamental_sector(_phase.point_group)
+            ipf_xs, ipf_ys = _sp.vector2xy(vecs_fs)
+            ipf_xs = np.atleast_1d(np.array(ipf_xs, dtype=float))
+            ipf_ys = np.atleast_1d(np.array(ipf_ys, dtype=float))
+
+            # Map result rows back to rotation indices (result[:,0] = lib_idx into sim)
+            # Correlations are already sorted best-first; normalise to [0,1]
+            all_cors = result[:, 1].astype(float)
+            cor_max = float(all_cors[0]) if all_cors[0] > 0 else 1.0
+            all_cors_norm = np.clip(all_cors / cor_max, 0.0, 1.0)
+            all_lib_idxs = result[:, 0].astype(int)
+
+            # Build per-rotation correlation array (some rotations may not appear
+            # in result if frac_keep filtered them; leave those as 0)
+            cor_per_rot = np.zeros(len(ipf_xs), dtype=float)
+            for i, li in enumerate(all_lib_idxs):
+                if 0 <= li < len(cor_per_rot):
+                    cor_per_rot[li] = all_cors_norm[i]
+
+            ipf_heatmap = (ipf_xs, ipf_ys, cor_per_rot)
+            ipf_xy = _ipf_xy_for_rotation(_rot, sim.phases)
+        except Exception as e:
+            print(f"IPF heatmap failed: {e}")
+            ipf_heatmap = None
+            ipf_xy = (0.0, 0.0)
+
+        # Apply scale override before radius filtering: the library was generated
+        # assuming the signal's calibrated scale, but the real data may be
+        # miscalibrated.  scale_override is the user's corrected Å⁻¹/px value,
+        # so the template coords (in Å⁻¹) need to be rescaled by
+        # scale_override / original_scale to match where spots actually land.
+        if scale_override is not None:
+            raw_coords = raw_coords * (scale_override / original_scale)
+
+    else:
+        # Slow fallback: full HyperSpy Signal path
+        import hyperspy.api as hs
+        pat = hs.signals.Signal2D(pattern_data)
+        for i, ax in enumerate(signal.axes_manager.signal_axes):
+            pat.axes_manager.signal_axes[i].scale = ax.scale
+            pat.axes_manager.signal_axes[i].offset = ax.offset
+            pat.axes_manager.signal_axes[i].units = ax.units
+        pat.set_signal_type("electron_diffraction")
+        polar_hs = pat.get_azimuthal_integral2d(npt=100, npt_azim=360, inplace=False, mean=True)
+        polar_hs = polar_hs ** gamma
+        orientation = polar_hs.get_orientation(sim)
+        vectors_signal = orientation.to_vectors(n_best_index=0, return_object=False)
+        spot_array = vectors_signal.data[()]
+        if spot_array.ndim == 1 and spot_array.dtype == object:
+            spot_array = spot_array[0]
+        raw_coords  = spot_array[:, :2].astype(float)
+        intensities = spot_array[:, 3].astype(float)
+
+        if scale_override is not None:
+            raw_coords = raw_coords * (scale_override / original_scale)
+
+        try:
+            best_rot = orientation.data[0, 0]
+            from orix.quaternion import Rotation as _Rotation
+            ipf_xy = _ipf_xy_for_rotation(_Rotation(best_rot), sim.phases)
+        except Exception:
+            ipf_xy = (0.0, 0.0)
+        ipf_heatmap = None  # not available in slow path
+
+    # Normalize intensities to [0, 1] relative to the brightest spot in the
+    # full (pre-filter) simulation, then threshold by min_intensity percentage.
+    i_max_all = float(np.max(intensities)) if len(intensities) > 0 else 1.0
+    i_max_all = i_max_all if i_max_all > 0 else 1.0
+    intensities_norm_display = intensities / i_max_all
 
     coords_filtered, intensities_filtered = _filter_sim_by_radius(
-        raw_coords, intensities, max_radius
+        raw_coords, intensities_norm_display, max_radius
     )
 
-    # Filter spots below minimum intensity threshold
     if min_intensity > 0.0 and len(intensities_filtered) > 0:
         keep = intensities_filtered >= min_intensity
-        coords_filtered = coords_filtered[keep]
+        coords_filtered      = coords_filtered[keep]
         intensities_filtered = intensities_filtered[keep]
 
-    coords_px = coords_filtered / scale
-    cx = pattern_data.shape[1] / 2.0
-    cy = pattern_data.shape[0] / 2.0
-    coords_px[:, 0] += cx
-    coords_px[:, 1] += cy
-    return coords_px, intensities_filtered
+    return coords_filtered, intensities_filtered, ipf_xy, ipf_heatmap
 
 
 def _compute_reciprocal_radius(signal) -> float:
@@ -743,8 +958,8 @@ def _compute_reciprocal_radius(signal) -> float:
     return min(half_extents)
 
 
-def _make_slider_row(parent, label_text, min_val, max_val, default, decimals=2):
-    """Return (row_widget, spinbox) for a labelled float slider+spinbox row."""
+def _make_slider_row(parent, label_text, min_val, max_val, default, decimals=2, suffix=""):
+    """Return (row_widget, spinbox, slider) for a labelled float slider+spinbox row."""
     from PySide6 import QtWidgets as _QW, QtCore as _QC
     SCALE = 10 ** decimals
     row = _QW.QWidget(parent)
@@ -758,7 +973,9 @@ def _make_slider_row(parent, label_text, min_val, max_val, default, decimals=2):
     spin.setDecimals(decimals)
     spin.setSingleStep(10 ** -decimals)
     spin.setValue(default)
-    spin.setFixedWidth(64)
+    spin.setFixedWidth(72 if suffix else 64)
+    if suffix:
+        spin.setSuffix(suffix)
     spin.setStyleSheet(
         "QDoubleSpinBox { color: white; background: rgba(255,255,255,40); "
         "border: 1px solid black; font-size: 10px; }"
@@ -775,7 +992,7 @@ def _make_slider_row(parent, label_text, min_val, max_val, default, decimals=2):
     h.addWidget(lbl)
     h.addWidget(slider, 1)
     h.addWidget(spin)
-    return row, spin
+    return row, spin, slider
 
 
 # Module-level set of toolbar ids that have already had the OM caret built.
@@ -818,8 +1035,13 @@ def orientation_mapping(
         "refit_timer": [None],
         "scatter_item": [None],
         "circle_roi": [None],
+        "ipf_widget": [None],
         "run_status": [None],
         "run_btn": [None],
+        "normalize_templates": [True],
+        "matching_cache": [None],  # pre-computed slices+templates from _build_matching_cache
+        "refit_generation": [0],   # incremented on each schedule; threads skip stale runs
+        "gen_relay": [None],       # kept alive so queued signal survives until GUI thread delivers it
     }
 
     # ── Build a CaretGroup directly and register it with the toolbar ───────────
@@ -834,17 +1056,9 @@ def orientation_mapping(
         action_name=action_name,
     )
     toolbar.add_action_widget(action_name, caret, None)
-
-    # _bind_action_to_widget calls action.setChecked(False), resetting the state
-    # of the toggle that just triggered this function. Re-check the action and
-    # show the caret — the user pressed the button to open the wizard.
-    om_action = toolbar._find_action(action_name)
-    if om_action is not None:
-        om_action.setChecked(True)  # restore — was just reset by _bind_action_to_widget
-    caret.show()
-    pos_fn = toolbar.action_widgets.get(action_name, {}).get("position_fn")
-    if pos_fn is not None:
-        pos_fn()
+    # add_action_widget/_bind_action_to_widget calls setChecked(False) which hides
+    # the caret. Defer restoring the checked state until after the full widget tree
+    # is built and finalize_layout() has been called, so position_fn sees real geometry.
 
     layout = caret.layout()
 
@@ -920,6 +1134,18 @@ def orientation_mapping(
         for i, b in enumerate(step_btns):
             b.setStyleSheet(BTN_SS_ON if i == idx else BTN_SS_OFF)
         stack.setCurrentIndex(idx)
+        on_refine = idx == 2
+        # Show/hide IPF window with Refine tab
+        ipf_w = state["ipf_widget"][0]
+        if ipf_w is not None:
+            ipf_w.show() if on_refine else ipf_w.hide()
+        # Show/hide diffraction overlay items with Refine tab
+        sc = state["scatter_item"][0]
+        if sc is not None:
+            sc.setVisible(on_refine)
+        roi = state["circle_roi"][0]
+        if roi is not None:
+            roi.setVisible(on_refine)
 
     for i, b in enumerate(step_btns):
         b.clicked.connect(lambda _, i=i: _select_step(i))
@@ -949,20 +1175,26 @@ def orientation_mapping(
 
     # ── Page 2: Refine ────────────────────────────────────────────────────────
     p2 = _QW.QWidget(); v2 = _QW.QVBoxLayout(p2); v2.setContentsMargins(4, 4, 4, 4); v2.setSpacing(4)
-    gamma_row, gamma_s = _make_slider_row(p2, "Gamma", 0.1, 1.0, 0.5, decimals=2)
-    min_i_row, min_i_s = _make_slider_row(p2, "Min intens.", 0.0, 1.0, 0.1, decimals=2)
+    gamma_row, gamma_s, gamma_sl = _make_slider_row(p2, "Gamma", 0.1, 1.5, 0.5, decimals=2)
+    # Min intensity as percentage of brightest spot (0–100%)
+    min_i_row, min_i_s, min_i_sl = _make_slider_row(p2, "Min intens.", 0.0, 100.0, 10.0, decimals=1, suffix="%")
     # Scale: start at signal scale, allow ±10%
     sc_lo = round(sig_scale * 0.9, 6)
     sc_hi = round(sig_scale * 1.1, 6)
     sc_step_dec = max(2, -int(np.floor(np.log10(sig_scale * 0.01))) + 1) if sig_scale > 0 else 4
-    scale_row, scale_s = _make_slider_row(p2, "Scale", sc_lo, sc_hi, sig_scale, decimals=sc_step_dec)
+    scale_row, scale_s, scale_sl = _make_slider_row(p2, "Scale", sc_lo, sc_hi, sig_scale, decimals=sc_step_dec)
+    norm_chk = _QW.QCheckBox("Normalize templates", p2)
+    norm_chk.setChecked(True)
+    norm_chk.setStyleSheet("QCheckBox { color: white; font-size: 10px; }")
     refine_lbl = _lbl("Generate library first.", p2)
     for r in [gamma_row, min_i_row, scale_row]:
         r.setEnabled(False)
+    norm_chk.setEnabled(False)
     v2.addWidget(refine_lbl)
     v2.addWidget(gamma_row)
     v2.addWidget(min_i_row)
     v2.addWidget(scale_row)
+    v2.addWidget(norm_chk)
     stack.addWidget(p2)
 
     # ── Page 3: Run ───────────────────────────────────────────────────────────
@@ -980,6 +1212,15 @@ def orientation_mapping(
     layout.addWidget(stack)
     caret.finalize_layout()
     _select_step(0)
+
+    # Now that the widget tree is fully built, restore the checked state so the
+    # caret shows with correct geometry on the first click.
+    om_action = toolbar._find_action(action_name)
+    if om_action is not None:
+        om_action.setChecked(True)
+    pos_fn = toolbar.action_widgets.get(action_name, {}).get("position_fn")
+    if pos_fn is not None:
+        pos_fn()
 
     # ── Wire callbacks ─────────────────────────────────────────────────────────
 
@@ -1005,27 +1246,69 @@ def orientation_mapping(
         if not state["phases"]:
             return
         gen_btn.setEnabled(False)
-        lib_lbl.setText("Generating…")
-        try:
-            state["sim"][0] = _generate_library_from_phases(
-                phases=state["phases"],
-                accelerating_voltage=voltage_s.value(),
-                resolution=res_s.value(),
-                minimum_intensity=min_int_s.value(),
-                reciprocal_radius=_compute_reciprocal_radius(signal),
-            )
+        lib_lbl.setText("Generating library…")
+
+        from PySide6 import QtCore as _QC2
+        class _GenRelay(_QC2.QObject):
+            done = _QC2.Signal()
+        _gen_relay = _GenRelay()
+        state["gen_relay"][0] = _gen_relay  # prevent GC before queued signal is delivered
+
+        def _on_done():
+            state["gen_relay"][0] = None  # release relay now that signal has been delivered
             lib_lbl.setText("✓ Library ready")
             gen_btn.setText("✓ Regenerate")
             gen_btn.setEnabled(True)
             for r in [gamma_row, min_i_row, scale_row]:
                 r.setEnabled(True)
+            norm_chk.setEnabled(True)
             refine_lbl.setText("Overlay active. Adjust sliders to refine.")
             run_btn_w.setEnabled(True)
             _activate_overlay()
             _select_step(2)
-        except Exception as e:
-            lib_lbl.setText(f"Failed: {e}")
-            gen_btn.setEnabled(True)
+
+        _gen_relay.done.connect(_on_done)
+
+        # Capture widget values on the GUI thread before spawning the worker.
+        _accel_kv   = voltage_s.value()
+        _resolution = res_s.value()
+        _min_int    = min_int_s.value()
+        _recip_r    = _compute_reciprocal_radius(signal)
+
+        def _do_generate():
+            from PySide6 import QtCore as _QC2
+            try:
+                new_sim = _generate_library_from_phases(
+                    phases=state["phases"],
+                    accelerating_voltage=_accel_kv,
+                    resolution=_resolution,
+                    minimum_intensity=_min_int,
+                    reciprocal_radius=_recip_r,
+                )
+                state["sim"][0] = new_sim
+                _QC2.QMetaObject.invokeMethod(
+                    lib_lbl, "setText",
+                    _QC2.Qt.ConnectionType.QueuedConnection,
+                    _QC2.Q_ARG(str, "Building matching cache…"),
+                )
+                state["matching_cache"][0] = _build_matching_cache(signal, new_sim)
+                state["refit_generation"][0] = 0
+                _gen_relay.done.emit()
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                from PySide6 import QtCore as _QC2
+                _QC2.QMetaObject.invokeMethod(
+                    lib_lbl, "setText",
+                    _QC2.Qt.ConnectionType.QueuedConnection,
+                    _QC2.Q_ARG(str, f"Failed: {e}"),
+                )
+                _QC2.QMetaObject.invokeMethod(
+                    gen_btn, "setEnabled",
+                    _QC2.Qt.ConnectionType.QueuedConnection,
+                    _QC2.Q_ARG(bool, True),
+                )
+
+        threading.Thread(target=_do_generate, daemon=True).start()
 
     gen_btn.clicked.connect(_on_generate)
 
@@ -1042,10 +1325,13 @@ def orientation_mapping(
         plot.addItem(scatter)
         state["scatter_item"][0] = scatter
 
-        # CircleROI in data (scene) coordinates — center of diffraction pattern
+        # scene-x = -ky (sig_ax[1]),  scene-y = kx (sig_ax[0])
+        _cx_scene = sig_ax[1].size / 2.0 * sig_ax[1].scale + sig_ax[1].offset  # ky center → scene-x
+        _cy_scene = sig_ax[0].size / 2.0 * sig_ax[0].scale + sig_ax[0].offset  # kx center → scene-y
+
         r_data = state["max_radius"][0]
-        cx_data = sig_ax[0].size / 2.0 * sig_ax[0].scale + sig_ax[0].offset
-        cy_data = sig_ax[1].size / 2.0 * sig_ax[1].scale + sig_ax[1].offset
+        cx_data = sig_ax[1].size / 2.0 * sig_ax[1].scale + sig_ax[1].offset
+        cy_data = sig_ax[0].size / 2.0 * sig_ax[0].scale + sig_ax[0].offset
         circle_roi = PgCircleROI(
             pos=(cx_data - r_data, cy_data - r_data),
             size=(2 * r_data, 2 * r_data),
@@ -1055,9 +1341,145 @@ def orientation_mapping(
         state["circle_roi"][0] = circle_roi
 
         timer = _QT()
-        timer.setInterval(150)
+        timer.setInterval(50)
         timer.setSingleShot(True)
         state["refit_timer"][0] = timer
+
+        # Relay object used to marshal spot + IPF data from worker thread to GUI thread.
+        from PySide6 import QtCore as _QC
+        class _SpotRelay(_QC.QObject):
+            spots_ready = _QC.Signal(list, float, float, object)  # spots, ipf_x, ipf_y, heatmap
+        _relay = _SpotRelay()
+
+        # ── IPF plot window in MDI area ────────────────────────────────────────
+        import pyqtgraph as _pg
+        from PySide6 import QtWidgets as _QW2
+
+        ipf_plot_window = main_window.add_plot_window(
+            is_navigator=False,
+            signal_tree=plot.signal_tree,
+        )
+        ipf_plot_window.setWindowTitle("IPF — Orientation Refinement")
+        _mw_size = main_window.size()
+        _ipf_side = min(_mw_size.width(), _mw_size.height()) // 4
+        ipf_plot_window.resize(_ipf_side, _ipf_side)
+        main_window._auto_position_near_owner(ipf_plot_window)
+        state["ipf_widget"][0] = ipf_plot_window
+        ipf_plot_window.hide()  # shown by _select_step(2)
+
+        # Replace the GraphicsLayoutWidget with a raw PlotWidget for full control.
+        # Remove the existing plot_widget and substitute our IPF PlotWidget.
+        container_layout = ipf_plot_window.container.layout()
+        ipf_plot_window.plot_widget.setParent(None)
+        ipf_pw = _pg.PlotWidget()
+        ipf_pw.setBackground("k")
+        ipf_pw.hideAxis("bottom")
+        ipf_pw.hideAxis("left")
+        ipf_pw.setAspectLocked(True)
+        container_layout.addWidget(ipf_pw)
+
+        # Pre-compute IPF triangle outline and grid bounds for the phase
+        _ipf_img_item = _pg.ImageItem()
+        _ipf_img_item.setZValue(-10)
+        ipf_pw.addItem(_ipf_img_item)
+        _ipf_grid_info = [None]  # will hold (xx, yy, tri, weights, vertices, outside) once set
+
+        try:
+            from scipy.spatial import Delaunay as _Delaunay
+            from orix.projections import StereographicProjection as _SP2
+            from orix.vector import Vector3d as _V3b
+
+            _phase = state["sim"][0].phases
+            if hasattr(_phase, '__len__'):
+                _phase = _phase[0]
+            _tri_xy, _lbl_xy, _lbl_texts = _ipf_triangle_xy(_phase)
+
+            # Draw triangle outline on top
+            ipf_pw.plot(_tri_xy[:, 0], _tri_xy[:, 1],
+                        pen=_pg.mkPen("w", width=1.5), antialias=True)
+            for (lx, ly), txt in zip(_lbl_xy, _lbl_texts):
+                ti = _pg.TextItem(txt, color="w", anchor=(0.5, 0.5))
+                ti.setPos(lx, ly)
+                ipf_pw.addItem(ti)
+
+            # Pre-compute Delaunay interpolation grid over the IPF triangle extent
+            GRID_N = 128
+            mins = _tri_xy.min(axis=0)
+            maxs = _tri_xy.max(axis=0)
+
+            # All rotation vectors projected to stereographic coords
+            _sp2 = _SP2()
+            _all_rots = state["sim"][0].rotations
+            if hasattr(_all_rots, '__len__'):
+                _all_rots = _all_rots[0] if len(_all_rots) == 1 else _all_rots
+            _vecs = (_all_rots * _V3b.zvector()).in_fundamental_sector(_phase.point_group)
+            _rxs, _rys = _sp2.vector2xy(_vecs)
+            _rxs = np.atleast_1d(np.array(_rxs, dtype=float))
+            _rys = np.atleast_1d(np.array(_rys, dtype=float))
+            rot_xy = np.vstack((_rxs, _rys)).T
+
+            # Grid for the image
+            gx = np.linspace(mins[0], maxs[0], GRID_N)
+            gy = np.linspace(mins[1], maxs[1], GRID_N)
+            xx, yy = np.meshgrid(gx, gy)
+            flat_xy = np.vstack((xx.ravel(), yy.ravel())).T
+
+            tri = _Delaunay(rot_xy)
+            simplex = tri.find_simplex(flat_xy)
+            outside = simplex < 0
+            vertices = np.take(tri.simplices, simplex, axis=0)
+            temp = np.take(tri.transform, simplex, axis=0)
+            delta = flat_xy - temp[:, -1]
+            bary = np.einsum("njk,nk->nj", temp[:, :-1, :], delta)
+            bary_weights = np.hstack((bary, 1 - bary.sum(axis=1, keepdims=True)))
+
+            _ipf_grid_info[0] = (xx, yy, vertices, bary_weights, outside,
+                                  mins, maxs, GRID_N, _rxs, _rys)
+
+            # Set ImageItem transform so it spans the triangle extent
+            from pyqtgraph import QtGui as _QtGui
+            tr = _QtGui.QTransform()
+            tr.translate(mins[0], mins[1])
+            tr.scale((maxs[0] - mins[0]) / GRID_N, (maxs[1] - mins[1]) / GRID_N)
+            _ipf_img_item.setTransform(tr)
+
+        except Exception as e:
+            print(f"IPF triangle/grid failed: {e}")
+
+        # Best-match marker on top
+        ipf_marker = _pg.ScatterPlotItem(
+            size=14, pen=_pg.mkPen("w", width=1.5), brush=_pg.mkBrush("r")
+        )
+        ipf_pw.addItem(ipf_marker)
+
+        def _apply_spots(spots, ipf_x, ipf_y, heatmap):
+            sc = state["scatter_item"][0]
+            if sc is not None:
+                sc.setData(spots)
+            # Update heatmap image
+            if heatmap is not None and _ipf_grid_info[0] is not None:
+                _xs, _ys, cor_per_rot = heatmap  # cor_per_rot already indexed by lib_idx
+                gi = _ipf_grid_info[0]
+                verts, bw, outside, GRID_N = gi[2], gi[3], gi[4], gi[7]
+
+                # Interpolate correlation values onto the regular grid
+                safe_verts = np.clip(verts, 0, len(cor_per_rot) - 1)
+                grid_vals = np.einsum("nj,nj->n", np.take(cor_per_rot, safe_verts), bw).astype(float)
+                grid_vals[outside] = np.nan
+                img = grid_vals.reshape(GRID_N, GRID_N)
+
+                # inferno-style RGBA
+                rgba = np.zeros((GRID_N, GRID_N, 4), dtype=np.uint8)
+                valid = ~np.isnan(img)
+                c = np.where(valid, img, 0.0)
+                rgba[..., 0] = np.clip(255 * np.minimum(1.0, c * 2.0), 0, 255).astype(np.uint8)
+                rgba[..., 1] = np.clip(255 * np.maximum(0.0, c * 2.0 - 1.0), 0, 255).astype(np.uint8)
+                rgba[..., 2] = np.clip(80 * (1.0 - c), 0, 255).astype(np.uint8)
+                rgba[..., 3] = np.where(valid, np.clip(220 * c + 30, 0, 255), 0).astype(np.uint8)
+                _ipf_img_item.setImage(rgba, autoLevels=False)
+            ipf_marker.setData([{"pos": (ipf_x, ipf_y)}])
+
+        _relay.spots_ready.connect(_apply_spots)
 
         def _do_refit():
             if state["sim"][0] is None:
@@ -1067,24 +1489,45 @@ def orientation_mapping(
             sc_override = scale_s.value() if abs(scale_s.value() - sig_scale) > 1e-9 else None
             state["scale_override"][0] = sc_override
             nav_idx = _get_current_nav_indices(plot)
-            try:
-                coords_px, intensities = _get_best_fit_spots(
-                    signal, state["sim"][0], nav_idx,
-                    state["gamma"][0], state["max_radius"][0],
-                    min_intensity=state["min_intensity"][0],
-                    scale_override=sc_override,
-                )
-                # Convert pixel coords → data/scene coords for overlay on signal plot
-                sx, ox = sig_ax[0].scale, sig_ax[0].offset
-                sy, oy = sig_ax[1].scale, sig_ax[1].offset
-                spots = [
-                    {"pos": (float(c[0]) * sx + ox, float(c[1]) * sy + oy),
-                     "size": max(4, float(intensities[i]) * 14)}
-                    for i, c in enumerate(coords_px)
-                ]
-                state["scatter_item"][0].setData(spots)
-            except Exception as e:
-                print(f"Refit failed: {e}")
+            # Grab the currently displayed pattern on the GUI thread before spawning worker
+            _current_pattern = plot.current_data
+            if _current_pattern is not None:
+                _current_pattern = np.asarray(_current_pattern).copy()
+
+            state["refit_generation"][0] += 1
+            my_gen = state["refit_generation"][0]
+
+            def _run():
+                if state["refit_generation"][0] != my_gen:
+                    return  # superseded by a newer request
+                try:
+                    # coords_data are (kx, ky) in Å⁻¹, centered at origin (0,0)
+                    coords_data, intensities, ipf_xy, ipf_heatmap = _get_best_fit_spots(
+                        signal, state["sim"][0], nav_idx,
+                        state["gamma"][0], state["max_radius"][0],
+                        min_intensity=state["min_intensity"][0],
+                        scale_override=sc_override,
+                        matching_cache=state["matching_cache"][0],
+                        pattern_override=_current_pattern,
+                        normalize_templates=state["normalize_templates"][0],
+                    )
+                    if state["refit_generation"][0] != my_gen:
+                        return
+                    i_max = float(np.max(intensities)) if len(intensities) > 0 else 1.0
+                    i_max = i_max if i_max > 0 else 1.0
+                    # scene-x = -ky + ky_center,  scene-y = kx + kx_center
+                    spots = [
+                        {"pos": (-float(coords_data[i][1]) + _cx_scene,
+                                  float(coords_data[i][0]) + _cy_scene),
+                         "size": int(5 + 10 * float(intensities[i]) / i_max)}
+                        for i in range(len(coords_data))
+                    ]
+                    if state["refit_generation"][0] == my_gen:
+                        _relay.spots_ready.emit(spots, float(ipf_xy[0]), float(ipf_xy[1]), ipf_heatmap)
+                except Exception as e:
+                    print(f"Refit failed: {e}")
+
+            threading.Thread(target=_run, daemon=True).start()
 
         def _schedule():
             if state["refit_timer"][0] is not None:
@@ -1094,17 +1537,31 @@ def orientation_mapping(
         circle_roi.sigRegionChangeFinished.connect(_schedule)
 
         nav_sel = getattr(plot, "parent_selector", None)
+        if nav_sel is None:
+            nav_sel = getattr(getattr(plot, "plot_window", None), "parent_selector", None)
         if nav_sel is not None and hasattr(nav_sel, "roi"):
+            # sigRegionChangeFinished fires on mouse release; sigRegionChanged fires
+            # continuously during drag. Connect both so position updates feel live.
             nav_sel.roi.sigRegionChangeFinished.connect(_schedule)
+            nav_sel.roi.sigRegionChanged.connect(_schedule)
 
         def _on_slider(_v=None):
             state["gamma"][0] = gamma_s.value()
-            state["min_intensity"][0] = min_i_s.value()
+            # slider is 0–100%, convert to 0.0–1.0 fraction for _get_best_fit_spots
+            state["min_intensity"][0] = min_i_s.value() / 100.0
+            _schedule()
+
+        def _on_norm_chk(checked):
+            state["normalize_templates"][0] = bool(checked)
             _schedule()
 
         gamma_s.valueChanged.connect(_on_slider)
+        gamma_sl.valueChanged.connect(_on_slider)
         min_i_s.valueChanged.connect(_on_slider)
+        min_i_sl.valueChanged.connect(_on_slider)
         scale_s.valueChanged.connect(_on_slider)
+        scale_sl.valueChanged.connect(_on_slider)
+        norm_chk.stateChanged.connect(_on_norm_chk)
 
         _schedule()
 

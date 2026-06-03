@@ -15,7 +15,7 @@
    xmlns:svg="http://www.w3.org/2000/svg">
   <sodipodi:namedview
      id="namedview1"
-     pagecolor="#ffffff"
+     pagecolor="#000000"
      bordercolor="#000000"
      borderopacity="0.25"
      inkscape:showpageshadow="2"
@@ -25,11 +25,11 @@
      inkscape:document-units="px"
      inkscape:zoom="1.6347656"
      inkscape:cx="256"
-     inkscape:cy="256.30585"
+     inkscape:cy="245.2951"
      inkscape:window-width="1906"
      inkscape:window-height="1040"
-     inkscape:window-x="1960"
-     inkscape:window-y="0"
+     inkscape:window-x="2064"
+     inkscape:window-y="41"
      inkscape:window-maximized="0"
      inkscape:current-layer="layer1" />
   <defs
@@ -39,20 +39,20 @@
      inkscape:groupmode="layer"
      id="layer1">
     <path
-       style="fill:none;stroke:#000000;stroke-width:10;stroke-linecap:round"
+       style="fill:#ffffff;stroke:#ffffff;stroke-width:30;stroke-linecap:round;fill-opacity:1;stroke-opacity:1;stroke-dasharray:none"
        d="M 65.452808,94.814815 437.37157,437.37157"
        id="path1" />
     <circle
-       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:10;stroke-linecap:round"
+       style="fill:#ffffff;fill-opacity:1;stroke:#ffffff;stroke-width:10;stroke-linecap:round;stroke-opacity:1"
        id="path2"
        cx="69.428909"
        cy="96.955795"
-       r="19.268818" />
+       r="45" />
     <circle
-       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:10;stroke-linecap:round"
+       style="fill:#ffffff;fill-opacity:1;stroke:#ffffff;stroke-width:10;stroke-linecap:round;stroke-opacity:1"
        id="path2-6"
        cx="441.53287"
        cy="442.10751"
-       r="19.268818" />
+       r="45" />
   </g>
 </svg>

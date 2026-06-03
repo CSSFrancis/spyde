@@ -150,6 +150,88 @@ def test_extract_orientation_outputs_multi_phase():
     assert len(results) == 3
 
 
+def test_get_best_fit_spots_returns_valid_coords():
+    """_get_best_fit_spots returns (N,2) coords in Å⁻¹ and non-negative intensities."""
+    from pyxem.data import si_grains, si_phase
+    from diffsims.generators.simulation_generator import SimulationGenerator
+    from orix.sampling import get_sample_reduced_fundamental
+    from spyde.actions.pyxem import _get_best_fit_spots, _build_matching_cache, _compute_reciprocal_radius
+
+    s, _ = si_grains(return_rotations=True)
+    s.calibration.center = None
+    phase = si_phase()
+    gen = SimulationGenerator(200, minimum_intensity=0.05)
+    rots = get_sample_reduced_fundamental(resolution=1, point_group=phase.point_group)
+    max_radius = _compute_reciprocal_radius(s)
+    sim = gen.calculate_diffraction2d(
+        phase, rotation=rots, max_excitation_error=0.1, reciprocal_radius=max_radius * 1.1, with_direct_beam=False
+    )
+
+    cache = _build_matching_cache(s, sim)
+    coords, intensities = _get_best_fit_spots(
+        s, sim, nav_indices=(0, 0), gamma=0.5, max_radius=max_radius,
+        matching_cache=cache,
+    )
+
+    assert coords.ndim == 2 and coords.shape[1] == 2, f"Expected (N,2) coords, got {coords.shape}"
+    assert len(intensities) == len(coords), "coords and intensities length mismatch"
+    assert np.all(intensities >= 0), "Intensities should be non-negative"
+    assert len(coords) > 0, "Expected at least one spot"
+
+    # Second call with same cache returns same result
+    coords2, intensities2 = _get_best_fit_spots(
+        s, sim, nav_indices=(0, 0), gamma=0.5, max_radius=max_radius,
+        matching_cache=cache,
+    )
+    assert np.allclose(coords, coords2) and np.allclose(intensities, intensities2)
+
+
+def test_get_best_fit_spots_sped_ag():
+    """_get_best_fit_spots works with sped_ag dataset + silver CIF.
+
+    This is the real-world dataset the user reported failing with
+    'Index 104 is out of bounds for axis 0 with size 64'.
+    """
+    import os
+    from pyxem.data import sped_ag
+    from orix.crystal_map import Phase
+    from diffsims.generators.simulation_generator import SimulationGenerator
+    from orix.sampling import get_sample_reduced_fundamental
+    from spyde.actions.pyxem import _get_best_fit_spots, _build_matching_cache, _compute_reciprocal_radius
+
+    cif_path = os.path.join(os.path.dirname(__file__), "Silver__0011135.cif")
+    if not os.path.exists(cif_path):
+        pytest.skip("Silver CIF not found")
+
+    s = sped_ag()
+    phase = Phase.from_cif(cif_path)
+    gen = SimulationGenerator(200, minimum_intensity=0.05)
+    rots = get_sample_reduced_fundamental(resolution=1, point_group=phase.point_group)
+    max_radius = _compute_reciprocal_radius(s)
+    sim = gen.calculate_diffraction2d(
+        phase, rotation=rots, max_excitation_error=0.1,
+        reciprocal_radius=max_radius * 1.1, with_direct_beam=False,
+    )
+
+    cache = _build_matching_cache(s, sim)
+    # Test the problematic nav position that triggered "Index 104 out of bounds"
+    coords, intensities = _get_best_fit_spots(
+        s, sim, nav_indices=(104, 32), gamma=0.5, max_radius=max_radius,
+        matching_cache=cache,
+    )
+
+    assert coords.ndim == 2 and coords.shape[1] == 2
+    assert len(intensities) == len(coords)
+    assert len(coords) > 0, "Expected at least one spot within pattern radius"
+    r = np.sqrt(coords[:, 0] ** 2 + coords[:, 1] ** 2)
+    assert np.all(r <= max_radius + 1e-9), "All spots should be within max_radius"
+
+    # Spot sizes must be in a sane pixel range (5–15) for the overlay
+    i_max = float(np.max(intensities))
+    sizes = [int(5 + 10 * float(iv) / i_max) for iv in intensities]
+    assert all(5 <= sz <= 15 for sz in sizes), f"Spot sizes out of range: {sizes}"
+
+
 # ── End-to-end integration tests (require real pyxem data + Qt window) ────────
 
 class TestOrientationMappingEndToEnd:
