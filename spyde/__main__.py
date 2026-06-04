@@ -563,7 +563,7 @@ class MainWindow(QMainWindow):
             if file_paths:
                 self._create_signals(file_paths)
 
-    def add_signal(self, signal, navigators=None) -> None:
+    def add_signal(self, signal, navigators=None, selector_type=None) -> None:
         """Add a signal to the main window.
 
         This will "plant" a new seed for a signal tree and set up the associated plots.
@@ -592,7 +592,8 @@ class MainWindow(QMainWindow):
 
 
         signal_tree = BaseSignalTree(
-            root_signal=signal, main_window=self, distributed_client=self.dask_manager.client
+            root_signal=signal, main_window=self, distributed_client=self.dask_manager.client,
+            selector_type=selector_type,
         )
         self.signal_trees.append(signal_tree)
         print("Signal Tree Created")

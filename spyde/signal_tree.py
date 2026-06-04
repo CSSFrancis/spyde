@@ -73,6 +73,7 @@ class BaseSignalTree:
         root_signal: BaseSignal,
         main_window: "MainWindow",
         distributed_client=None,
+        selector_type=None,
     ):
 
         # The root signal of the tree
@@ -89,6 +90,7 @@ class BaseSignalTree:
         # spawn new trees.
         self.root_node = SignalNode(signal=root_signal, name="root", parent=None)
         self.client = distributed_client
+        self._selector_type = selector_type
 
         # set up the navigator plots:
         print("Initializing navigator for root signal: ", root_signal)
@@ -112,7 +114,8 @@ class BaseSignalTree:
             self.root.axes_manager.navigation_dimension > 0
         ):  # pass to NavigationPlotManager
             self.navigator_plot_manager = MultiplotManager(
-                main_window=self.main_window, signal_tree=self
+                main_window=self.main_window, signal_tree=self,
+                selector_type=self._selector_type,
             )
         else:
             self.navigator_plot_manager = None

@@ -22,38 +22,36 @@ if TYPE_CHECKING:
     from spyde.drawing.plots.plot import Plot
 from multiprocessing import shared_memory
 
-# Shared memory IPC only works on non-Windows: on Windows, Dask workers are
-# separate processes and cannot open shared memory segments created by the GUI
-# process (OpenFileMapping fails with FileNotFoundError).
-_SHARED_MEMORY_SUPPORTED = sys.platform != "win32"
+_SHARED_MEMORY_SUPPORTED = True
 
 def write_shared_array(data, shared_arr_name):
     dtype_bytes = data.dtype.str.encode('utf-8')
     dtype_length = len(dtype_bytes)
-    # Calculate header size: 4 bytes for dtype length + dtype bytes + shape info
     ndim = data.ndim
-    # Create shared memory
-    shm = shared_memory.SharedMemory(name=shared_arr_name)
-    # Write header
-    buffer = shm.buf
-    offset = 0
-    # Write dtype length (4 bytes)
-    buffer[offset:offset+4] = dtype_length.to_bytes(4, byteorder='little')
-    offset += 4
-    # Write dtype string
-    buffer[offset:offset+dtype_length] = dtype_bytes
-    offset += dtype_length
-    # Write number of dimensions (4 bytes)
-    buffer[offset:offset+4] = ndim.to_bytes(4, byteorder='little')
-    offset += 4
-    # Write shape (8 bytes per dimension)
-    for dim in data.shape:
-        buffer[offset:offset+8] = dim.to_bytes(8, byteorder='little')
-        offset += 8
-    # Write array data
-    target_arr = np.ndarray(data.shape, dtype=data.dtype, buffer=shm.buf[offset:])
-    target_arr[:] = data
-    return
+    shm = None
+    try:
+        shm = shared_memory.SharedMemory(name=shared_arr_name, create=False)
+        buffer = shm.buf
+        offset = 0
+        buffer[offset:offset+4] = dtype_length.to_bytes(4, byteorder='little')
+        offset += 4
+        buffer[offset:offset+dtype_length] = dtype_bytes
+        offset += dtype_length
+        buffer[offset:offset+4] = ndim.to_bytes(4, byteorder='little')
+        offset += 4
+        for dim in data.shape:
+            buffer[offset:offset+8] = dim.to_bytes(8, byteorder='little')
+            offset += 8
+        target_arr = np.ndarray(data.shape, dtype=data.dtype, buffer=shm.buf[offset:])
+        target_arr[:] = data
+    except Exception:
+        pass
+    finally:
+        if shm is not None:
+            try:
+                shm.close()
+            except Exception:
+                pass
 
 
 def read_shared_array(shm):
@@ -73,8 +71,9 @@ def read_shared_array(shm):
     shape = tuple(int.from_bytes(buffer[offset+i*8:offset+(i+1)*8], byteorder='little')
                   for i in range(ndim))
     offset += ndim * 8
-    # Create array from buffer
-    arr = np.ndarray(shape, dtype=dtype, buffer=buffer[offset:])
+    # Copy out of the shared buffer before returning — the caller's shm handle
+    # may be closed (and the memoryview invalidated) before the array is used.
+    arr = np.array(np.ndarray(shape, dtype=dtype, buffer=buffer[offset:]))
     return arr
 
 def update_from_navigation_selection(
@@ -123,13 +122,18 @@ def update_from_navigation_selection(
                 indices, get_result=get_result, return_future=True,
             )
             if cache_in_shared_memory and _SHARED_MEMORY_SUPPORTED:
-                # Write to shared memory and return the name.
-                # Only used on non-Windows: Dask workers on Windows are separate
-                # processes and cannot open shared memory created by the GUI process.
+                # Pre-create the shm segment in the GUI process before submitting,
+                # so the worker subprocess can open it by name.  The worker opens,
+                # writes, and closes its own handle; the GUI holds its handle open
+                # until close_plot() — the OS keeps the mapping alive while any
+                # handle remains open.
+                _ = child.shared_memory  # lazy creation
                 shared_arr_name = f"plot_buffer{id(child)}"
-                current_img = child.main_window.dask_manager.client.submit(write_shared_array,
-                                                current_img,
-                                                shared_arr_name)
+                fut = child.main_window.dask_manager.client.submit(
+                    write_shared_array, current_img, shared_arr_name
+                )
+                child._pending_shm_future = fut
+                current_img = fut
     else:
 
         tuple_inds = tuple([indices[ind] for ind in np.arange(len(indices))])
@@ -215,6 +219,141 @@ def compute_virtual_image_kernel(
     else:
         result = (data * mask).sum(axis=(-2, -1))
     return client.compute(result)
+
+
+def compute_with_live_buffer(
+    result_array: da.Array,
+    nav_shape: tuple,
+    client: distributed.Client,
+    shm_name: str,
+    on_chunk_done=None,
+) -> distributed.Future:
+    """
+    Progressive compute: submits one Future per nav chunk and calls
+    ``on_chunk_done(chunk_result, nav_slices)`` from a Dask callback thread
+    as each chunk completes.  The caller is responsible for marshalling
+    back to the GUI thread (e.g. via a Qt Signal).
+
+    Shared memory is written from the GUI process (not from worker
+    subprocesses) to avoid Windows access-violation crashes when the shm
+    segment is torn down during test teardown while a worker is mid-write.
+
+    Parameters
+    ----------
+    result_array : dask array, nav-shaped (signal axes already reduced)
+    nav_shape    : tuple — full navigation shape
+    client       : dask distributed Client (or None for synchronous path)
+    shm_name     : str — name of a pre-existing SharedMemory segment to
+                   update from the GUI side (via on_chunk_done)
+    on_chunk_done : callable(chunk_result, nav_slices) | None
+                   Called from a Dask callback thread as each chunk finishes.
+    """
+    import itertools
+
+    nav_ndim = len(nav_shape)
+    nav_chunks = result_array.chunks
+
+    if client is None:
+        # Synchronous fallback: compute the whole array and write shm once
+        result = result_array.compute()
+        if shm_name:
+            try:
+                from multiprocessing import shared_memory as _shm_mod
+                shm = _shm_mod.SharedMemory(name=shm_name, create=False)
+                buf = np.ndarray(nav_shape, dtype=np.float32, buffer=shm.buf)
+                buf[:] = result.astype(np.float32)
+                shm.close()
+            except Exception:
+                pass
+
+        class _SyncResult:
+            def result(self): return result
+            def done(self): return True
+            def cancel(self): pass
+
+        return _SyncResult()
+
+    # Build per-nav-chunk futures
+    axes_ranges = []
+    for axis_chunks in nav_chunks:
+        positions, start = [], 0
+        for size in axis_chunks:
+            positions.append((start, size))
+            start += size
+        axes_ranges.append(positions)
+
+    chunk_futures = []
+    chunk_slices = []
+    for combo in itertools.product(*axes_ranges):
+        slices = tuple(slice(s, s + n) for s, n in combo)
+        full_slice = slices + (slice(None),) * (result_array.ndim - nav_ndim)
+        chunk_da = result_array[full_slice]
+        fut = client.compute(chunk_da)
+        chunk_futures.append(fut)
+        chunk_slices.append(slices)
+
+    # Attach callbacks — run in Dask callback threads, must be thread-safe
+    def _make_cb(fut, nav_slices):
+        def _cb(f):
+            try:
+                chunk_result = f.result()
+                if on_chunk_done is not None:
+                    on_chunk_done(chunk_result, nav_slices)
+            except Exception:
+                pass
+        return _cb
+
+    if on_chunk_done is not None:
+        for fut, nav_slices in zip(chunk_futures, chunk_slices):
+            fut.add_done_callback(_make_cb(fut, nav_slices))
+
+    # Return the whole-array future for progress indicator and commit path
+    full_future = client.compute(result_array)
+    return full_future
+
+
+def ensure_live_buffer(nav_shape: tuple, shm_name: str) -> "shared_memory.SharedMemory":
+    """
+    Create (or recreate) a float32 shared memory segment for live display.
+
+    Returns the SharedMemory object — the caller must keep a reference to
+    prevent premature cleanup.  Call ``shm.unlink()`` when done.
+    """
+    from multiprocessing import shared_memory
+    nbytes = int(np.prod(nav_shape)) * 4  # float32
+    try:
+        shm = shared_memory.SharedMemory(name=shm_name, create=False)
+        if shm.size < nbytes:
+            shm.close()
+            shm.unlink()
+            raise FileNotFoundError
+        # Zero out existing buffer so old data doesn't show
+        buf = np.ndarray(nav_shape, dtype=np.float32, buffer=shm.buf)
+        buf[:] = np.nan
+        return shm
+    except (FileNotFoundError, Exception):
+        try:
+            shm = shared_memory.SharedMemory(name=shm_name, create=True, size=max(nbytes, 1))
+            buf = np.ndarray(nav_shape, dtype=np.float32, buffer=shm.buf)
+            buf[:] = np.nan
+            return shm
+        except FileExistsError:
+            shm = shared_memory.SharedMemory(name=shm_name, create=False)
+            buf = np.ndarray(nav_shape, dtype=np.float32, buffer=shm.buf)
+            buf[:] = np.nan
+            return shm
+
+
+def read_live_buffer(nav_shape: tuple, shm_name: str) -> np.ndarray:
+    """Read current contents of live shared-memory buffer into a new array."""
+    from multiprocessing import shared_memory
+    try:
+        shm = shared_memory.SharedMemory(name=shm_name, create=False)
+        arr = np.array(np.ndarray(nav_shape, dtype=np.float32, buffer=shm.buf))
+        shm.close()
+        return arr
+    except Exception:
+        return np.full(nav_shape, np.nan, dtype=np.float32)
 
 
 def compute_line_profile_kernel(

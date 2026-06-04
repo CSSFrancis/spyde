@@ -107,7 +107,8 @@ class Plot(PlotItem):
         self._updating_text = None  # type: pg.TextItem | None
         self._needs_hide_updating_text = False
 
-        self._shared_memory = None  # allocated lazily on first 2D use
+        self._shared_memory = None       # allocated lazily on first 2D use
+        self._pending_shm_future = None  # most-recent write_shared_array future
 
         self.data_max_y = 1  # type: float
         self.data_min_y = 0  # type: float
@@ -755,6 +756,18 @@ class Plot(PlotItem):
                     pass
 
         if self._shared_memory is not None:
+            # Wait for any in-flight write_shared_array task to finish before
+            # closing the segment.  If a worker is mid-write and we close the
+            # mapping, the worker process crashes with an access violation on
+            # Windows.  We wait up to 2 s; if it hasn't finished by then we
+            # accept the worker error log and close anyway.
+            pending = getattr(self, "_pending_shm_future", None)
+            if pending is not None:
+                import time as _time
+                deadline = _time.monotonic() + 2.0
+                while not pending.done() and _time.monotonic() < deadline:
+                    _time.sleep(0.02)
+                self._pending_shm_future = None
             try:
                 self._shared_memory.close()
                 self._shared_memory.unlink()

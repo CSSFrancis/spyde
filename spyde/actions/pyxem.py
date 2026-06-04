@@ -116,43 +116,76 @@ def _roi_metadata(roi) -> dict:
     return {}
 
 
-def _start_progress_poll(future, indicator, client, timer_holder: list):
-    """Poll dask task progress every 200 ms; update indicator; stop when done."""
+def _start_progress_poll(future, indicator, client, timer_holder: list,
+                          n_chunks: int = None):
+    """
+    Track compute progress and update the indicator.
+
+    If *n_chunks* is provided the indicator is initialised with that total and
+    a QTimer polls ``future.done()`` every 200 ms — incrementing by one tick
+    per poll so the arc visibly moves even when chunk callbacks are unavailable.
+
+    When *n_chunks* is None the old scheduler_info path is used as a fallback
+    (kept for callers that don't know the chunk count).
+    """
     from PySide6 import QtCore as _QtCore
 
-    try:
-        graph = dict(future.__dask_graph__()) if hasattr(future, '__dask_graph__') else {}
-        task_keys = list(graph.keys())
-    except Exception:
-        task_keys = []
+    if n_chunks is not None:
+        total = max(n_chunks, 1)
+        indicator.set_computing(total_tasks=total)
+        completed = [0]
 
-    total = max(len(task_keys), 1)
-    indicator.set_computing(total_tasks=total)
+        timer = _QtCore.QTimer()
+        timer.setInterval(200)
+        timer_holder.append(timer)
 
-    timer = _QtCore.QTimer()
-    timer.setInterval(200)
-    timer_holder.append(timer)
+        def _poll():
+            if future.done():
+                timer.stop()
+                indicator.set_done()
+                return
+            # Advance one tick per poll so the ring visibly fills
+            completed[0] = min(completed[0] + 1, total - 1)
+            indicator.update_progress(completed[0])
 
-    def _poll():
-        if future.done():
-            timer.stop()
-            indicator.set_done()
-            return
-        if not task_keys:
-            return
+        timer.timeout.connect(_poll)
+        timer.start()
+
+    else:
+        # Legacy path: introspect dask graph and poll scheduler_info
         try:
-            info = client.scheduler_info()
-            all_tasks = info.get("tasks", {})
-            completed = sum(
-                1 for k in task_keys
-                if all_tasks.get(str(k), {}).get("state") in ("memory", "released", "forgotten")
-            )
-            indicator.update_progress(completed)
+            graph = dict(future.__dask_graph__()) if hasattr(future, '__dask_graph__') else {}
+            task_keys = list(graph.keys())
         except Exception:
-            pass
+            task_keys = []
 
-    timer.timeout.connect(_poll)
-    timer.start()
+        total = max(len(task_keys), 1)
+        indicator.set_computing(total_tasks=total)
+
+        timer = _QtCore.QTimer()
+        timer.setInterval(200)
+        timer_holder.append(timer)
+
+        def _poll():
+            if future.done():
+                timer.stop()
+                indicator.set_done()
+                return
+            if not task_keys:
+                return
+            try:
+                info = client.scheduler_info()
+                all_tasks = info.get("tasks", {})
+                completed = sum(
+                    1 for k in task_keys
+                    if all_tasks.get(str(k), {}).get("state") in ("memory", "released", "forgotten")
+                )
+                indicator.update_progress(completed)
+            except Exception:
+                pass
+
+        timer.timeout.connect(_poll)
+        timer.start()
 
 
 _CZB_BUILT_TOOLBARS: set = set()
@@ -929,8 +962,12 @@ def add_virtual_image(
     }
 
     def _compute_one(name: str):
-        """Compute a single VI by its action_name, regardless of live flag."""
-        from spyde.drawing.update_functions import compute_virtual_image_kernel
+        """Compute a single VI: writes each nav chunk into shared memory as it finishes."""
+        from spyde.drawing.update_functions import (
+            compute_with_live_buffer, ensure_live_buffer, read_live_buffer,
+            compute_virtual_image_kernel,
+        )
+        from PySide6 import QtCore as _QtCore
         entry = vi_registry.get(name)
         if entry is None:
             return
@@ -949,19 +986,118 @@ def add_virtual_image(
         vpw = entry["virtual_plot_window"]
         ind = entry["indicator"]
         th = entry["timer_holder"]
+        sig = entry["signal"]
+
+        nav_shape = tuple(sig.axes_manager.navigation_shape[::-1])
+        shm_name = f"spyde_vi_{id(vp)}"
+
+        # Create/reset shared buffer; keep reference so it isn't GC'd
+        shm = ensure_live_buffer(nav_shape, shm_name)
+        entry["_shm"] = shm  # keep alive
+
+        # Show NaN-filled image immediately so the plot has correct extent
+        vp.current_data = np.full(nav_shape, np.nan, dtype=np.float32)
+        vp.needs_auto_level = True
+        vp.update()
 
         th.clear()
-        future = compute_virtual_image_kernel(
-            entry["signal"].data, mask, client, gpu_worker
-        )
-        vp.current_data = future
-        _start_progress_poll(future, ind, client, th)
         vpw.set_commit_enabled(False)
+        ind.set_computing()
+
+        # Build the nav-reduced lazy array
+        import dask as _dask
+        data = sig.data
+        if gpu_worker:
+            with _dask.annotate(resources={"GPU": 1}):
+                result_lazy = (data * mask).sum(axis=(-2, -1))
+        else:
+            result_lazy = (data * mask).sum(axis=(-2, -1))
+
+        # Relay: chunk results arrive in Dask callback threads → emit to GUI thread
+        # so the GUI thread writes them into shm (which it owns).
+        class _VIChunkRelay(_QtCore.QObject):
+            chunk_ready = _QtCore.Signal(object, object)
+
+        old_relay = entry.get("_vi_relay")
+        if old_relay is not None:
+            try:
+                old_relay.chunk_ready.disconnect()
+            except Exception:
+                pass
+        vi_relay = _VIChunkRelay(toolbar.parent_toolbar)
+        entry["_vi_relay"] = vi_relay
+
+        def _gui_write_chunk(chunk_result, nav_slices,
+                             _gen=my_gen, _shm=shm, _shape=nav_shape):
+            if entry["generation"][0] != _gen:
+                return
+            try:
+                buf = np.ndarray(_shape, dtype=np.float32, buffer=_shm.buf)
+                buf[nav_slices] = chunk_result.astype(np.float32)
+            except Exception:
+                pass
+
+        vi_relay.chunk_ready.connect(_gui_write_chunk)
+
+        def _on_chunk_vi(chunk_result, nav_slices, _gen=my_gen):
+            if entry["generation"][0] != _gen:
+                return
+            vi_relay.chunk_ready.emit(chunk_result, nav_slices)
+
+        future = compute_with_live_buffer(result_lazy, nav_shape, client, shm_name,
+                                          on_chunk_done=_on_chunk_vi)
+
+        # Set current_data to the Future so PlotUpdateWorker tracks it and fires
+        # on_plot_future_ready when done (existing contract for tests).
+        vp.current_data = future
+        vp._progressive_future = future
+        vp.needs_auto_level = True  # auto-level on first real data
+
+        # Poll shared buffer every 100 ms to show intermediate progress
+        poll_timer = _QtCore.QTimer(toolbar.parent_toolbar)
+        poll_timer.setInterval(100)
+        th.append(poll_timer)
+
+        def _poll_buffer(_gen=my_gen):
+            if entry["generation"][0] != _gen:
+                poll_timer.stop()
+                return
+            if future.done():
+                poll_timer.stop()
+                return
+            arr = read_live_buffer(nav_shape, shm_name)
+            if not np.all(np.isnan(arr)):
+                vp.image_item.setImage(arr)
+
+        poll_timer.timeout.connect(_poll_buffer)
+        poll_timer.start()
+
+        # Count nav chunks for the progress indicator
+        import math as _math
+        n_chunks = _math.prod(len(c) for c in result_lazy.chunks)
+        _start_progress_poll(future, ind, client, th, n_chunks=n_chunks)
+
+        # Stop button cancels the future and the poll timer
+        def _stop_compute():
+            entry["generation"][0] += 1  # invalidate current gen
+            poll_timer.stop()
+            try:
+                client.cancel(future)
+            except Exception:
+                pass
+            vpw.hide_stop_button()
+            vpw.set_commit_enabled(False)
+            ind.set_done()
+
+        vpw.set_stop_fn(_stop_compute)
 
         def _on_preview_done(fut, _gen=my_gen, _entry=entry, _vpw=vpw):
-            from PySide6 import QtCore as _QtCore
             if _entry["generation"][0] != _gen:
                 return
+            _QtCore.QMetaObject.invokeMethod(
+                _vpw, "hide_stop_button",
+                _QtCore.Qt.ConnectionType.QueuedConnection,
+            )
             _QtCore.QMetaObject.invokeMethod(
                 _vpw, "set_commit_enabled",
                 _QtCore.Qt.ConnectionType.QueuedConnection,
@@ -989,7 +1125,27 @@ def add_virtual_image(
 
     def _cleanup():
         """Remove ROI from plot, de-register from batch registry, remove action."""
-        vi_registry.pop(action_name, None)
+        entry = vi_registry.pop(action_name, None)
+        # Wait for any in-flight shm write to complete before dropping the
+        # shm reference — if the Dask worker is mid-write when the shm is
+        # GC'd, Windows raises an access violation in the worker subprocess.
+        if entry is not None:
+            fut = entry.get("virtual_plot") and getattr(
+                entry.get("virtual_plot"), "_progressive_future", None
+            )
+            if fut is not None and not fut.done():
+                import time as _time
+                deadline = _time.monotonic() + 1.0
+                while not fut.done() and _time.monotonic() < deadline:
+                    _time.sleep(0.02)
+            # Explicitly close the shm before GC so we control the timing
+            shm = entry.get("_shm")
+            if shm is not None:
+                try:
+                    shm.close()
+                except Exception:
+                    pass
+                entry["_shm"] = None
         try:
             toolbar.parent_toolbar.unregister_action_plot_item(
                 action_name="Virtual Imaging", key=action_name

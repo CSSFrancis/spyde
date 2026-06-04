@@ -150,3 +150,11 @@ functions:
     toolbar_side: bottom
     navigation: False
     toggle: True
+  Find Diffraction Vectors:
+    description: Find diffraction vectors using window-normalized cross-correlation with a flat disk kernel.
+    icon: drawing/toolbars/icons/peak_finding.svg
+    function: spyde.actions.find_vectors.find_diffraction_vectors
+    plot_dim: [2]
+    toolbar_side: bottom
+    navigation: False
+    toggle: True

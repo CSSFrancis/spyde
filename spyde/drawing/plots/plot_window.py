@@ -127,6 +127,19 @@ class PlotWindow(FramelessSubWindow):
         layout.insertWidget(idx, indicator)
         indicator.show()
 
+    def set_stop_fn(self, fn: callable) -> None:
+        """Wire a stop/cancel function and show the title-bar Stop button."""
+        btn = self.title_bar.stop_button
+        try:
+            btn.clicked.disconnect()
+        except Exception:
+            pass
+        btn.clicked.connect(fn)
+        btn.show()
+
+    def hide_stop_button(self) -> None:
+        self.title_bar.stop_button.hide()
+
     def set_commit_fn(self, fn: callable, label: str = "Commit") -> None:
         """Wire a commit function and show the title-bar Commit button.
 

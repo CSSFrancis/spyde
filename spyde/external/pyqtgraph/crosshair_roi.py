@@ -22,7 +22,11 @@ class CrosshairROI(ROI):
         # Connect to view range changes to maintain constant pixel size
         if self.view is not None:
             self.view.sigRangeChanged.connect(self._update_for_zoom)
-            self._update_for_zoom()
+            # Defer the first zoom update to avoid triggering Qt scene updates
+            # (setSize) during __init__ while Dask callback threads may be
+            # concurrently accessing the scene graph — causes access violation.
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, self._update_for_zoom)
 
         self.size_value = pixel_size  # Store current size in data units
 
@@ -30,6 +34,8 @@ class CrosshairROI(ROI):
         """Update size based on current zoom level to maintain constant pixel size."""
         if self.view is None:
             return
+        if not self.scene():
+            return  # ROI removed from scene — don't resize
 
         # Get the current view range
         view_rect = self.view.viewRect()
@@ -91,6 +97,15 @@ class CrosshairROI(ROI):
             square_size,
             square_size
         ))
+
+    def removeFromScene(self):
+        """Disconnect zoom signal before removal to prevent use-after-free."""
+        try:
+            if self.view is not None:
+                self.view.sigRangeChanged.disconnect(self._update_for_zoom)
+        except Exception:
+            pass
+        super().removeFromScene()
 
     def set_pixel_size(self, pixel_size):
         """Adjust the crosshair pixel size."""

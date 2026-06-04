@@ -29,7 +29,8 @@ class MultiplotManager:
         The main window of the application.
     """
 
-    def __init__(self, main_window: "MainWindow", signal_tree: "BaseSignalTree"):
+    def __init__(self, main_window: "MainWindow", signal_tree: "BaseSignalTree",
+                 selector_type=None):
         self.main_window = main_window  # type: MainWindow
 
         # For managing the navigation plots and the associated plot windows...
@@ -63,7 +64,9 @@ class MultiplotManager:
             for signal in self.signal_tree.navigator_signals.values():
                 self.add_plot_states_for_navigation_signals(signal)
             # create plot states for the nav plot
-            self.add_navigation_selector_and_signal_plot(nav_plot_window)
+            self.add_navigation_selector_and_signal_plot(
+                nav_plot_window, selector_type=selector_type
+            )
 
         elif self.nav_dim < 5:
             # create two plot windows
@@ -192,8 +195,10 @@ class MultiplotManager:
             selector_type = IntegratingSelector1D
         elif dim == 2 and selector_type is None:
             selector_type = IntegratingSelector2D
-        elif not isinstance(selector_type, BaseSelector):
-            raise ValueError("Type must be a BaseSelector class.")
+        elif selector_type is not None and not (
+            isinstance(selector_type, type) and issubclass(selector_type, BaseSelector)
+        ):
+            raise ValueError("selector_type must be a BaseSelector subclass.")
 
         window_level, children_dict = self.get_plot_window_level(
             plot_window=plot_window

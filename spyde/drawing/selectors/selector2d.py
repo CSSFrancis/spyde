@@ -48,17 +48,17 @@ class CrosshairSelector(BaseSelector):
         # _update_for_zoom converts it to data units on first view range change.
         CROSSHAIR_SCREEN_PX = 10
         image_item = parent.current_plot_item.image_item
-        # Use boundingRect() mapped through the item's transform to get the true
-        # scene-space bounding box — this is correct for any scale/offset and avoids
-        # width/height axis confusion with pyqtgraph col-major ImageItem layout.
-        bounding = image_item.mapRectToScene(image_item.boundingRect())
-        center = bounding.center()
-        # Initial scene half-size: approximate from bounding rect so the ROI is
-        # visibly centered before _update_for_zoom fires on the first range change.
-        scene_px_size = max(bounding.width(), bounding.height()) / max(
-            image_item.width() or 1, image_item.height() or 1
-        )
-        init_scene_half = scene_px_size * CROSSHAIR_SCREEN_PX / 2
+        try:
+            bounding = image_item.mapRectToScene(image_item.boundingRect())
+            center = bounding.center()
+            scene_px_size = max(bounding.width(), bounding.height()) / max(
+                image_item.width() or 1, image_item.height() or 1
+            )
+            init_scene_half = scene_px_size * CROSSHAIR_SCREEN_PX / 2
+        except Exception:
+            # Image not yet rendered — place at origin, will be corrected on first zoom
+            center = QtCore.QPointF(0.0, 0.0)
+            init_scene_half = 0.01
         pos = QtCore.QPointF(center.x() - init_scene_half, center.y() - init_scene_half)
         self.roi = CrosshairROI(
             pos=pos,

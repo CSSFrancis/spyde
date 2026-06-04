@@ -69,6 +69,18 @@ class FramelessSubWindow(QtWidgets.QMdiSubWindow):
         self.title_bar.commit_button.hide()
         self.title_bar_layout.addWidget(self.title_bar.commit_button)
 
+        self.title_bar.stop_button = QtWidgets.QPushButton("Stop", self.title_bar)
+        self.title_bar.stop_button.setFixedHeight(18)
+        self.title_bar.stop_button.setStyleSheet(
+            "QPushButton { color: white; background-color: rgba(180,60,60,180); "
+            "border: 1px solid rgba(255,255,255,60); border-radius: 8px; padding: 0 4px; "
+            "font-size: 11px; }"
+            "QPushButton:disabled { background-color: rgba(80,80,80,120); color: rgba(255,255,255,80); }"
+            "QPushButton:hover { background-color: rgba(220,80,80,200); }"
+        )
+        self.title_bar.stop_button.hide()
+        self.title_bar_layout.addWidget(self.title_bar.stop_button)
+
         self.title_label = QtWidgets.QLabel("", self.title_bar)
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_label.setStyleSheet("color: #ffffff;")
