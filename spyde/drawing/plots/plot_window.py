@@ -137,6 +137,7 @@ class PlotWindow(FramelessSubWindow):
         btn.clicked.connect(fn)
         btn.show()
 
+    @QtCore.Slot()
     def hide_stop_button(self) -> None:
         self.title_bar.stop_button.hide()
 

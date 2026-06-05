@@ -1,6 +1,7 @@
 from functools import partial
 
 import numpy as np
+import dask.array as da
 from hyperspy.signal import BaseSignal
 
 from typing import TYPE_CHECKING, Union, List, Iterator
@@ -91,6 +92,9 @@ class BaseSignalTree:
         self.root_node = SignalNode(signal=root_signal, name="root", parent=None)
         self.client = distributed_client
         self._selector_type = selector_type
+        # Lazy dask array for the nav signal, saved before submitting as a
+        # single future so _start_progressive_nav_compute can use it.
+        self._pending_nav_dask = None  # type: da.Array | None
 
         # set up the navigator plots:
         print("Initializing navigator for root signal: ", root_signal)
@@ -117,6 +121,8 @@ class BaseSignalTree:
                 main_window=self.main_window, signal_tree=self,
                 selector_type=self._selector_type,
             )
+            if self._pending_nav_dask is not None:
+                self._start_progressive_nav_compute()
         else:
             self.navigator_plot_manager = None
             self.add_signal_plot()
@@ -133,7 +139,131 @@ class BaseSignalTree:
         self.create_plot_states(plot=plot)
         plot.set_plot_state(list(plot.plot_states.keys())[0])
         self.signal_plots.append(plot)
-        plot.update()
+
+        signal = self.root
+        if signal._lazy and self.client is not None:
+            # Submit as a distributed future so PlotUpdateWorker can track it
+            # and the image fills in progressively rather than blocking.
+            future = self.client.compute(signal.data)
+            plot.update_data(future)
+        else:
+            plot.update()
+
+    def _start_progressive_nav_compute(self):
+        """
+        Replace the single-future nav compute with a per-chunk progressive
+        compute that live-updates the navigator image as chunks finish.
+
+        Mirrors the virtual-imaging compute_with_live_buffer pattern exactly.
+        Called after MultiplotManager (and its nav plots) are fully constructed.
+        """
+        from PySide6 import QtCore as _QtCore
+        from spyde.drawing.update_functions import (
+            compute_with_live_buffer,
+            ensure_live_buffer,
+            read_live_buffer,
+        )
+
+        nav_dask = self._pending_nav_dask
+        self._pending_nav_dask = None
+        if nav_dask is None or self.client is None:
+            return
+
+        # Cancel the single monolithic future submitted by _preprocess_navigator
+        # so it doesn't waste resources duplicating what compute_with_live_buffer does.
+        nav_signals = self.navigator_signals.get("base")
+        if nav_signals:
+            old_future = nav_signals[0].data
+            from dask.distributed import Future as _Future
+            if isinstance(old_future, _Future):
+                try:
+                    self.client.cancel(old_future)
+                except Exception:
+                    pass
+
+        # Find the top-level navigator plot window and its first plot
+        nav_plot_windows = list(self.navigator_plot_manager.plot_windows.keys())
+        if not nav_plot_windows:
+            return
+        nav_pw = nav_plot_windows[0]
+        nav_plots = self.navigator_plot_manager.plots.get(nav_pw, [])
+        if not nav_plots:
+            return
+        nav_plot = nav_plots[0]
+
+        nav_shape = tuple(nav_dask.shape)
+        shm_name = f"spyde_nav_{id(nav_plot)}"
+
+        # Pre-fill shared memory with NaN so the plot shows empty immediately
+        shm = ensure_live_buffer(nav_shape, shm_name)
+        # keep shm alive on the signal tree
+        self._nav_shm = shm
+
+        # Show NaN-filled image now (correct extent, no data yet)
+        nav_plot.current_data = np.full(nav_shape, np.nan, dtype=np.float32)
+        nav_plot.needs_auto_level = True
+        nav_plot.update()
+
+        # Chunk relay: Dask callback thread → GUI thread → shared memory
+        from PySide6 import QtCore as _QC
+
+        class _NavChunkRelay(_QC.QObject):
+            chunk_ready = _QC.Signal(object, object)
+
+        relay = _NavChunkRelay(self.main_window)
+        self._nav_relay = relay  # keep alive
+
+        def _gui_write_chunk(chunk_result, nav_slices, _shm=shm, _shape=nav_shape):
+            try:
+                buf = np.ndarray(_shape, dtype=np.float32, buffer=_shm.buf)
+                buf[nav_slices] = chunk_result.astype(np.float32)
+            except Exception:
+                pass
+
+        relay.chunk_ready.connect(_gui_write_chunk)
+
+        def _on_chunk(chunk_result, nav_slices):
+            relay.chunk_ready.emit(chunk_result, nav_slices)
+
+        future = compute_with_live_buffer(
+            nav_dask, nav_shape, self.client, shm_name, on_chunk_done=_on_chunk
+        )
+
+        # Overwrite the single future that _preprocess_navigator stored so
+        # PlotUpdateWorker still fires on_plot_future_ready when done.
+        nav_signals = self.navigator_signals.get("base")
+        if nav_signals:
+            nav_signals[0].data = future
+        nav_plot.current_data = future
+        nav_plot.needs_auto_level = True
+
+        # Poll shared buffer every 100 ms to show intermediate progress
+        poll_timer = _QtCore.QTimer(self.main_window)
+        poll_timer.setInterval(100)
+        self._nav_poll_timer = poll_timer  # keep alive
+
+        _nav_levels = [None]
+
+        def _poll():
+            if future.done():
+                poll_timer.stop()
+                return
+            arr = read_live_buffer(nav_shape, shm_name)
+            finite = arr[np.isfinite(arr)]
+            if finite.size == 0:
+                return
+            if _nav_levels[0] is None:
+                lo, hi = float(finite.min()), float(finite.max())
+                _nav_levels[0] = (lo, hi if hi > lo else lo + 1)
+            else:
+                lo, hi = float(finite.min()), float(finite.max())
+                if hi > _nav_levels[0][1]:
+                    _nav_levels[0] = (_nav_levels[0][0], hi)
+            nav_plot.image_item.setImage(arr, autoLevels=False, levels=_nav_levels[0])
+            nav_plot.update_range()
+
+        poll_timer.timeout.connect(_poll)
+        poll_timer.start()
 
     @property
     def plot_windows(self) -> List["PlotWindow"]:
@@ -146,34 +276,40 @@ class BaseSignalTree:
 
     def _preprocess_navigator(self, signal: BaseSignal) -> List[BaseSignal]:
         """
-        Preprocess the navigator signal before adding it to the navigator plot manager.
+        Preprocess the navigator signal.
 
-        If the signal has a navigator then it will be split into two!
+        The navigator is a small 2D image (sum over signal axes) — that gets
+        computed and held in memory.  The raw signal data STAYS LAZY; we never
+        pull hundreds of GB of 4D STEM data into RAM.
+
+        Returns a list of [nav_signal] or [nav_signal, signal] depending on
+        whether the input already has separate nav/signal dims.
         """
         if (
             signal.axes_manager.navigation_shape + signal.axes_manager.signal_shape
         ) != self.root.axes_manager.navigation_shape:
             raise ValueError(
-                "Navigator signal must have the same total number of dimensions as the root signal."
-                "and the same shape"
+                "Navigator signal must have the same total number of dimensions as the root signal "
+                "and the same shape."
             )
 
         if signal.axes_manager.signal_dimension == 0:
             signal = signal.T
+
         if (
             signal.axes_manager.signal_dimension > 0
             and signal.axes_manager.navigation_dimension > 0
         ):
+            # Navigator: sum over signal axes → small 2D image, compute it.
+            # Signal: leave lazy — do NOT call client.compute on hundreds of GB.
             navigator = signal.sum(signal.axes_manager.signal_axes).T
             if navigator._lazy:
-                navigator.data = self.client.compute(navigator.data,
-                                                     priority=-10,
-                                                     workers=self.main_window.dask_manager.heavy_workers)  # creates a ndarray from setting...
-            if signal._lazy:
-                signal.data = self.client.compute(signal.data,
-                                                  priority=-10,
-                                                  workers=self.main_window.dask_manager.heavy_workers
-                                                  )
+                nav_dask = navigator.data
+                self._pending_nav_dask = nav_dask
+                navigator.data = self.client.compute(
+                    nav_dask, priority=-10,
+                    workers=self.main_window.dask_manager.heavy_workers,
+                )
             print("Preprocessing navigator: ", navigator, signal)
             return [navigator, signal]
 
@@ -181,20 +317,24 @@ class BaseSignalTree:
             signal = signal.transpose(2)
             navigator = signal.sum(signal.axes_manager.signal_axes).T
             if navigator._lazy:
-                navigator.data = self.client.compute(navigator.data,
-                                                     priority=-10,
-                                                     workers=self.main_window.dask_manager.heavy_workers)
-            if signal._lazy:
-                signal.data = self.client.compute(signal.data, priority=-10,
-                                                  workers=self.main_window.dask_manager.heavy_workers)
+                nav_dask = navigator.data
+                self._pending_nav_dask = nav_dask
+                navigator.data = self.client.compute(
+                    nav_dask, priority=-10,
+                    workers=self.main_window.dask_manager.heavy_workers,
+                )
             print("Preprocessing navigator: ", navigator, signal)
-
             return [navigator, signal]
 
+        # signal_dimension == 0 after .T above: signal IS the navigator.
+        # It's already small (2D nav image), compute it.
         if signal._lazy:
-            signal.data = self.client.compute(signal.data,
-                                                     priority=-10,
-                                                     workers=self.main_window.dask_manager.heavy_workers)
+            nav_dask = signal.data
+            self._pending_nav_dask = nav_dask
+            signal.data = self.client.compute(
+                nav_dask, priority=-10,
+                workers=self.main_window.dask_manager.heavy_workers,
+            )
         return [signal]
 
     def add_navigator_signal(self, name: str, signal: BaseSignal):
@@ -227,16 +367,18 @@ class BaseSignalTree:
             The signal to populate the navigator plots for.
         """
         if signal.axes_manager.navigation_dimension == 0:
-            # single image or spectrum... self.navigator_plots is empty
+            # single image or spectrum — no navigator needed
             return
-        else:  # root_signal.axes_manager.navigation_dimension >= 1:
+        else:
+            # Sum over signal axes to get the navigator image.
+            # For lazy signals this produces a lazy dask array; _preprocess_navigator
+            # will submit it to the distributed client (small 2D result, not the raw data).
             if signal._lazy and signal.navigator is not None:
                 navigation_signal = signal.navigator
-                if navigation_signal._lazy:
-                    navigation_signal.compute()
-            else:  # sum over signal axes to compute the navigation signal
+                # navigator may itself be lazy — leave it; _preprocess_navigator handles it
+            else:
                 navigation_signal = signal.sum(signal.axes_manager.signal_axes)
-            if not isinstance(navigation_signal, BaseSignal):  # if numpy array
+            if not isinstance(navigation_signal, BaseSignal):
                 navigation_signal = BaseSignal(navigation_signal)
 
         # handle lazy computation and setting up the axes properly...

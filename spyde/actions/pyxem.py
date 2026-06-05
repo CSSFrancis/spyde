@@ -1058,6 +1058,8 @@ def add_virtual_image(
         poll_timer.setInterval(100)
         th.append(poll_timer)
 
+        _vi_levels = [None]
+
         def _poll_buffer(_gen=my_gen):
             if entry["generation"][0] != _gen:
                 poll_timer.stop()
@@ -1066,8 +1068,17 @@ def add_virtual_image(
                 poll_timer.stop()
                 return
             arr = read_live_buffer(nav_shape, shm_name)
-            if not np.all(np.isnan(arr)):
-                vp.image_item.setImage(arr)
+            finite = arr[np.isfinite(arr)]
+            if finite.size == 0:
+                return
+            if _vi_levels[0] is None:
+                lo, hi = float(finite.min()), float(finite.max())
+                _vi_levels[0] = (lo, hi if hi > lo else lo + 1)
+            else:
+                lo, hi = float(finite.min()), float(finite.max())
+                if hi > _vi_levels[0][1]:
+                    _vi_levels[0] = (_vi_levels[0][0], hi)
+            vp.image_item.setImage(arr, autoLevels=False, levels=_vi_levels[0])
 
         poll_timer.timeout.connect(_poll_buffer)
         poll_timer.start()
