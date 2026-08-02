@@ -811,6 +811,231 @@ export interface IoThroughputMessage extends MsgBase {
   color: 'green' | 'yellow' | 'red'
 }
 
+// ── Particle table dock ─────────────────────────────────────────────────────
+
+/** One column of the particle table, as the backend describes it. Mirrors the
+ *  renderer-side `DataColumn` (components/DataTable.tsx) minus the function
+ *  fields, which cannot cross IPC. */
+export interface ParticlesTableColumn {
+  /** Property read from each row — e.g. a name from
+   *  `spyde.signals.particles.COLUMNS`. */
+  key: string
+  label: string
+  /** Fixed pixel width; omitted → the column flexes. */
+  width?: number
+  align?: 'left' | 'center' | 'right'
+  /** Right-aligned + tabular figures. */
+  numeric?: boolean
+  /** Default true. */
+  sortable?: boolean
+  /** 'swatch' prefixes a colour chip keyed on the cell value (track id). */
+  kind?: 'text' | 'swatch'
+  /** Decimal places for a numeric cell. */
+  precision?: number
+  /** Appended to the value ("nm", "nm²"). */
+  units?: string
+}
+
+/** One row of the Events tab — exactly `ParticleEvent.to_dict()` from
+ *  `spyde/particles/track.py`. */
+export interface ParticleEventRecord {
+  frame: number
+  /** 'birth' | 'death' | 'merge' | 'split' (track.py EVENT_KINDS). */
+  kind: string
+  tracks: number[]
+  particles: number[]
+}
+
+/**
+ * The particle/track table for one result window, in reply to a
+ * `particles_query {window_id}` action (and pushed again when a segmentation
+ * batch finalises). Re-broadcast as a `spyde:particles_table` CustomEvent and
+ * consumed by BottomDock — the renderer holds no reducer state for it.
+ *
+ * `columns` is backend-supplied so the dock stays data-agnostic: sending a
+ * different column set is the whole mechanism for showing tracks instead of
+ * particles. `events` is fixed-shape and drives the Events tab.
+ */
+export interface ParticlesTableMessage extends MsgBase {
+  type: 'particles_table'
+  /** The window this table belongs to; `null` = unscoped (always shown). */
+  window_id: number | null
+  /** Dock header text. Defaults to "Particles" when absent. */
+  title?: string
+  columns: ParticlesTableColumn[]
+  /** One object per row, keyed by `columns[].key`. An optional numeric `id`
+   *  field is used as the stable selection key when present. */
+  rows: Record<string, unknown>[]
+  events?: ParticleEventRecord[]
+  /** Calibrated unit of the length columns (`SpyDEParticles.units`). */
+  units?: string
+  /** True while a batch is still streaming rows in — shows a "streaming…" pill. */
+  partial?: boolean
+}
+
+// ── Segment Particles caret (spyde/actions/particles_action.py, plan B7) ─────
+
+/** One scribble class as the backend reports it — `ScribbleClass.to_dict()`
+ *  plus the labelled-pixel count `SegmentWizard.class_report()` adds.
+ *
+ *  `pixels` is NOT decoration: under-training a class is the failure mode
+ *  plan §B3 calls out, and this count is how the user notices. A class with
+ *  zero pixels is present in the list rather than absent from it. */
+export interface SegClassInfo {
+  id: number
+  name: string
+  /** CSS hex — the renderer's units; the backend never converts it. */
+  colour: string
+  /** Counts toward the foreground probability map (several classes may). */
+  particle: boolean
+  /** Marks the SEAM between two touching particles (the ilastik third class).
+   *  Painting it lets the backend split by connected components and skip the
+   *  distance transform and watershed entirely. Mutually exclusive with
+   *  `particle` — the backend raises if a class claims both. */
+  boundary: boolean
+  pixels: number
+}
+
+/** The caret's authoritative state, emitted by `_emit_state` after open,
+ *  method switch, paint and train. `params` are the EFFECTIVE (coerced)
+ *  values, not what the caret last sent. */
+export interface SegStateMessage extends MsgBase {
+  type: 'seg_state'
+  window_id: number | null
+  /** 'classical' | 'scribble' | 'prompt'. */
+  method: string
+  /** Navigator frame the preview is showing. */
+  frame: number
+  n_frames: number
+  frame_shape: [number, number]
+  classes: SegClassInfo[]
+  /** Frame indices carrying at least one scribble. */
+  labelled_frames: number[]
+  trained: boolean
+  params: Record<string, unknown>
+}
+
+/** One frame's preview result. `min_size` is the EFFECTIVE value that ran and
+ *  `min_size_floored` says the backend raised what the caret asked for — the
+ *  caret must show the effective number (plan §0.9: at min_size=0 the split
+ *  returns background speckle as particles). `count` is already post-filter. */
+export interface SegPreviewMessage extends MsgBase {
+  type: 'seg_preview'
+  window_id: number | null
+  frame: number
+  count: number
+  /** Per-instance areas in calibrated units², capped at 2000 entries. */
+  areas: number[]
+  median_area: number
+  /** Signal-axis unit ("nm"); areas are in unit². */
+  units: string
+  method: string
+  min_size: number
+  min_size_floored: boolean
+  elapsed_ms: number
+  /**
+   * `[y0, x0, h, w]` when the frame was too big to preview whole, else null.
+   *
+   * A 4096² frame costs 8.4 s to segment, so the backend previews a centred
+   * megapixel crop at FULL resolution instead (cropping rather than
+   * downsampling, so the preview runs the identical algorithm the real run
+   * will). The caret MUST surface this: otherwise "12 particles on this frame"
+   * is a lie about a frame where only the middle sixteenth was looked at.
+   */
+  preview_box: [number, number, number, number] | null
+}
+
+/** Scribble classifier fit report (`ScribbleClassifier.fit`). */
+export interface SegTrainedMessage extends MsgBase {
+  type: 'seg_trained'
+  window_id: number | null
+  report: {
+    device?: string
+    n_pixels?: number
+    n_channels?: number
+    n_classes?: number
+    labelled_frames?: number[]
+    train_accuracy?: number
+    [k: string]: unknown
+  }
+}
+
+// ── Drift Correction caret (spyde/actions/drift_action.py, plan A8) ──────────
+
+/** Caret state. `window_id` is the SOURCE plot's window (where the caret
+ *  lives); `check_window_id` is the bare-figure Drift Check window (whole-movie
+ *  before/after sums on top, the ROI discovery pair beneath) and
+ *  `trace_window_id` the bare-figure dy/dx window the solve opens. */
+export interface DriftStateMessage extends MsgBase {
+  type: 'drift_state'
+  window_id: number | null
+  check_window_id: number | null
+  trace_window_id: number | null
+  /** 'rigid' | 'rigid_affine' | 'nonrigid' — only rigid has a solver. */
+  method: string
+  solved: boolean
+  /** Whether the FULL solve restricts itself to the alignment box. The preview
+   *  always uses the box regardless — the toggle is the commitment. */
+  use_roi: boolean
+  /** The alignment box as `[y0, x0, h, w]` in IMAGE PIXELS (what
+   *  `solve_translation(roi=…)` takes), or null when there is no usable box. */
+  roi: number[] | null
+  params: Record<string, unknown>
+  /** Present on the open/ready emissions. */
+  n_frames?: number
+}
+
+/** The discovery preview: ~20 frames sampled across the whole movie, aligned on
+ *  the box alone. `gain` is the gradient energy of the aligned sum over the raw
+ *  sum, measured on the pixels both cover — > 1.5 means a usable landmark,
+ *  <= 1 means aligning there changes nothing. */
+export interface DriftPreviewMessage extends MsgBase {
+  type: 'drift_preview'
+  window_id: number | null
+  roi: number[] | null
+  frames: number
+  gain: number
+  max_abs_shift: number
+  params: Record<string, unknown>
+}
+
+/** A batch of solved shifts streamed from `solve_translation`'s `on_shift`
+ *  while the solve runs — `[frame_index, dy, dx]` each. The backend paints
+ *  these into the dy/dx window itself; the message exists so any host can
+ *  follow the curve live. */
+export interface DriftTraceMessage extends MsgBase {
+  type: 'drift_trace'
+  window_id: number | null
+  points: [number, number, number][]
+}
+
+/** Whole-movie solve progress (also emitted as a plain `progress` message). */
+export interface DriftProgressMessage extends MsgBase {
+  type: 'drift_progress'
+  window_id: number | null
+  done: number
+  total: number
+}
+
+/** The solved model. `shifts[i]` is the correction ADDED to frame i, `[dy, dx]`
+ *  in pixels; a cancelled solve leaves NaN rows for frames it never reached. */
+export interface DriftResultMessage extends MsgBase {
+  type: 'drift_result'
+  window_id: number | null
+  shifts: [number, number][]
+  kind: string
+  reference: string
+  max_abs_shift: number
+  /** The box the solve correlated on (`use_roi`), or null for whole-frame. */
+  roi: number[] | null
+  /** Whole-movie sharpening: gradient energy of the corrected sum over the raw
+   *  one. The same number the preview reports, now for what actually ran. */
+  gain: number
+  /** Frames dropped from the running reference by the outlier rejector. */
+  rejected: number
+  cancelled: boolean
+}
+
 /**
  * Wizard-scoped events re-broadcast verbatim as DOM CustomEvents (the caret
  * components subscribe directly). The payload beyond `type` is consumer-defined,
@@ -936,6 +1161,15 @@ export type PlotAppMessage =
   | DownloadDoneMessage
   | DaskStatsMessage
   | IoThroughputMessage
+  | ParticlesTableMessage
+  | SegStateMessage
+  | SegPreviewMessage
+  | SegTrainedMessage
+  | DriftStateMessage
+  | DriftPreviewMessage
+  | DriftTraceMessage
+  | DriftProgressMessage
+  | DriftResultMessage
 
 /**
  * Narrow a raw incoming message (`Record<string, unknown>` from the IPC bridge)
