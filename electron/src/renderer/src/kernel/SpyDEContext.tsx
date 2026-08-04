@@ -5,11 +5,12 @@
  * toolbar configs, and status, and re-renders the MDI when things change.
  */
 import React, {
-  createContext, useContext, useEffect, useReducer, useRef, useState,
+  createContext, useCallback, useContext, useEffect, useReducer, useRef, useState,
 } from 'react'
 import { asPlotAppMessage } from './protocol'
 import type { ReportDocState, ReportCell } from './protocol'
-import { WINDOW_DRAG_MIME, FIGURE_DRAG_MIME } from './dnd'
+import { WINDOW_DRAG_MIME, FIGURE_DRAG_MIME, stashWindowDrag } from './dnd'
+import { dlog, dragDumpToConsole } from './dragDiag'
 import { EnvSetupOverlay } from '../components/EnvSetupOverlay'
 
 // Re-export the report doc types so components import them from the kernel
@@ -111,8 +112,26 @@ export interface Histogram {
   clipped?: boolean           // bins are robust quantiles — end bins are overflow
 }
 
-/** One application-log record streamed from the Python backend. */
-export interface LogEntry { level: string; name: string; area?: string; msg: string; time: number }
+/**
+ * One application-log record streamed from the Python backend.
+ *
+ * `seq` is a renderer-assigned monotonic id, stamped once as the record enters
+ * the buffer. It is the STABLE React key + height-cache key for the virtualised
+ * log list: the buffer is a ring (old records drop off the front), so an array
+ * INDEX identifies a different record after every shift, which would defeat both
+ * row memoisation and the measured-height cache.
+ */
+export interface LogEntry {
+  level: string
+  name: string
+  area?: string
+  msg: string
+  time: number
+  seq?: number
+}
+
+/** Max buffered log records (the renderer-side ring buffer). */
+export const LOG_MAX = 1000
 
 /** A console_result/console_vars value description (shape × dtype badge). */
 export interface ConsoleVarKind {
@@ -168,6 +187,20 @@ export interface SelectorInfo {
   selectorId?: number
   /** Widget colour — the dock row's dot. */
   color?: string
+  /** How many navigation positions a POINT selector sums (1 = plain
+   *  crosshair). Only sent for a 1-D (movie/time) navigator; its absence is
+   *  what hides the control on a 2-D one, where "n frames" has no direction. */
+  sumFrames?: number
+  /** Length of that navigation axis, so the dock can cap the ladder. */
+  navSize?: number
+  /** Seconds per navigation position (0 when the axis isn't time), so a
+   *  summed window can be labelled with the rate it works out to. */
+  navScale?: number
+  /** Raw camera frames integrated into ONE navigation position, when the
+   *  source streams finer than it was loaded at (a CSB event stream). Its
+   *  presence is what lets the width ladder go BELOW one position to a single
+   *  raw frame; absent for an ordinary movie, where nothing lies underneath. */
+  rawPerPlane?: number
 }
 /** The named navigators a navigator window offers (its top chip strip). */
 export interface NavigatorOptions { names: string[]; current?: string | null }
@@ -288,7 +321,7 @@ type Action =
   | { type: 'SIGNAL_TREE'; windowId: number; tree: TreeNode; activeSignalId?: number }
   | { type: 'NAVIGATOR_OPTIONS'; windowId: number; names: string[]; current?: string | null }
   | { type: 'STREAM'; text: string; kind: 'stdout' | 'stderr' }
-  | { type: 'LOG'; entry: LogEntry }
+  | { type: 'LOG'; entries: LogEntry[] }
   | { type: 'LOG_BACKFILL'; entries: LogEntry[] }
   | { type: 'LOG_LEVEL'; level: string }
   | { type: 'BACKEND_EXITED'; code: number | null; reason?: string }
@@ -634,11 +667,19 @@ function spydeReducer(state: State, action: Action): State {
         streamLines: [...state.streamLines.slice(-500), { text: action.text, kind: action.kind }],
       }
 
-    case 'LOG':
-      return { ...state, logEntries: [...state.logEntries.slice(-999), action.entry] }
+    // A BATCH of records (coalesced per animation frame by `queueLog` below) —
+    // one array copy + one render for a whole burst, instead of one per line.
+    case 'LOG': {
+      if (action.entries.length === 0) return state
+      const merged = state.logEntries.concat(action.entries)
+      return {
+        ...state,
+        logEntries: merged.length > LOG_MAX ? merged.slice(-LOG_MAX) : merged,
+      }
+    }
 
     case 'LOG_BACKFILL':
-      return { ...state, logEntries: action.entries.slice(-1000) }
+      return { ...state, logEntries: action.entries.slice(-LOG_MAX) }
 
     case 'LOG_LEVEL':
       return { ...state, logLevel: action.level }
@@ -710,7 +751,10 @@ interface SpyDEContextValue {
   latestStates: React.MutableRefObject<Map<string, Map<string, unknown>>>
   sendAction: (action: string, payload?: Record<string, unknown>, windowId?: number) => void
   setActiveWindow: (windowId: number) => void
-  replayState: (figId: string) => void
+  /** Re-send a figure's stashed state. `target` names WHICH iframe — needed
+   *  when a figure is mounted twice (sidebar cell + presented slide), where the
+   *  shared figId→element map holds only the last-registered one. */
+  replayState: (figId: string, target?: HTMLIFrameElement) => void
   // Harvest a rendered PNG from a figure's iframe (the anyplotlib export
   // protocol). Resolves null on timeout/error. Used by the report save flow +
   // any future PNG-export path.
@@ -798,7 +842,10 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
   // LATEST frame per key (retained across postMessage's transfer, which
   // detaches the original ArrayBuffer) — matches the "latest-wins" paint
   // philosophy used throughout the nav/paint pipeline (see CLAUDE.md).
-  const latestBinaryStates = useRef<Map<string, Map<string, { header: unknown; buffer: Uint8Array }>>>(new Map())
+  // figId → (`${geom}::${pixelField}` → the frame). Keyed per PANEL, not per
+  // pixel field — see the state_update_binary handler for why that matters.
+  const latestBinaryStates = useRef<Map<string, Map<string,
+    { key: string; header: unknown; buffer: Uint8Array }>>>(new Map())
   // Mirror reportFigures into a ref so the (stable-identity, deps-[]) message
   // effect below can read the LATEST cell→figure map synchronously — e.g. to
   // find a report cell's OLD figId before it's replaced, so its shadow state
@@ -819,8 +866,21 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
   const [dragKind, setDragKind] = useState<'window' | null>(null)
 
   // Post every stored state for a figure to its iframe (called on iframe load).
-  const replayState = (figId: string) => {
-    const iframe = iframeRefs.current.get(figId)
+  /**
+   * Re-send a figure's stashed state into an iframe.
+   *
+   * `target` names WHICH iframe. Load-bearing when a figure is mounted more
+   * than once — a report figure lives in the sidebar cell AND on its presented
+   * slide, and both register under the same figId in a Map that holds one
+   * element. Resolving the target from that map means whichever mounted LAST
+   * wins, so a freshly-loaded frame calling replayState would push its state
+   * into its SIBLING and receive nothing itself. Which mount won is a race, so
+   * the presented deck came up blank on some machines and not others.
+   *
+   * A frame that has just loaded passes itself here and is always served.
+   */
+  const replayState = (figId: string, target?: HTMLIFrameElement) => {
+    const iframe = target ?? iframeRefs.current.get(figId)
     if (!iframe?.contentWindow) return
     const states = latestStates.current.get(figId)
     if (states) {
@@ -830,7 +890,10 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
     }
     const binStates = latestBinaryStates.current.get(figId)
     if (binStates) {
-      for (const [key, { header, buffer }] of binStates) {
+      // The MAP key is `geom::pixelField` (one entry per panel); the message
+      // must carry the original pixel-field `key` + its header, which is what
+      // the figure routes on.
+      for (const { key, header, buffer } of binStates.values()) {
         // Send a COPY (transfer detaches the buffer) — the stash must survive
         // a later iframe remount (e.g. window re-tile / dev StrictMode).
         const copy = buffer.slice()
@@ -841,7 +904,59 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
         )
       }
     }
+    dlog('replayState', {
+      figId,
+      jsonKeys: states ? states.size : 0,
+      binaryKeys: binStates ? binStates.size : 0,
+      target: iframe.getAttribute('data-testid'),
+    })
   }
+
+  /**
+   * What a figure would replay into a freshly-mounted iframe.
+   *
+   * A report figure is mounted TWICE — once in the sidebar cell, once on the
+   * presented slide — and both register under the SAME figId, so the present
+   * copy draws entirely from what `replayState` re-sends. A multi-panel figure
+   * whose panels arrive as separate binary pixel states will therefore render
+   * only the panels still present in the stash: a panel whose binary state is
+   * missing draws NOTHING, while its HTML scale-bar overlay survives, which is
+   * exactly the reported "empty panel with a scale bar and no ticks".
+   *
+   * So the discriminator is simply: how many panels does the spec have, and how
+   * many binary pixel states are stashed for that figure? Run
+   * `__spydeFigureDump()` in DevTools while the bad slide is up.
+   */
+  const figureDump = React.useCallback(() => {
+    const rows: Record<string, unknown>[] = []
+    const figIds = new Set<string>([
+      ...latestStates.current.keys(),
+      ...latestBinaryStates.current.keys(),
+      ...iframeRefs.current.keys(),
+    ])
+    for (const figId of figIds) {
+      const el = iframeRefs.current.get(figId)
+      const rect = el?.getBoundingClientRect()
+      const bin = latestBinaryStates.current.get(figId)
+      rows.push({
+        figId,
+        jsonKeys: latestStates.current.get(figId)?.size ?? 0,
+        binaryKeys: bin?.size ?? 0,
+        binaryKeyNames: bin ? Array.from(bin.keys()).join(',') : '',
+        registeredIn: el?.closest('[data-testid="present-slide"]') ? 'present-slide'
+          : el?.closest('[data-testid="report-sidebar"]') ? 'report-sidebar'
+            : el ? 'other' : 'NONE',
+        size: rect ? `${Math.round(rect.width)}x${Math.round(rect.height)}` : 'n/a',
+      })
+    }
+    // eslint-disable-next-line no-console
+    console.table(rows)
+    return rows
+  }, [])
+
+  React.useEffect(() => {
+    ;(window as unknown as Record<string, unknown>).__spydeFigureDump = figureDump
+  }, [figureDump])
 
   // Ask a figure's iframe for a rendered PNG (the anyplotlib export protocol).
   // Posts `{type:'anyplotlib_export_png', requestId, opts}` into the iframe and
@@ -884,6 +999,37 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
   )
 
   // ── Python → Renderer message dispatch ──────────────────────────────────
+
+  // Log-record COALESCING. The backend can spray hundreds of records a second
+  // (a [NAV-PROFILE] trace, a dask storm). One dispatch per record = one React
+  // commit per record, each of which re-renders every consumer of this context.
+  // Buffer them and flush ONE batched dispatch per animation frame instead, so a
+  // burst costs one render, not N. The setTimeout is a backstop: rAF does not
+  // fire while the window is hidden/minimised, and records must still land.
+  const pendingLogs = useRef<LogEntry[]>([])
+  const logRaf = useRef<number | null>(null)
+  const logTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const logSeq = useRef(0)
+
+  const flushLogs = useCallback(() => {
+    if (logRaf.current != null) { cancelAnimationFrame(logRaf.current); logRaf.current = null }
+    if (logTimer.current != null) { clearTimeout(logTimer.current); logTimer.current = null }
+    const batch = pendingLogs.current
+    if (batch.length === 0) return
+    pendingLogs.current = []
+    dispatch({ type: 'LOG', entries: batch })
+  }, [])
+
+  const queueLog = useCallback((entry: LogEntry) => {
+    entry.seq = logSeq.current++
+    const pending = pendingLogs.current
+    pending.push(entry)
+    // Never let the pending queue outgrow what the buffer can hold (a flood
+    // while the window is hidden would otherwise pin unbounded memory).
+    if (pending.length > LOG_MAX) pending.splice(0, pending.length - LOG_MAX)
+    if (logRaf.current == null) logRaf.current = requestAnimationFrame(flushLogs)
+    if (logTimer.current == null) logTimer.current = setTimeout(flushLogs, 250)
+  }, [flushLogs])
 
   useEffect(() => {
     const handleMessage = (raw: Record<string, unknown>) => {
@@ -1058,8 +1204,30 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
               if (!latestBinaryStates.current.has(figId)) {
                 latestBinaryStates.current.set(figId, new Map())
               }
+              // STASH PER PANEL, not per pixel-field.
+              //
+              // `key` is the pixel FIELD ("image_b64" / "overlay_mask_b64" /
+              // "detail_b64") and is the SAME for every panel; the panel is
+              // identified by `header.geom`, the trait name anyplotlib routes
+              // the bytes back through (see _electron.py's emit_binary). Keying
+              // the stash by `key` alone therefore let each panel of a
+              // multi-panel figure OVERWRITE the previous one's pixels, leaving
+              // exactly one frame stashed however many panels the figure has.
+              //
+              // A figure only replays from this stash when it is mounted a
+              // SECOND time — which is what a presented slide is, the sidebar
+              // cell being the first. So a composed grid rendered correctly in
+              // the sidebar and then presented with every panel blank except
+              // the last one composed: no image, no ticks, no title, only the
+              // HTML scale-bar overlay, which is not part of the canvas.
+              // Single-panel cells (everything else in the app) push one frame
+              // and never noticed.
+              //
+              // Mirrors the figure ESM's own slot convention, `geom::pixelKey`.
+              const geom = (msg.header as { geom?: string } | undefined)?.geom
+              const stashKey = geom ? `${geom}::${key}` : key
               latestBinaryStates.current.get(figId)!.set(
-                key, { header: msg.header, buffer: bytes.slice() },
+                stashKey, { key, header: msg.header, buffer: bytes.slice() },
               )
             }
             const iframe = iframeRefs.current.get(figId)
@@ -1183,6 +1351,13 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
               // creation-time title/colour on a mode-only re-emit.
               ...(msg.title != null ? { title: msg.title } : {}),
               ...(msg.color != null ? { color: msg.color } : {}),
+              ...(msg.sum_frames != null
+                ? { sumFrames: Number(msg.sum_frames) } : {}),
+              ...(msg.nav_size != null ? { navSize: Number(msg.nav_size) } : {}),
+              ...(msg.nav_scale != null
+                ? { navScale: Number(msg.nav_scale) } : {}),
+              ...(msg.raw_per_plane != null
+                ? { rawPerPlane: Number(msg.raw_per_plane) } : {}),
             },
           })
           break
@@ -1320,15 +1495,27 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
           break
 
         case 'log':
-          dispatch({ type: 'LOG', entry: {
+          // Coalesced (see queueLog) — NOT dispatched per record. `area` is the
+          // backend's authoritative subsystem tag (log_stream._area_for); it used
+          // to be dropped here, forcing the panel to re-derive a worse guess from
+          // the logger name for every row on every render.
+          queueLog({
             level: String(msg.level), name: String(msg.name),
+            area: msg.area != null ? String(msg.area) : undefined,
             msg: String(msg.msg), time: Number(msg.time),
-          } })
+          })
           break
 
-        case 'log_backfill':
-          dispatch({ type: 'LOG_BACKFILL', entries: msg.entries ?? [] })
+        case 'log_backfill': {
+          // Authoritative history replace — the backend's ring already contains
+          // anything still queued, so drop the pending batch rather than letting
+          // it re-append duplicates after the replace.
+          pendingLogs.current = []
+          const entries = (msg.entries ?? []) as LogEntry[]
+          for (const e of entries) e.seq = logSeq.current++
+          dispatch({ type: 'LOG_BACKFILL', entries })
           break
+        }
 
         case 'log_level':
           dispatch({ type: 'LOG_LEVEL', level: String(msg.level) })
@@ -1531,6 +1718,11 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
       // every message dispatched twice, growing over time → doubled logs + lag).
       disposeMessage?.()
       disposeStream?.()
+      // Drop any coalesced log batch still waiting on its rAF/timeout — a
+      // StrictMode remount would otherwise flush into the new reducer instance.
+      if (logRaf.current != null) { cancelAnimationFrame(logRaf.current); logRaf.current = null }
+      if (logTimer.current != null) { clearTimeout(logTimer.current); logTimer.current = null }
+      pendingLogs.current = []
       disposeStackDialog?.()
       disposeUpdateDialog?.()
       disposeGpuStatusDialog?.()
@@ -1613,22 +1805,79 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
       // file/text dragover doesn't clobber an active window drag.
       return WINDOW_TYPES.some(t => arr.includes(t)) ? 'window' : null
     }
-    const onDragStart = (e: DragEvent) => setDragKind(classify(e))
+    const onDragStart = (e: DragEvent) => {
+      const k = classify(e)
+      dlog('2.classify/dragstart', {
+        types: e.dataTransfer ? Array.from(e.dataTransfer.types) : null,
+        kind: k,
+        target: (e.target as HTMLElement)?.getAttribute?.('data-testid') ?? null,
+      })
+      setDragKind(k)
+    }
     // dragover is a belt-and-braces re-classify: if dragstart's read raced the
     // source's setData (ordering across the React-root vs window listeners), the
     // first dragover — where types are reliably populated — sets it. Only ever
     // PROMOTES to 'window'; never clears (clearing is dragend/drop's job).
-    const onDragOver = (e: DragEvent) => {
-      if (classify(e) === 'window') setDragKind(prev => (prev === 'window' ? prev : 'window'))
+    let promoted = false
+    // Trail of WHAT the drag is actually over. A drop that never fires means no
+    // dragover preventDefault()ed under the cursor — and the only way to know
+    // why is to see which element was receiving them. Logged on TARGET CHANGE
+    // (dragover fires ~60 Hz) with the topmost hit-test result alongside, since
+    // an out-of-process iframe swallows the event entirely and never appears as
+    // a target here at all.
+    let lastPath = ''
+    const describe = (el: Element | null): string => {
+      if (!el) return 'null'
+      const t = el.getAttribute?.('data-testid')
+      if (t) return t
+      const tag = el.tagName.toLowerCase()
+      return tag === 'iframe' ? 'IFRAME' : tag
     }
-    const clear = () => setDragKind(null)
+    const onDragOver = (e: DragEvent) => {
+      if (classify(e) === 'window') {
+        if (!promoted) {
+          promoted = true
+          dlog('2b.classify/first-dragover', {
+            types: e.dataTransfer ? Array.from(e.dataTransfer.types) : null,
+          })
+        }
+        setDragKind(prev => (prev === 'window' ? prev : 'window'))
+      }
+    }
+    // CAPTURE phase for the trail: the shield calls stopPropagation() when it
+    // accepts, so a bubble-phase listener goes silent exactly when things are
+    // working and can't distinguish that from the event never arriving.
+    const onDragOverCapture = (e: DragEvent) => {
+      const tgt = describe(e.target as Element)
+      const top = describe(document.elementFromPoint(e.clientX, e.clientY))
+      const path = `${tgt}|${top}`
+      if (path !== lastPath) {
+        lastPath = path
+        dlog('2c.dragover-over', { target: tgt, topmostAtPoint: top })
+      }
+    }
+    // Clearing the in-process payload stash here (not in the drag source's own
+    // dragend) keeps it alive for the whole drag — including the drop, which
+    // fires BEFORE dragend — while guaranteeing it can never leak into a later,
+    // unrelated drop.
+    const clear = (e: Event) => {
+      dlog(`6.end/${e.type}`, {
+        target: (e.target as HTMLElement)?.getAttribute?.('data-testid') ?? null,
+      })
+      dragDumpToConsole(e.type)
+      promoted = false
+      setDragKind(null)
+      stashWindowDrag(null)
+    }
     window.addEventListener('dragstart', onDragStart)
     window.addEventListener('dragover', onDragOver)
+    window.addEventListener('dragover', onDragOverCapture, true)
     window.addEventListener('dragend', clear)
     window.addEventListener('drop', clear)
     return () => {
       window.removeEventListener('dragstart', onDragStart)
       window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('dragover', onDragOverCapture, true)
       window.removeEventListener('dragend', clear)
       window.removeEventListener('drop', clear)
     }

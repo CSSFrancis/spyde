@@ -105,6 +105,17 @@ def run_orientation(session, src, src_tree, phases, sim_params, match_params,
         reciprocal_radius=_reciprocal_radius(src),
     )
     gamma = float(match_params.get("gamma", DEFAULTS["gamma"]))
+    # Attach the source-DP template overlay BEFORE the batch, not after it.
+    # Orientation's progressive window is the IPF map alone (a single 2-D plot,
+    # no navigator — so it has no signal plot to preview into); the SOURCE
+    # window is the navigator + signal pair here, and its diffraction pattern is
+    # where a live orientation result shows up. Attaching first means the whole
+    # (minutes-long) fill is navigable: drag the scan and the matched template
+    # tracks the DP straight away, instead of the source staying inert until the
+    # map finishes. The overlay re-matches per position, so it answers for
+    # already-filled and not-yet-filled positions alike, and the staged wizard
+    # path already worked this way (om_generate_library attaches it up front).
+    _overlay_template_on_source(src_tree, src_dp_plot, src, sim, gamma)
     emit_status("Orientation: matching templates…")
     om = _compute_with_live_ipf(
         session, src, src_tree, sim,
@@ -115,7 +126,6 @@ def run_orientation(session, src, src_tree, phases, sim_params, match_params,
         if not getattr(src_tree, "_spyde_closed", False):
             emit_error("Orientation: compute returned no result")
         return None
-    _overlay_template_on_source(src_tree, src_dp_plot, src, sim, gamma)
     emit_status("Orientation map complete")
     return om
 
@@ -180,8 +190,9 @@ def _create_blank_ipf_window(session, src, ny, nx):
     )
 
 
-def _finalize_ipf_window(tree, om) -> None:
-    """Paint the final IPF-Z map, attach the map + 3-D explorer + point selector."""
+def _finalize_ipf_window(tree, om, session=None) -> None:
+    """Paint the final IPF-Z map, then attach the two-window IPF layout: the
+    X/Y/Z projection chips on this (map) window and the IPF explorer window."""
     tree.orientation_map = om
     ipf = om.ipf_color_map(direction="z")        # (ny, nx, 3) uint8
     for sp in list(getattr(tree, "signal_plots", [])):
@@ -192,7 +203,7 @@ def _finalize_ipf_window(tree, om) -> None:
             log.debug("painting IPF map onto signal plot failed: %s", e)
     try:
         from spyde.actions.ipf_view import attach_ipf_3d, attach_ipf_point_selector
-        attach_ipf_3d(tree, om, direction="z")
+        attach_ipf_3d(tree, om, direction="z", session=session)
         attach_ipf_point_selector(tree, om, "z")
     except Exception as e:
         log.debug("attaching 3-D IPF explorer failed: %s", e)
@@ -248,7 +259,7 @@ def _compute_with_live_ipf(session, src, src_tree, sim, params):
             except Exception as e:
                 log.debug("cleaning up OM live-buffer shared memory failed: %s", e)
     if om is not None:
-        _finalize_ipf_window(om_tree, om)
+        _finalize_ipf_window(om_tree, om, session=session)
     return om
 
 

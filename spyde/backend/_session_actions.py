@@ -37,7 +37,8 @@ _TEST_ACTIONS = frozenset({
     "load_test_data", "load_test_data_lazy", "load_test_data_lazy_chunked",
     "load_test_data_si_grains", "load_test_data_sped_ag",
     "load_test_data_eels", "load_test_data_eds", "load_test_data_ebsd",
-    "load_test_data_line", "load_test_data_movie", "test_nav_drag",
+    "load_test_data_line", "load_test_data_movie", "load_test_data_5d",
+    "test_nav_drag",
     "test_region_scrub", "test_add_second_navigator",
     "load_test_vectors", "run_test_orientation", "dump_dask_state",
 })
@@ -145,6 +146,8 @@ class ActionRouterMixin:
             self._load_test_data_line(payload)
         elif action == "load_test_data_movie":
             self._load_test_data_movie(payload)
+        elif action == "load_test_data_5d":
+            self._load_test_data_5d(payload)
         elif action == "test_add_second_navigator":
             self._test_add_second_navigator()
         elif action == "test_nav_drag":
@@ -162,6 +165,8 @@ class ActionRouterMixin:
             ).start()
         elif action == "load_test_vectors":
             self._load_test_vectors()
+        elif action == "test_ipf_pick":
+            self._test_ipf_pick(payload)
         elif action == "dump_dask_state":
             self._dump_dask_state(only=payload.get("only"))
         elif action in STAGED_HANDLERS:
@@ -183,6 +188,9 @@ class ActionRouterMixin:
             # dialog) on the active signal, so the E2E workflow can be driven
             # headlessly / in Playwright. payload={"phase":"si"|"ag"} (default si).
             self._run_test_orientation(plot, payload)
+        elif action == "set_selector_sum":
+            self.set_selector_sum(window_id, int(payload.get("frames", 1)),
+                                  payload.get("selector_id"))
         elif action == "set_selector_mode":
             self.set_selector_mode(window_id, bool(payload.get("integrate")),
                                    payload.get("selector_id"))
@@ -398,7 +406,11 @@ class ActionRouterMixin:
             # RESULT vectors-image window (_result_vector_overlay). The user clicks
             # the action on EITHER window, so toggle both.
             overlays.append(getattr(tree, "_vector_overlay", None))
-            overlays.append(getattr(tree, "_result_vector_overlay", None))
+            # The result window can carry more than one (a second signal plot via
+            # "Add Selector" gets its own); toggling only the primary left the
+            # others drawn.
+            from spyde.actions.find_vectors_action import _result_overlays
+            overlays.extend(_result_overlays(tree))
         elif name == "Orientation Mapping":
             overlays.append(getattr(tree, "_orientation_overlay", None))
             wiz = getattr(tree, "_om_wizard", None)

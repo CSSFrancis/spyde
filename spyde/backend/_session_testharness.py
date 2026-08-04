@@ -19,7 +19,7 @@ import numpy as np
 import hyperspy.api as hs
 
 from spyde.backend import ipc
-from spyde.backend.ipc import emit_error
+from spyde.backend.ipc import emit_error, emit_status
 
 log = logging.getLogger(__name__)
 
@@ -188,6 +188,85 @@ class TestHarnessMixin:
         except Exception as e:
             log.debug("set_signal_type on chunked lazy data failed: %s", e)
         self._add_signal(s, source_path="test_data_lazy_chunked")
+
+    def _load_test_data_5d(self, payload: dict | None = None) -> None:
+        """Test-only: LAZY **5-D** stack (time × real-space y,x × ky,kx) — the
+        TWO-navigator dataset (1-D time line driving a 2-D real-space image
+        driving the DP), which is what the recursive progressive navigator fill
+        exists for. No file, no download.
+
+        Storage-aligned per Live-Display §1: chunks span the WHOLE signal frame
+        and one time step, ``(1, 8, 8, ky, kx)`` — so the deep nav-sum has a
+        ``n_t × 3 × 3`` chunk grid and the fill paints ~54 progressive steps
+        instead of one per whole time slice.
+
+        The content makes a wrong/blank/stale navigator obvious at a glance
+        (same philosophy as ``load_test_data_movie``'s asymmetric frames):
+          * per-position brightness ramps with ``ix`` and a diagonal stripe runs
+            through real space, so the 2-D navigator has clear structure and a
+            transposed or half-filled image is visible;
+          * the stripe's PHASE shifts with ``t``, so the real-space navigator
+            changes SHAPE (not just brightness) when the time axis moves — a
+            per-frame auto-levelled display hides a pure scale change;
+          * each time step also scales by ``(t + 1)``, so the 1-D time navigator
+            is a strictly increasing ramp — a navigator derived from the wrong
+            axis (or one that never fills) is unmistakable.
+        """
+        import numpy as np
+        import dask.array as da
+        from spyde.backend.heavy_imports import ensure_heavy_imports
+        ensure_heavy_imports()   # see _load_test_data — don't race the prewarm
+        payload = payload or {}
+        nt = int(payload.get("frames", 6))
+        ny = int(payload.get("nav", 24))
+        nx = ny
+        ky = kx = int(payload.get("sig", 32))
+
+        yy, xx = np.mgrid[0:ky, 0:kx]
+        disk = ((xx - kx // 2) ** 2 + (yy - ky // 2) ** 2 <= 20).astype(np.float32)
+        iy_i, ix_i = np.mgrid[0:ny, 0:nx]
+        weights = np.empty((nt, ny, nx), dtype=np.float32)
+        for t in range(nt):
+            stripe = np.where((iy_i + ix_i + 3 * t) % 8 == 0, 30.0, 0.0)
+            weights[t] = (10.0 + 4.0 * ix_i + stripe) * (t + 1)
+        stack = weights[..., None, None] * disk
+        # A bright per-(iy, ix) pixel so every DP is distinguishable too.
+        ty, tx = iy_i % ky, ix_i % kx
+        for t in range(nt):
+            stack[t, iy_i, ix_i, ty, tx] += 200.0 * (t + 1)
+
+        # `spots=True` makes that per-position feature a DISK rather than a
+        # single pixel, so a peak finder actually DETECTS it and the found
+        # vectors — not just the frame brightness — move with the scan position.
+        #
+        # Opt-in because it is only needed to make a test able to FAIL. With the
+        # single-pixel default every position yields one central disk, so every
+        # rendered vectors frame is the same shape and differs only in absolute
+        # intensity — which per-frame auto-levelling then erases. A display stuck
+        # on one frame is pixel-identical to a working one, and a spec asserting
+        # "the DP repainted" can never catch a regression. Off by default so the
+        # navigator-fill tests that assert on this fixture's sums are unaffected.
+        if bool(payload.get("spots")):
+            r = 3
+            yy2, xx2 = np.mgrid[-r:r + 1, -r:r + 1]
+            spot = ((xx2 ** 2 + yy2 ** 2) <= r * r).astype(np.float32)
+            for iy in range(ny):
+                for ix in range(nx):
+                    cy = r + 2 + (iy * 3) % max(1, ky - 2 * r - 4)
+                    cx = r + 2 + (ix * 5) % max(1, kx - 2 * r - 4)
+                    for t in range(nt):
+                        stack[t, iy, ix,
+                              cy - r:cy + r + 1, cx - r:cx + r + 1] += (
+                            spot * 400.0)
+        arr = da.from_array(stack, chunks=(1, 8, 8, ky, kx))
+        s = hs.signals.Signal2D(arr).as_lazy()
+        try:
+            s.set_signal_type("electron_diffraction")
+        except Exception as e:
+            log.debug("set_signal_type on 5-D test data failed: %s", e)
+        tax = s.axes_manager.navigation_axes[-1]   # the SLOWEST nav axis = time
+        tax.name, tax.units, tax.scale = "time", "s", 1.0
+        self._add_signal(s, source_path="test_data_5d")
 
     def _load_test_data_si_grains(self) -> None:
         """Test-only: BUNDLED synthetic Si-grains 4-D STEM (pyxem.data.si_grains —
@@ -666,6 +745,39 @@ class TestHarnessMixin:
             ctx, sigma=1.0, kernel_radius=5, threshold=0.4,
             min_distance=3, subpixel=True,
         )
+
+    def _test_ipf_pick(self, payload=None) -> None:
+        """Test-only: move the IPF map's white PICK crosshair to scan pixel
+        ``(iy, ix)`` exactly the way a user drag does, and fire the same
+        ``pointer_up`` handler.
+
+        The pick handler is what drives the IPF explorer window (window 2) — it
+        marks the orientation on all four views and rotates both spheres to face
+        it. Playwright can screenshot the result but cannot reliably GRAB a
+        crosshair inside an out-of-process figure iframe at an arbitrary zoom,
+        so this drives the widget + handler directly. The handler itself, and
+        everything downstream of it, is the real code path.
+        ``payload={"iy": int, "ix": int}``.
+        """
+        payload = payload or {}
+        iy, ix = int(payload.get("iy", 0)), int(payload.get("ix", 0))
+        picked = 0
+        for tree in list(self.signal_trees):
+            pick = getattr(tree, "_ipf_pick_fn", None)
+            if pick is None:
+                continue
+            widget = getattr(tree, "_ipf_picker", None)
+            if widget is not None:
+                try:
+                    widget.set(cx=float(ix), cy=float(iy))   # what the drag pushes
+                except Exception as e:
+                    log.debug("test_ipf_pick: moving the picker failed: %s", e)
+            try:
+                pick(iy, ix)                                 # the real handler body
+                picked += 1
+            except Exception as e:
+                log.debug("test_ipf_pick: pick failed: %s", e)
+        emit_status(f"test_ipf_pick: {picked} IPF window(s) → ({iy}, {ix})")
 
     def _run_test_orientation(self, plot, payload=None) -> None:
         """Test-only Orientation Mapping with a built-in phase (no CIF dialog), so
