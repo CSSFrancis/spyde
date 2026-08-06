@@ -249,11 +249,26 @@ class _StackedNavCursor:
         selector commits a new index and fires this cursor's ``index_hook``,
         which sets every row's line ``x`` to match.
 
-    The guard (``_busy``) stops the ``set → pointer_move → handler → set`` echo
-    (widget ``.set`` fires ``pointer_move``) AND the drive→hook→drive loop.
-    Position writes to widgets are UI updates, so when the sync originates on the
-    ``_NavDispatcher`` thread (the index_hook) they are marshalled onto the
-    asyncio main thread via ``session._dispatch_to_main``."""
+    Exactly ONE line is the master at a time. Whichever the user is dragging
+    holds that role for the length of the drag; every other line is a pure
+    follower and is never written back to by its own handler.
+
+    That asymmetry is load-bearing, not tidiness. There are two guards here
+    because there are two different races:
+
+    * ``_busy`` stops the SYNCHRONOUS echo — a widget's ``.set`` itself fires
+      ``pointer_move``, so mirroring would re-enter the handler immediately.
+    * ``_master`` stops the ASYNCHRONOUS write-back. The index hook runs on the
+      ``_NavDispatcher`` thread and is marshalled onto the main thread, so it
+      lands SOME TIME AFTER the drag handler has returned and cleared
+      ``_busy``. Without ``_master`` it then writes the last committed
+      (index-quantised) position onto the line the user is still holding; the
+      pointer has moved on, the next ``pointer_move`` yanks it back, and the
+      cursor visibly jumps to and fro for the whole drag. ``_busy`` cannot
+      cover this — it is long since false by the time the write-back arrives.
+
+    ``pointer_up`` releases the master so the authoritative committed position
+    can then settle every line, including the one just let go."""
 
     def __init__(self, session, window_id: int, widgets, sel):
         self.session = session
@@ -261,6 +276,9 @@ class _StackedNavCursor:
         self.widgets = list(widgets)
         self.sel = sel
         self._busy = False
+        # The widget currently under the pointer — the master. None when no
+        # drag is in progress, i.e. every line follows.
+        self._master = None
         self._handlers: list = []  # keep wrapper refs alive (weak registration)
         self._closed = False
         self._wire_drag()
@@ -269,18 +287,34 @@ class _StackedNavCursor:
     # ── row line dragged → drive the real selector + mirror the other rows ──
     def _wire_drag(self) -> None:
         for w in self.widgets:
-            h = self._make_drag_handler(w)
-            self._handlers.append(h)
-            for et in ("pointer_move", "pointer_up"):
+            move = self._make_drag_handler(w)
+            release = self._make_release_handler(w)
+            self._handlers.extend((move, release))
+            for et, h in (("pointer_move", move), ("pointer_up", release)):
                 try:
                     w.add_event_handler(h, et)
                 except Exception as e:
                     log.debug("wiring stacked cursor %s handler failed: %s", et, e)
 
+    def _make_release_handler(self, src):
+        """``pointer_up``: drive the final position, then hand back the master
+        role so the committed index can settle every line."""
+        drive = self._make_drag_handler(src)
+
+        def handler(_ev=None):
+            try:
+                drive()
+            finally:
+                if self._master is src:
+                    self._master = None
+        return handler
+
     def _make_drag_handler(self, src):
         def handler(_ev=None):
             if self._busy:
                 return
+            # Claim the master role for as long as this line is being dragged.
+            self._master = src
             self._busy = True
             try:
                 x = float(src.get("x"))
@@ -335,11 +369,18 @@ class _StackedNavCursor:
         self.session._dispatch_to_main(lambda: self._set_all_lines(x))
 
     def _set_all_lines(self, x: float) -> None:
+        """Write the committed position onto every FOLLOWER line.
+
+        The master (the line under the pointer, if any) is deliberately skipped
+        — see the class docstring. Writing to it is what made the cursor jump
+        to and fro mid-drag."""
         if self._closed or self._busy:
             return
         self._busy = True
         try:
             for w in self.widgets:
+                if w is self._master:
+                    continue
                 try:
                     w.set(x=float(x))
                 except Exception as e:
@@ -352,6 +393,7 @@ class _StackedNavCursor:
         keep syncing (and can be GC'd). Called on chip switch-back / window
         close."""
         self._closed = True
+        self._master = None
         try:
             if self._index_hook in self.sel.index_hooks:
                 self.sel.index_hooks.remove(self._index_hook)
