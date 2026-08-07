@@ -187,6 +187,7 @@ export function MenuBar({ onStartGuide, onShowInfo }: {
       { label: 'Open…', onClick: () => window.electron.openFile() },
       { label: 'Open Zarr Folder (.zspy)…', onClick: () => window.electron.openZarrFolder() },
       { label: 'Load Stack…', onClick: () => openStackDialog() },
+      { label: 'Load In-Situ Data…', onClick: () => window.electron.loadInsituData() },
       { separator: true },
       { label: 'Save Signal…', onClick: () => window.electron.saveDialog() },
       { separator: true },
