@@ -1252,7 +1252,8 @@ class BaseSignalTree:
         for attr in ("diffraction_vectors", "orientation_map", "vector_orientation",
                      "_vom_field", "_ipf_result", "_ipf_p3d", "_ipf_picker",
                      "_ipf_window", "_ipf_pick_fn", "_render_frame_fn",
-                     "particles", "_seg_pending_particles", "particle_events",
+                     "particles", "_seg_pending_particles", "_seg_batch_running",
+                     "particle_events",
                      "particle_edits", "nav_traces", "drift",
                      "source_node", "source_tree", "nav_map"):
             if hasattr(self, attr):

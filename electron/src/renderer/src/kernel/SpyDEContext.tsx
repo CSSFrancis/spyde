@@ -775,6 +775,12 @@ interface SpyDEContextValue {
   gpuHelpDialogOpen: boolean
   openGpuHelpDialog: () => void
   closeGpuHelpDialog: () => void
+  // Bottom table dock (BottomDock.tsx). Renderer-only UI state, but it lives
+  // HERE rather than in App because MenuBar's View menu and the StatusBar
+  // toggle both need it and only see the context.
+  tableDockOpen: boolean
+  openTableDock: () => void
+  closeTableDock: () => void
   // MDIArea registers its tile-all-windows function here so StatusBar's
   // "Tile" button can trigger it without threading window-layout state (which
   // lives in MDIArea's local refs) through the shared context.
@@ -863,6 +869,7 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
   const [gpuStatusDialogOpen, setGpuStatusDialogOpen] = useState(false)
   const [gpuHelpDialogOpen, setGpuHelpDialogOpen] = useState(false)
+  const [tableDockOpen, setTableDockOpen] = useState(false)
   const [dragKind, setDragKind] = useState<'window' | null>(null)
 
   // Post every stored state for a figure to its iframe (called on iframe load).
@@ -1566,6 +1573,29 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
         // (app-global, not wizard-scoped, but the same re-broadcast fits).
         case 'download_progress':
         case 'download_done':
+        // The particle/track table + event stream for one result window —
+        // consumed by BottomDock (see ParticlesTableMessage in protocol.ts).
+        // A panel-local payload, so it gets a CustomEvent rather than reducer
+        // state, exactly like layers_state.
+        case 'particles_table':
+        // Segment Particles caret (spyde/actions/particles_action.py) —
+        // `seg_state` is the authoritative caret state (classes + per-class
+        // labelled-pixel counts, effective params), `seg_preview` one frame's
+        // result (count, size histogram, the EFFECTIVE min_size), `seg_trained`
+        // the scribble classifier's fit report. Consumed by SegmentWizard.
+        case 'seg_state':
+        case 'seg_preview':
+        case 'seg_trained':
+        // Drift Correction caret (spyde/actions/drift_action.py) — caret state,
+        // the ROI discovery preview (~20 frames aligned on the box, with its
+        // sharpening gain), whole-movie solve progress, the streamed dy/dx
+        // batches, and the solved model. Consumed by DriftWizard; the dy/dx
+        // curve itself is painted by the backend into its own figure window.
+        case 'drift_state':
+        case 'drift_preview':
+        case 'drift_trace':
+        case 'drift_progress':
+        case 'drift_result':
         // Cluster telemetry — consumed by the StatusBar DaskMonitor HUD.
         case 'dask_stats':
         // Read-throughput readout — consumed by the StatusBar IoThroughput HUD.
@@ -1899,6 +1929,8 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
   const closeGpuStatusDialog = () => setGpuStatusDialogOpen(false)
   const openGpuHelpDialog = () => setGpuHelpDialogOpen(true)
   const closeGpuHelpDialog = () => setGpuHelpDialogOpen(false)
+  const openTableDock = () => setTableDockOpen(true)
+  const closeTableDock = () => setTableDockOpen(false)
 
   return (
     <SpyDEContext.Provider value={{
@@ -1908,6 +1940,7 @@ export function SpyDEProvider({ children }: { children: React.ReactNode }) {
       updateDialogOpen, openUpdateDialog, closeUpdateDialog,
       gpuStatusDialogOpen, openGpuStatusDialog, closeGpuStatusDialog,
       gpuHelpDialogOpen, openGpuHelpDialog, closeGpuHelpDialog,
+      tableDockOpen, openTableDock, closeTableDock,
       tileWindowsRef, dragKind,
     }}>
       {children}
