@@ -326,7 +326,22 @@ def get_toolbar_config_for_plot(plot_state: "PlotState") -> list[dict]:
     directly — it never imports the action *function* modules, so rendering the
     toolbar is decoupled from the (heavy, possibly-Qt) action implementations.
     The function is resolved on demand when the action is actually invoked.
+
+    Actions carry ``disabled`` (+ ``disabled_reason``) while this plot's tree is
+    LOCKED by a progressive compute (``lifecycle.lock_tree``). Disabled rather
+    than HIDDEN, unlike the `requires_vectors` family: those gates say "this
+    action does not apply to this data", where the lock says "not yet" — a
+    button that vanishes and comes back reads as a glitch, and the user cannot
+    tell that waiting will bring it back. Every toolbar action is disabled,
+    because ``_dispatch_toolbar_action`` refuses every one of them on a locked
+    tree; the ``registry.is_lock_exempt`` carve-out is for STAGED verbs, which
+    are caret-internal and never appear here. The refusal stays as the backstop
+    — a renderer holding a stale config must not be able to land a node on a
+    locked tree.
     """
+    from spyde.actions.lifecycle import tree_lock
+    lock_label = tree_lock(getattr(plot_state.plot, "signal_tree", None))
+
     actions = []
     for action, meta in TOOLBAR_ACTIONS["functions"].items():
         try:
@@ -345,12 +360,18 @@ def get_toolbar_config_for_plot(plot_state: "PlotState") -> list[dict]:
                 "parameters": sub_meta.get("parameters", {}),
             })
 
-        actions.append({
+        descriptor = {
             "name": action,
             "icon": resolve_icon_path(meta.get("icon", "")),
             "side": meta.get("toolbar_side", "left"),
             "toggle": meta.get("toggle", False),
             "parameters": meta.get("parameters", {}),
             "subfunctions": sub_actions,
-        })
+        }
+        if lock_label:
+            descriptor["disabled"] = True
+            descriptor["disabled_reason"] = (
+                f"'{lock_label}' is still computing into this window"
+            )
+        actions.append(descriptor)
     return actions
