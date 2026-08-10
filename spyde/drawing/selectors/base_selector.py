@@ -401,11 +401,20 @@ class BaseSelector:
             return
         self.current_indices = indices
 
-        # Per-frame index trace — gated (fires on every move).
+        # Per-frame index trace — gated (fires on every move). The per-child
+        # update-function NAMES are part of it because "which function does this
+        # link dispatch to?" is the question a mis-wired display always turns
+        # into: a live preview / render display installs itself by swapping
+        # `sel.children[child]`, and reading the answer off this line is how you
+        # tell "the swap never landed on the link I dragged" apart from "the
+        # link is right but the read declined".
         if _NAV_TIMING:
-            logger.debug("[NAV-IDX] %s indices=%s force=%s nchildren=%d multi=%s",
-                         type(self).__name__, np.asarray(indices).tolist(), force,
-                         len(self.children), self.multi_selector)
+            logger.debug("[NAV-IDX] %s id=%d indices=%s force=%s multi=%s "
+                         "children=%s",
+                         type(self).__name__, id(self),
+                         np.asarray(indices).tolist(), force, self.multi_selector,
+                         [(id(c), getattr(f, "__qualname__", repr(f)))
+                          for c, f in self.children.items()])
 
         for child, fn in self.children.items():
             try:

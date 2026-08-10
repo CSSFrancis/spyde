@@ -206,6 +206,27 @@ STAGED_HANDLERS: dict[str, str] = {
 }
 
 
+# Staged verbs that must run even on a tree LOCKED by a progressive compute
+# (lifecycle.refuse_if_locked). Two kinds, and both matter:
+#
+#   * READ-ONLY re-emits (`*_query`). The renderer fires these ITSELF — the Plot
+#     Control dock sends `overlay_query` whenever the active window changes — so
+#     refusing one puts an error in the status bar that the user never asked for
+#     ("'overlay_query' is unavailable while 'Find Diffraction Vectors' is still
+#     computing…", observed on every progressive fill) and leaves the dock's
+#     layer state stale. A query cannot add a node or a navigator→signal link,
+#     which is all the lock exists to prevent.
+#   * TEARDOWN (`*_close`, `*_stop`, `*_cancel`). A caret must always be able to
+#     shut, and a running movie/export must always be cancellable; a lock that
+#     can trap a wizard open is worse than no lock.
+_ALWAYS_ALLOWED_SUFFIXES = ("_query", "_close", "_stop", "_cancel")
+
+
+def is_lock_exempt(name: str) -> bool:
+    """Does this staged action run even while its tree is locked? See above."""
+    return str(name).endswith(_ALWAYS_ALLOWED_SUFFIXES)
+
+
 def resolve_staged(name: str) -> Callable | None:
     """Lazily import and return the handler for a staged action name."""
     dotted = STAGED_HANDLERS.get(name)
