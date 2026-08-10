@@ -90,6 +90,38 @@ def is_current(owner, key: str, gen: int) -> bool:
 
 # ── the find-vectors attach gap ───────────────────────────────────────────────
 
+def attach_container(tree, store, *, name: str):
+    """Attach a ragged result container to *tree* under attribute *name* —
+    THE seam between a batch compute finalizing and the tree carrying its
+    result (``tree.diffraction_vectors`` today; ``tree.particles`` next).
+
+    setattr + provenance stamp: a container carrying no ``provenance`` record
+    of its own inherits the tree's commit provenance (the dict
+    ``commit._stamp_provenance`` stores as ``tree._commit_provenance``), so a
+    saved container self-describes the way a committed tree does. Readers are
+    unchanged: :func:`resolve_vectors`, the ``requires_vectors`` toolbar gate
+    and the Save hook all read the attribute this helper sets.
+
+    Later-PR design (recorded here, deliberately NOT implemented in this PR):
+    toolbar YAML grows a generic ``requires_container: <name>`` key with
+    ``requires_vectors`` kept as its alias, and the ``commit.*`` entry points
+    (``open_result_tree`` / ``commit_result_tree``) grow a ``container=``
+    kwarg routed through this helper — one attach/gate/commit seam for every
+    ragged family instead of each action hand-rolling the setattr.
+
+    Returns *store*.
+    """
+    setattr(tree, name, store)
+    try:
+        if getattr(store, "provenance", None) is None:
+            prov = getattr(tree, "_commit_provenance", None)
+            if prov:
+                store.provenance = dict(prov)
+    except Exception as e:
+        log.debug("stamping container provenance failed: %s", e)
+    return store
+
+
 def resolve_vectors(session, plot):
     """Resolve ``(tree, diffraction_vectors)`` for an action.
 
@@ -413,9 +445,18 @@ def show_tree_node(plot, tree, new_signal) -> None:
             log.debug("re-emitting signal tree after transform failed: %s", e)
 
 
-def paint_signal_plots(tree, data, *, levels: tuple[float, float] | None = None) -> None:
+def paint_signal_plots(tree, data, *, levels: tuple[float, float] | None = None) -> int:
     """Paint *data* onto every signal plot of *tree*. With *levels* the plot's
-    contrast is locked to that range; otherwise it re-auto-levels."""
+    contrast is locked to that range; otherwise it re-auto-levels.
+
+    Returns the number of plots whose ``set_data`` SUCCEEDED.  A failed paint
+    is still swallowed (a progressive compute's per-chunk callback must never
+    fail the compute) and logged at DEBUG, but the count makes the swallow
+    observable — callers that ignore the return are unaffected, and a caller
+    that must know whether pixels actually landed (the live signal preview,
+    and the tests that used to infer it from counters that incremented even
+    when the paint raised) can assert on it."""
+    painted = 0
     for sp in list(getattr(tree, "signal_plots", []) or []):
         try:
             if levels is not None:
@@ -424,8 +465,10 @@ def paint_signal_plots(tree, data, *, levels: tuple[float, float] | None = None)
             else:
                 sp.needs_auto_level = True
             sp.set_data(data)
+            painted += 1
         except Exception as e:
             log.debug("painting signal plot failed: %s", e)
+    return painted
 
 
 def progress_emitter(prefix: str, *, min_interval: float = 0.5) -> Callable[[int, int], None]:

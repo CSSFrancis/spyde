@@ -469,12 +469,12 @@ def _finalize(tree, vecs) -> None:
         tree.root._clear_cache_dask_data()
     except Exception as e:
         log.debug("clearing stale cached dask array failed: %s", e)
-    tree.diffraction_vectors = vecs
+    from spyde.actions.lifecycle import attach_container, unlock_tree
+    attach_container(tree, vecs, name="diffraction_vectors")
     # The result has landed, so the window is a whole dataset again: release the
     # compute lock HERE, alongside the attach it guards (a batch that fails or is
     # cancelled never reaches this line, which is why _start_batch's teardown
     # unlocks too — lifecycle.unlock_tree is idempotent).
-    from spyde.actions.lifecycle import unlock_tree
     unlock_tree(tree)
 
     # Paint the count map onto the SPATIAL (2-D) navigator plot. For a 5-D stack
