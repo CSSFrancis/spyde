@@ -48,6 +48,12 @@ export interface ToolbarAction {
   toggle: boolean
   parameters: Record<string, ParamSpec>
   subfunctions?: SubAction[]
+  /** Set while this window's tree is locked by a progressive compute (a
+   *  find-vectors batch filling it). The button renders unavailable instead of
+   *  looking clickable and erroring; `disabled_reason` is its tooltip. The
+   *  backend refuses the action anyway — this is the visible half of that. */
+  disabled?: boolean
+  disabled_reason?: string
 }
 
 export interface SpyDEWindow {

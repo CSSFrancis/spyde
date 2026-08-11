@@ -99,7 +99,34 @@ click ──► toolbar gate (plot_control_toolbar filters)
 **The basis set** ([`lifecycle.py`](lifecycle.py)) — use these, never re-roll:
 `run_on_worker`, `bump_generation`/`is_current`, `resolve_vectors`,
 `wait_for_vectors`, `replace_tree_attr`, `paint_signal_plots`,
-`progress_emitter`, `live_fill_poller`.
+`progress_emitter`, `live_fill_poller`, `lock_tree`/`unlock_tree`/
+`refuse_if_locked`.
+
+**A progressively-filled result tree is LOCKED while its batch runs**
+(`lock_tree(tree, "<action>")` where the window opens; `unlock_tree` where the
+result attaches AND in the run's teardown, so a cancelled run cannot strand
+it). No actions and no new nodes on that tree until it finishes — the toolbar
+invoker, the staged dispatch and `BaseSignalTree.add_node` /
+`add_transformation` all call `refuse_if_locked`, which errors at the user
+rather than no-op'ing silently. Any NEW path that adds a node or runs an
+action must call it too. The toolbar shows it: every action descriptor
+carries `disabled` + `disabled_reason` while locked (DISABLED, not hidden —
+hiding says "does not apply to this data", where the lock says "not yet"),
+and lock/unlock re-send the config for every plot of the tree so the buttons
+grey at the START of the fill and restore at the end. The lock also relaxes
+one gate: `requires_vectors` actions are SHOWN (and disabled) while locked
+instead of filtered out, because on the window a Find-Vectors batch is filling
+that gate is answering "the container attaches at `_finalize`", not "wrong
+data" — hiding made them pop into existence when the run ended. The backend
+refusal stays as the backstop. Read-only re-emits and
+teardown verbs
+(`*_query`/`*_close`/`*_stop`/`*_cancel`) are exempt — `registry.
+is_lock_exempt`: the renderer fires `overlay_query` itself on focus changes,
+and a lock that can trap a caret open is worse than no lock. The lock is not
+housekeeping: it is why
+`live_signal`'s install-once snapshot of the navigator→signal links is valid
+by construction, and therefore why the Live-Display nav read needs no
+per-read re-check.
 
 **The two tree-spawning doors** ([`commit.py`](commit.py)):
 `open_result_tree` (window opens early, blank, progressively filled — FV count
