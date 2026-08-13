@@ -15,13 +15,19 @@ options. Information overload."**
     drift_discard     drop the solved model (and stop a solve in flight)
     drift_commit      add the LAZY corrected node to the tree
 
-**The caret carries the TASK, not the algorithm.** Its default face is two
-toggles and one button. Reference mode, sub-pixel factor, max shift,
-interpolation order and the model tabs are all real and all still here — they
-sit behind a collapsed *Advanced* in the caret, and the schema below (the one
-source of truth, mirrored by ``registry._WIZARD_SCHEMAS``) tags them so any
-host renders the same split. Nothing was deleted; provenance still records
-every parameter.
+**The caret carries the TASK, not the algorithm.** Its default face is one
+toggle and one button. Pair span, sub-pixel factor, max shift, interpolation
+order and the model tabs are all real and all still here — they sit behind a
+collapsed *Advanced* in the caret, and the schema below (the one source of
+truth, mirrored by ``registry._WIZARD_SCHEMAS``) tags them so any host renders
+the same split. Provenance still records every parameter.
+
+The face used to carry a second toggle, *Ignore bad frames*. It is gone because
+the solver no longer has a bad-frame gate to switch: ``solve_translation``
+measures ~``band`` frame PAIRS per unknown and solves them by robust least
+squares, so a bad frame is outvoted by the consensus of the pairs that do not
+touch it. There is nothing left for the user to decide there — see
+``spyde/drift/translation.py``.
 
 **Discovery comes before commitment.** The centrepiece is a draggable
 rectangle on the movie plus a live drift-corrected sum of just that box over
@@ -63,6 +69,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import time as _time
 from typing import Any
 
 import numpy as np
@@ -73,6 +80,7 @@ from spyde.actions.lifecycle import (
     bump_generation, is_current, run_on_worker, show_tree_node,
 )
 from spyde.actions.wizard import WizardController
+from spyde.backend.action_profile import ActionProfile
 from spyde.backend.ipc import emit, emit_error, emit_progress, emit_status
 
 log = logging.getLogger(__name__)
@@ -93,7 +101,58 @@ _UNAVAILABLE = {
 #: unambiguously, and the cap is what keeps the check window responsive on a
 #: movie whose full pass costs as much as the solve itself. Evenly spaced, and
 #: the SAME indices for both sums, or the comparison means nothing.
-_SUM_MAX_FRAMES = 64
+#:
+#: **TWO.** The budget for opening the caret is 200 ms, and a frame read is the
+#: only thing in here that scales with the movie, so the count has to be the
+#: smallest number that still answers the question. Two frames answers it: the
+#: check image exists to show blurry-vs-sharp, and :meth:`DriftWizard.sum_indices`
+#: picks the FIRST and LAST frame, which is where the drift between them is
+#: largest and therefore where the raw sum is at its blurriest. Any interior
+#: sampling shows LESS blur, so a bigger n makes the comparison weaker as well as
+#: slower. What n>2 would buy is noise-averaging, and this image is not a
+#: measurement -- the numbers come from the solve.
+_SUM_MAX_FRAMES = 2
+
+#: …but a frame COUNT is size-blind, and that is what made the caret feel broken.
+#: 64 frames of the 96x112 test fixture is nothing; 64 frames of a 2048² movie is
+#: half a gigabyte of reads. Measured with ``SPYDE_ACTION_PROFILE=1`` on a
+#: 60-frame 2048² lazy movie::
+#:
+#:     [ACTION-PROFILE] drift_open total=10365ms  sum_read=9925  check_window=432
+#:
+#: 96% of a ten-second open, spent reading frames for a picture whose only job is
+#: to look blurry beside a sharper one — and it scales with frame size, which is
+#: how it reaches the reported minute on a real movie.
+#:
+#: So budget in BYTES, exactly as the ROI preview already does
+#: (:data:`_PREVIEW_MAX_BYTES`). float32 is the honest unit because that is what
+#: the accumulator holds: a 2048² frame costs 16 MB, so this admits ~6 and the
+#: floor below lifts it to 8.
+_SUM_MAX_BYTES = 96 * 1024 * 1024
+
+#: Floor, kept only so a byte cap on an enormous frame cannot degenerate to one
+#: frame (a "sum" of one is not a comparison at all).
+_SUM_MIN_FRAMES = 2
+
+#: Longest edge of the check images, in pixels. They are THUMBNAILS — four of
+#: them live in a 340x300 px window, so each is drawn at roughly 170x150 — and
+#: building them at the movie's native 2048² costs on every downstream stage at
+#: once. Measured on a 60-frame 2048² .mrc, drift_open = 708 ms::
+#:
+#:     sum_io    78.8 ms   the actual memmap read
+#:     sum_acc  156.0 ms   float32 accumulate over 2 x 4 Mpx
+#:     panels   293.6 ms   four anyplotlib imshow panels at 2048²
+#:     html      58.3 ms   a 5.6 MB payload
+#:
+#: i.e. the disk is 11% and the other 89% is resolution nobody can see. Striding
+#: on read (the same trick the navigator's base frame uses — CLAUDE.md
+#: Live-Display §3, "the base is just a thumbnail the GPU upscales") cuts all four
+#: together: 1/8 stride is 64x fewer pixels to add, to draw and to serialise.
+#:
+#: The *gain* number is a RATIO of gradient energies measured on these same two
+#: images, so decimating both leaves the comparison meaningful; the absolute
+#: energies change, the verdict does not.
+_CHECK_MAX_EDGE = 512
 
 # Frames per streamed drift-trace message / per dy-dx repaint. One message per
 # frame would flood the PLOTAPP line protocol at the plan's target scale
@@ -136,16 +195,16 @@ def _figure_geometry(width: int = _FIG_WIDTH) -> tuple[tuple[int, int], float]:
     return (w, _FIG_HEIGHT), w / float(_FIG_HEIGHT)
 
 
-#: Frames the discovery preview aligns. ~20 is the brief's number and it is a
-#: DEFAULT, not a law — ``preview_frames`` in Advanced moves it.
+#: Frames the LIVE preview aligns. TWO, for the same reason the check image uses
+#: two: the preview has to finish inside a drag frame, and the frame count is the
+#: only term that scales.
 #:
-#: Sampled EVENLY OVER THE WHOLE MOVIE, not the first 20 in a row. The question
-#: a preview answers is "does this landmark survive the FULL excursion", and 20
-#: consecutive frames of a 3000-frame movie drift by almost nothing — a
-#: contiguous window would answer "looks fine" for every box, including the
-#: useless ones. The same reasoning (and the same spacing) as
-#: :meth:`DriftWizard.sum_indices`.
-_PREVIEW_FRAMES = 20
+#: Sampled at the ENDS of the movie, not consecutively. The question a preview
+#: answers is "does this landmark survive the full excursion", and two adjacent
+#: frames of a long movie have drifted by almost nothing — they would report a
+#: flattering gain for every box, including the useless ones. First and last is
+#: where the drift is largest and the box is most likely to have lost the feature.
+_PREVIEW_FRAMES = 2
 
 #: Byte ceiling on the preview's retained crop stack. The preview reads one
 #: FULL frame at a time and keeps only the (usually small) ROI crop, so this
@@ -162,11 +221,35 @@ _PREVIEW_MAX_BYTES = 192 * 1024 * 1024
 #: debouncing twice just adds latency.
 _PREVIEW_SETTLE_S = 0.25
 
+#: Minimum gap between live preview repaints, seconds. The dispatcher coalesces
+#: the COMPUTE; this bounds the PAINT, which is two 512² images plus a message
+#: down the PLOTAPP line protocol. ~20/s is past the point a dragging eye can
+#: tell, and the resting update bypasses it so the final box is never stale.
+_PREVIEW_EMIT_INTERVAL = 0.05
+
+#: Target edge for the preview's two display images. They sit in ~170 px panels,
+#: and building them at the box's full 512 costs 46 ms of a 57 ms step — six
+#: times the solve it exists to illustrate.
+_PREVIEW_DISPLAY_PX = 256
+
 #: Smallest alignment box, in image pixels. MUST stay >= the solver's own
 #: ``spyde.drift.translation._MIN_ROI``, which REJECTS a smaller box rather
 #: than clamping it (a silently shrunk ROI would correlate somewhere the user
 #: did not drag). Pinned by ``test_drift_wizard.py``.
 _ROI_MIN_PX = 16
+
+#: The alignment box is a FIXED 512x512, and being fixed is the feature.
+#:
+#: A resizable ROI makes the preview cost unbounded — a box the size of the frame
+#: is a full-frame solve on every drag step — and the preview only earns its place
+#: if it keeps up with the cursor. Pinning the size turns "how expensive is this
+#: preview?" from a question about user input into a constant, which is what lets
+#: the update run per drag frame instead of after a settle.
+#:
+#: 512 is also a comfortable landmark: big enough to contain a fiducial and to
+#: survive the drift excursion moving through it, small enough that a two-frame
+#: solve at this size is a few milliseconds.
+_ROI_BOX_PX = 512
 
 #: Default alignment box: this fraction of each frame dimension, centred. Half
 #: the frame is deliberately generous — the ROI is FIXED in frame coordinates,
@@ -177,27 +260,105 @@ _ROI_DEFAULT_FRACTION = 0.5
 _ROI_COLOR = "#94e2d5"
 
 #: **Off by default, and that is a measurement, not caution.** A guessed centre
-#: box is NOT automatically the better correlation: on the ``particle_movie``
-#: fixture (96×112 frames, the default half-frame box = 48×56) the ROI solve
-#: comes back 1.03 px from the stamped ground truth where the whole-frame solve
-#: is 0.25 px — a quarter of the pixels is a quarter of the correlation signal,
-#: and the Tukey taper eats a larger fraction of a small box. So the default
-#: stays the answer we already know is right, and the ROI is what the user
+#: box is NOT automatically the better correlation, and since the solver became a
+#: plain (unwhitened) cross-correlation the gap has WIDENED: on the
+#: ``particle_movie`` fixture (96×112 frames, the default half-frame box = 48×56)
+#: the whole-frame solve lands 0.03 px from the stamped ground truth and the ROI
+#: solve ~5 px. Plain correlation is dominated by the BRIGHTEST features, and that
+#: box is mostly bright particles that move relative to the film carrying the
+#: stage motion; the whole frame contains enough film to outweigh them.
+#: See ``spyde/drift/translation.py``'s module docstring for the measurement.
+#:
+#: So the default stays the answer we know is right, and the ROI is what the user
 #: reaches for when the whole frame is the problem (a moving sample, a mostly
-#: featureless field). The preview runs on the box either way — that is the
-#: discovery step, and it is what tells you the box is worth committing to.
+#: featureless field) — on a box they have CHOSEN, not a guessed one. The preview
+#: runs on the box either way: that is the discovery step, and reporting a gain
+#: below 1 for a bad box is it working, not failing.
 DEFAULTS: dict[str, Any] = dict(
     use_roi=False,
-    reject_outliers=True,
     method="rigid",
     upsample=8,
-    max_shift=32.0,
-    reference="running",
+    max_shift=0.0,          # 0 = auto, see translation._AUTO_MAX_SHIFT_FRACTION
+    band=48,
     apodize=True,
-    normalize=True,
     order=1,
     preview_frames=_PREVIEW_FRAMES,
 )
+
+
+class _PreviewDriver:
+    """Runs the live ROI preview on the SHARED navigator dispatcher.
+
+    Reuses ``base_selector._nav_dispatcher`` rather than growing a second serial
+    lane, and reuses it UNMODIFIED: the dispatcher is duck-typed on
+    ``_run_update``, so an object that offers one is a first-class citizen there.
+    What it gives us is exactly what a drag needs and what CLAUDE.md Live-Display
+    §2 says not to rebuild — ONE serial worker, latest-position-wins coalescing
+    (a newer box replaces a queued older one before it is ever computed), and no
+    lock anywhere. Every alternative to that pattern is documented as having made
+    things worse.
+
+    The compute is deliberately tiny so occupying the shared lane is not rude:
+    during a drag the MOVIE does not change, only the box, so the frames are read
+    once into ``wizard._preview_cache`` and each step is a crop plus a two-frame
+    solve on already-resident pixels.
+
+    Paint and emit are marshalled to the main thread (README §6); only the
+    arithmetic runs here.
+    """
+
+    __slots__ = ("_wiz", "_t_submit")
+
+    def __init__(self, wizard) -> None:
+        self._wiz = wizard
+        self._t_submit = 0.0
+
+    def submit(self, force: bool = False) -> None:
+        from spyde.drawing.selectors.base_selector import _nav_dispatcher
+        if not self._wiz._closed:
+            self._t_submit = time.perf_counter()
+            _nav_dispatcher.submit(self, force=force)
+
+    def _run_update(self, force: bool = False, **_kw) -> None:
+        wiz = self._wiz
+        if wiz._closed:
+            return
+        # QUEUE WAIT is the number that matters here and it is invisible from
+        # inside the step: the dispatcher is SHARED with every navigator update,
+        # so a preview submitted while the navigator is painting a 4096² frame
+        # waits behind it. A fast step and a slow caret are the same picture
+        # unless these two are reported separately.
+        prof = ActionProfile("drift_preview_step")
+        queue_ms = (time.perf_counter() - self._t_submit) * 1e3
+        cold = wiz._preview_cache is None
+        with prof.stage("cache"):
+            _ensure_preview_cache(wiz)
+        try:
+            with prof.stage("step"):
+                result = _preview_step(wiz)
+        except Exception as exc:
+            log.debug("[drift] live preview step failed: %s", exc)
+            prof.done("raised")
+            return
+        prof.info(queue_ms=round(queue_ms, 1), cold_cache=cold)
+        prof.done()
+        if result is None or wiz._closed:
+            return
+        result["force"] = bool(force)
+        wiz.preview = result
+        now = time.monotonic()
+        # The dispatcher already dropped every superseded BOX; this only stops
+        # the wire carrying more repaints than an eye resolves. `force` on the
+        # resting update guarantees the final position always lands.
+        if not result.get("force") and                 now - wiz._last_preview_emit < _PREVIEW_EMIT_INTERVAL:
+            return
+        wiz._last_preview_emit = now
+        dispatch = getattr(wiz.session, "_dispatch_to_main", None)
+        if dispatch is None:
+            _publish_preview(wiz, result)
+        else:
+            dispatch(lambda r=result: (None if wiz._closed
+                                       else _publish_preview(wiz, r)))
 
 
 class DriftWizard(WizardController):
@@ -214,33 +375,26 @@ class DriftWizard(WizardController):
             "name": "Use ROI for alignment", "type": "bool",
             "default": DEFAULTS["use_roi"],
         },
-        "reject_outliers": {
-            "name": "Ignore bad frames", "type": "bool",
-            "default": DEFAULTS["reject_outliers"],
-        },
         "method": {
             "name": "Model", "type": "enum", "default": DEFAULTS["method"],
             "choices": list(METHODS), "tab": "Advanced",
         },
-        "reference": {
-            "name": "Reference", "type": "enum", "default": DEFAULTS["reference"],
-            "choices": ["running", "sequential", "first"], "tab": "Advanced",
+        "band": {
+            "name": "Pair span (frames)", "type": "int", "default": DEFAULTS["band"],
+            "min": 1, "max": 200, "tab": "Advanced",
         },
         "upsample": {
             "name": "Sub-pixel factor", "type": "int", "default": DEFAULTS["upsample"],
             "min": 1, "max": 64, "tab": "Advanced",
         },
         "max_shift": {
-            "name": "Max shift (px)", "type": "float", "default": DEFAULTS["max_shift"],
-            "min": 1.0, "max": 4096.0, "step": 1.0, "tab": "Advanced",
+            "name": "Max shift (px, 0=auto)", "type": "float",
+            "default": DEFAULTS["max_shift"],
+            "min": 0.0, "max": 8192.0, "step": 1.0, "tab": "Advanced",
         },
         "apodize": {
             "name": "Edge taper", "type": "bool", "default": DEFAULTS["apodize"],
             "tab": "Advanced",
-        },
-        "normalize": {
-            "name": "Phase correlation", "type": "bool",
-            "default": DEFAULTS["normalize"], "tab": "Advanced",
         },
         "order": {
             "name": "Interpolation order", "type": "int", "default": DEFAULTS["order"],
@@ -248,7 +402,7 @@ class DriftWizard(WizardController):
         },
         "preview_frames": {
             "name": "Preview frames", "type": "int",
-            "default": DEFAULTS["preview_frames"], "min": 4, "max": 200,
+            "default": DEFAULTS["preview_frames"], "min": 2, "max": 200,
             "tab": "Advanced",
         },
     }
@@ -274,6 +428,15 @@ class DriftWizard(WizardController):
         self._frame_shape: tuple[int, int] | None = None
         self._settle: threading.Timer | None = None
         self.preview: dict[str, Any] | None = None
+        #: Frames the live preview crops from, read ONCE. During a drag the movie
+        #: does not change — only the box moves — so re-reading per step would be
+        #: paying repeatedly for identical bytes. Bounded by _PREVIEW_FRAMES.
+        self._preview_cache: list[np.ndarray] | None = None
+        self._preview_driver = _PreviewDriver(self)
+        #: Rate-limit for the live emit/paint; the COMPUTE is coalesced by the
+        #: dispatcher, this only stops the wire from carrying more repaints than
+        #: a human can see.
+        self._last_preview_emit = 0.0
         #: Cancel flag of the solve in flight (Discard/Stop flips it).
         self._stop: list[bool] = [False]
 
@@ -287,9 +450,21 @@ class DriftWizard(WizardController):
         from spyde.drift import frame_source
         return frame_source(self.signal())
 
-    def sum_indices(self, n_frames: int) -> np.ndarray:
+    def sum_indices(self, n_frames: int, shape=None) -> np.ndarray:
+        """Evenly-spaced frames for the check sums, capped by BYTES not count.
+
+        Cached on first call, and that is load-bearing rather than an
+        optimisation: ``drift_run`` re-reads these same indices for the corrected
+        sum, and a before/after pair measured over different frames compares
+        nothing. So the shape only has to be known the first time.
+        """
         if self._sum_indices is None or self._sum_indices.size == 0:
             k = min(int(n_frames), _SUM_MAX_FRAMES)
+            shape = shape or self._frame_shape
+            if shape:
+                frame_bytes = max(1, int(shape[0]) * int(shape[1]) * 4)
+                k = min(k, max(_SUM_MIN_FRAMES, _SUM_MAX_BYTES // frame_bytes))
+                k = min(k, int(n_frames))
             self._sum_indices = np.unique(
                 np.linspace(0, max(0, n_frames - 1), max(1, k)).round().astype(int))
         return self._sum_indices
@@ -319,12 +494,14 @@ class DriftWizard(WizardController):
         if min(h, w) < 2 * _ROI_MIN_PX:
             # Nothing sensible to drag; the whole frame IS the ROI.
             return
-        bw = max(_ROI_MIN_PX, min(w, int(round(w * _ROI_DEFAULT_FRACTION))))
-        bh = max(_ROI_MIN_PX, min(h, int(round(h * _ROI_DEFAULT_FRACTION))))
+        bw = bh = self.box_size()
         try:
             widget = plot2d.add_rectangle_widget(
                 x=float((w - bw) // 2), y=float((h - bh) // 2),
-                w=float(bw), h=float(bh), color=_ROI_COLOR, show_handles=True,
+                w=float(bw), h=float(bh), color=_ROI_COLOR,
+                # No handles: the box is a fixed 512 (see _ROI_BOX_PX). Offering
+                # a resize the code then overrides would just fight the user.
+                show_handles=False,
             )
             from spyde.drawing.selectors.base_selector import event_handler_fn
             handler = event_handler_fn(lambda event: self._on_roi_drag())
@@ -351,10 +528,18 @@ class DriftWizard(WizardController):
             self._clamp_roi()
         finally:
             self._roi_clamping = False
-        self.schedule_preview()
+        # LIVE: straight onto the shared serial dispatcher, which coalesces to the
+        # latest box. No settle timer on this path — waiting 250 ms for the drag
+        # to stop is the thing that made the preview feel like a batch job.
+        self._preview_driver.submit()
+
+    def box_size(self) -> int:
+        """The fixed box edge, shrunk only if the frame itself is smaller."""
+        h, w = self._frame_shape or (_ROI_BOX_PX, _ROI_BOX_PX)
+        return int(max(_ROI_MIN_PX, min(_ROI_BOX_PX, int(h), int(w))))
 
     def _clamp_roi(self) -> None:
-        """Keep the box inside the frame and above the solver's floor.
+        """Pin the box to its fixed SIZE and keep it inside the frame.
 
         COMPARE BEFORE SET, with slack. ``Widget.set()`` pushes geometry back to
         the renderer, and writing on every ``pointer_move`` echoes
@@ -367,8 +552,7 @@ class DriftWizard(WizardController):
             return
         h, w = shape
         try:
-            ww = min(max(float(widget.w), float(_ROI_MIN_PX)), float(w))
-            hh = min(max(float(widget.h), float(_ROI_MIN_PX)), float(h))
+            ww = hh = float(self.box_size())
             x = min(max(float(widget.x), 0.0), float(w) - ww)
             y = min(max(float(widget.y), 0.0), float(h) - hh)
             now = (float(widget.x), float(widget.y),
@@ -398,8 +582,7 @@ class DriftWizard(WizardController):
         # clamping the origin to the frame edge and only then applying the
         # minimum size pushes the box back OUT past the edge, and
         # solve_translation rejects an out-of-frame roi outright.
-        bw = max(_ROI_MIN_PX, min(bw, fw))
-        bh = max(_ROI_MIN_PX, min(bh, fh))
+        bw = bh = self.box_size()
         if bw > fw or bh > fh:
             return None                  # frame smaller than the solver's floor
         x0 = max(0, min(x0, fw - bw))
@@ -481,31 +664,52 @@ class DriftWizard(WizardController):
         from spyde.actions.figure_registry import keep_alive
         from spyde.drawing.plots.plot import finalize_figure_html
 
+        _t = _time.perf_counter()
         figsize, aspect = _figure_geometry()
         fig, axes = apl.subplots(2, 2, figsize=figsize)
         ax = np.array(axes, dtype=object).ravel()
         before = np.asarray(before, np.float32)
         zeros = np.zeros_like(before)
 
+        # The "corrected" panels start as a COPY OF THE RAW SUM, not zeros.
+        #
+        # A panel initialised to zeros renders solid black, and a solid black
+        # panel next to a real image is indistinguishable from a broken feature —
+        # which is exactly how this was reported ("nothing visibly happens").
+        # Blank-or-black is a failure state per CLAUDE.md, and the window sat in
+        # one from the moment it opened until a solve finished.
+        #
+        # Seeding with the raw sum makes the window honest at every instant: the
+        # two panels are a BEFORE/AFTER pair, and before you have corrected
+        # anything the honest "after" IS the before. They start identical, and the
+        # instant Correct Drift lands one of them changes — which is the whole
+        # comparison the window exists to show. The titles say which state you are
+        # in so "identical" cannot be misread as "correction did nothing".
         panels = {
             "before": ax[0].imshow(before, cmap="gray"),
-            "after": ax[1].imshow(zeros, cmap="gray"),
+            "after": ax[1].imshow(before.copy(), cmap="gray"),
             "roi_raw": ax[2].imshow(zeros, cmap="gray"),
             "roi_aligned": ax[3].imshow(zeros, cmap="gray"),
         }
-        titles = {"before": "Raw sum", "after": "Corrected sum",
+        titles = {"before": "Raw sum", "after": "Corrected sum — press Correct Drift",
                   "roi_raw": "ROI raw", "roi_aligned": "ROI aligned"}
         self._panels = panels
         for key, title in titles.items():
             self._set_panel_title(key, title)
 
+        _t_panels = _time.perf_counter()
         wid = self.session.next_window_id()
         fig_id = _electron.register(fig)
         html = finalize_figure_html(fig, fig_id)
+        _t_html = _time.perf_counter()
         keep_alive(int(wid), fig)
         emit({"type": "figure", "fig_id": fig_id, "window_id": int(wid),
               "html": html, "title": "Drift Check", "is_navigator": False,
               "aspect": float(aspect)})
+        log.info("[ACTION-PROFILE] check_window_parts panels=%.1fms html=%.1fms "
+                 "emit=%.1fms html_kb=%.0f",
+                 (_t_panels - _t) * 1e3, (_t_html - _t_panels) * 1e3,
+                 (_time.perf_counter() - _t_html) * 1e3, len(html) / 1024)
         self.window_id = int(wid)
         self._before_sum = before
         self.own_window(wid)
@@ -525,6 +729,7 @@ class DriftWizard(WizardController):
             return
         try:
             self._panels["after"].set_data(np.asarray(after, np.float32))
+            self._set_panel_title("after", "Corrected sum")
         except Exception as exc:
             log.debug("[drift] painting the corrected sum failed: %s", exc)
 
@@ -684,6 +889,7 @@ class DriftWizard(WizardController):
         self._closed = True
         self._stop[0] = True             # stop a solve in flight
         self.cancel_preview()
+        self._preview_cache = None
         self.remove_roi_widget()
         self._panels = {}
         self._trace = {}
@@ -694,9 +900,9 @@ class DriftWizard(WizardController):
         if getattr(self.tree, "_drift_wizard", None) is self:
             self.tree._drift_wizard = None
 
-    def commit(self):
+    def commit(self, payload: dict | None = None):
         """Add the lazy corrected node — see :func:`drift_commit`."""
-        return _commit(self)
+        return _commit(self, payload)
 
 
 # ── parameters ───────────────────────────────────────────────────────────────
@@ -716,20 +922,17 @@ def _coerce(payload: dict | None) -> dict:
     p["method"] = str(p["method"]).lower()
     if p["method"] not in METHODS:
         p["method"] = DEFAULTS["method"]
-    if p["reference"] not in ("running", "sequential", "first"):
-        p["reference"] = DEFAULTS["reference"]
+    p["band"] = int(min(200, max(1, p["band"])))
     p["upsample"] = max(1, int(p["upsample"]))
-    p["max_shift"] = max(1.0, float(p["max_shift"]))
+    p["max_shift"] = max(0.0, float(p["max_shift"]))
     p["order"] = int(min(3, max(0, p["order"])))
-    p["preview_frames"] = int(min(200, max(4, p["preview_frames"])))
+    p["preview_frames"] = int(min(200, max(2, p["preview_frames"])))
     return p
 
 
 def _solver_kwargs(p: dict, roi=None) -> dict:
     return dict(upsample=int(p["upsample"]), max_shift=float(p["max_shift"]),
-                reference=str(p["reference"]), apodize=bool(p["apodize"]),
-                normalize=bool(p["normalize"]),
-                reject_outliers=bool(p["reject_outliers"]),
+                band=int(p["band"]), apodize=bool(p["apodize"]),
                 roi=None if roi is None else tuple(int(v) for v in roi))
 
 
@@ -769,7 +972,15 @@ def _emit_state(wiz: DriftWizard, **extra) -> None:
 
 # ── streaming sums + the sharpness number ────────────────────────────────────
 
-def _stack_sum(get_frame, indices, shifts=None, *, order: int = 1) -> np.ndarray:
+def _check_stride(shape) -> int:
+    """Decimation for the check images — see :data:`_CHECK_MAX_EDGE`."""
+    if not shape:
+        return 1
+    return max(1, int(np.ceil(max(int(shape[0]), int(shape[1])) / _CHECK_MAX_EDGE)))
+
+
+def _stack_sum(get_frame, indices, shifts=None, *, order: int = 1,
+               prof=None, stride: int = 1) -> np.ndarray:
     """Mean of the selected frames, optionally drift-corrected first.
 
     Streams: one frame resident at a time plus one float64 accumulator, so this
@@ -780,19 +991,34 @@ def _stack_sum(get_frame, indices, shifts=None, *, order: int = 1) -> np.ndarray
     """
     acc = None
     hits = None
+    t_read = 0.0
+    t_acc = 0.0
     for i in indices:
+        _t = _time.perf_counter()
         frame = np.asarray(get_frame(int(i)), dtype=np.float32)
+        t_read += _time.perf_counter() - _t
+        _t = _time.perf_counter()
         if shifts is not None:
             s = shifts[int(i)]
             if np.all(np.isfinite(s)):
                 from spyde.drift import shift_frame
-                frame = shift_frame(frame, s, order=order)
+                # The shifts are in FULL-frame pixels; this frame is decimated,
+                # so the correction must be too or the "corrected" sum is wrong
+                # by the stride factor and looks worse than the raw one.
+                frame = shift_frame(frame, np.asarray(s, np.float64) / stride,
+                                    order=order)
         if acc is None:
             acc = np.zeros(frame.shape, np.float64)
             hits = np.zeros(frame.shape, np.int32)
         good = np.isfinite(frame)
         acc[good] += frame[good]
         hits[good] += 1
+        t_acc += _time.perf_counter() - _t
+    if prof is not None:
+        # The read and the arithmetic scale differently and want different fixes;
+        # a single "sum" number hides which one is the wall.
+        prof.info(sum_io_ms=round(t_read * 1e3, 1),
+                  sum_acc_ms=round(t_acc * 1e3, 1))
     if acc is None:
         return np.zeros((1, 1), np.float32)
     with np.errstate(invalid="ignore", divide="ignore"):
@@ -842,13 +1068,95 @@ def _preview_indices(n_frames: int, k: int, frame_bytes: int) -> np.ndarray:
     return np.unique(np.linspace(0, n - 1, k).round().astype(int))
 
 
-def preview_alignment(get_frame, indices, roi, *, params) -> dict:
+def _preview_indices_live(wiz, n_frames: int) -> np.ndarray:
+    """Frames the LIVE preview aligns. Deliberately few — see _PREVIEW_FRAMES."""
+    k = max(2, min(int(wiz.params.get("preview_frames", _PREVIEW_FRAMES)), n_frames))
+    return np.unique(np.linspace(0, n_frames - 1, k).round().astype(int))
+
+
+def _ensure_preview_cache(wiz) -> list[np.ndarray] | None:
+    """Read the preview frames ONCE and keep them.
+
+    This is what makes a per-drag-step update affordable: the box moves, the
+    movie does not, so the only per-step work should be cropping pixels that are
+    already in RAM. Bounded by the frame count (2 by default), so a 2048² movie
+    costs ~16 MB and a 4096² one ~67 MB, held only while the caret is open.
+    """
+    if wiz._preview_cache is not None:
+        return wiz._preview_cache
+    try:
+        n_frames, get_frame, _shape = wiz.frames()
+    except TypeError as exc:
+        log.debug("[drift] preview cache skipped: %s", exc)
+        return None
+    if n_frames < 2:
+        return None
+    idx = _preview_indices_live(wiz, n_frames)
+    wiz._preview_cache = [np.asarray(get_frame(int(i))) for i in idx]
+    return wiz._preview_cache
+
+
+def _preview_step(wiz) -> dict | None:
+    """One live preview: crop the cached frames to the box, align, score.
+
+    Runs on the dispatcher thread. Everything here is arithmetic on resident
+    pixels — no I/O — which is the whole reason it can run per drag frame.
+    """
+    frames = _ensure_preview_cache(wiz)
+    if not frames:
+        return None
+    roi = wiz.roi_box()
+    if roi is None:
+        return None
+    y0, x0, h, w = (int(v) for v in roi)
+    crops = [np.ascontiguousarray(f[y0:y0 + h, x0:x0 + w], dtype=np.float32)
+             for f in frames]
+    params = dict(wiz.params)
+    # Sums/gain at ~256 px: the panel is ~170 px wide, so anything finer is paid
+    # for and discarded. The solve still sees the full crop.
+    stride = max(1, min(h, w) // _PREVIEW_DISPLAY_PX)
+    result = preview_alignment(crops.__getitem__, range(len(crops)), None,
+                               params=params, display_stride=stride)
+    result["roi"] = (y0, x0, h, w)
+    return result
+
+
+def _publish_preview(wiz, result: dict) -> None:
+    """Paint the discovery pair and push the gain readout (main thread only)."""
+    if wiz._closed:
+        return
+    wiz.show_preview(result)
+    emit({"type": "drift_preview", "window_id": wiz.src_window_id,
+          "roi": None if result.get("roi") is None else list(result["roi"]),
+          "frames": int(result.get("frames", 0)),
+          "gain": float(result.get("gain", float("nan"))),
+          "max_abs_shift": float(result.get("max_abs_shift", 0.0)),
+          "params": dict(wiz.params)})
+
+
+def preview_alignment(get_frame, indices, roi, *, params, prof=None,
+                      reads_region: bool = False,
+                      display_stride: int = 1) -> dict:
     """Align *indices* on *roi* alone and report how much sharper the sum got.
 
-    Reads one FULL frame at a time and keeps only the crop, so the resident set
-    is one frame plus ``len(indices)`` crops (bounded by
+    The resident set is one frame plus ``len(indices)`` crops (bounded by
     :data:`_PREVIEW_MAX_BYTES` at the caller). The crops ARE the region to
     correlate, so the solve runs with ``roi=None`` on them.
+
+    *display_stride* decimates the two SUM images (and therefore the gain), while
+    the SOLVE keeps the full-resolution crops. That split is deliberate and
+    measured: on a 512² box the solve is 7 ms and the sums plus gradient energy
+    are 46 ms, so the expensive half is the one whose output is a ~170 px panel.
+    Decimating the solve as well is NOT an option — at stride 3 it stops
+    recovering the shift at all (31 px against a true 3.4). Both sums are
+    decimated identically, so the gain stays a like-for-like ratio.
+
+    *reads_region* says whether ``get_frame`` accepts an ``(y0, x0, h, w)``
+    second argument and can read only that box. Readers from
+    :func:`spyde.drift.frames.frame_source` can; a bare ``ndarray.__getitem__``
+    cannot. An explicit flag rather than a signature probe, because a wrong guess
+    silently reads whole frames — exactly the cost this exists to remove, and it
+    would go unnoticed until the data got large.
 
     Returns ``{roi, frames, raw, aligned, gain, raw_energy, aligned_energy,
     max_abs_shift}``. *gain* is the whole point: > 1 means aligning this region
@@ -856,20 +1164,46 @@ def preview_alignment(get_frame, indices, roi, *, params) -> dict:
     featureless box), and it is measured on the pixels both sums cover.
     """
     from spyde.drift import solve_translation
+    from spyde.backend.action_profile import ActionProfile
 
+    prof = prof if prof is not None else ActionProfile("drift_preview")
     crops: list[np.ndarray] = []
-    for i in indices:
-        frame = np.asarray(get_frame(int(i)), np.float32)
-        if roi is not None:
-            y0, x0, h, w = (int(v) for v in roi)
-            frame = frame[y0:y0 + h, x0:x0 + w]
-        crops.append(np.ascontiguousarray(frame, dtype=np.float32))
+    with prof.stage("crop_read"):
+        for i in indices:
+            # Push the crop DOWN to the reader instead of reading a whole frame
+            # and discarding most of it — on a memmap-backed .mrc that is the
+            # difference between reading the box and reading the movie.
+            if reads_region:
+                frame = np.asarray(get_frame(int(i), roi), np.float32)
+            else:
+                frame = np.asarray(get_frame(int(i)), np.float32)
+                if roi is not None:
+                    y0, x0, h, w = (int(v) for v in roi)
+                    frame = frame[y0:y0 + h, x0:x0 + w]
+            crops.append(np.ascontiguousarray(frame, dtype=np.float32))
 
-    model = solve_translation(crops, **_solver_kwargs(params))
+    with prof.stage("solve"):
+        # torch-CPU once torch is RESIDENT, numpy until then. Measured on the
+        # 512² preview crops: cpu 6.8 ms warm, cuda 7.3 ms, numpy 18.4 ms — CUDA
+        # buys nothing at this size, and pinning to CPU keeps a per-drag-frame job
+        # off the device the full solve wants.
+        #
+        # The torch_imported() gate is the load-bearing part: this runs on the
+        # SHARED nav dispatcher, and importing torch here would block every
+        # navigator update for ~2.9 s. numpy is 18 ms, still inside a drag frame,
+        # so there is never a reason to stall for the import.
+        from spyde.backend.heavy_imports import torch_imported
+        device = "cpu" if torch_imported() else "numpy"
+        model = solve_translation(crops, device=device, **_solver_kwargs(params))
     take = range(len(crops))
-    raw = _stack_sum(crops.__getitem__, take)
-    aligned = _stack_sum(crops.__getitem__, take, model.shifts,
-                         order=int(params["order"]))
+    st = max(1, int(display_stride))
+    small = crops if st == 1 else [c[::st, ::st] for c in crops]
+    with prof.stage("sums"):
+        raw = _stack_sum(small.__getitem__, take)
+        # `stride=` scales the shifts to the decimated grid — full-frame pixels
+        # applied to a decimated image would over-correct by exactly `st`.
+        aligned = _stack_sum(small.__getitem__, take, model.shifts,
+                             order=int(params["order"]), stride=st)
     both = np.isfinite(raw) & np.isfinite(aligned)
     e_raw = _gradient_energy(raw, both)
     e_aligned = _gradient_energy(aligned, both)
@@ -893,6 +1227,7 @@ def drift_open(session, plot, payload) -> None:
     ~20-frame preview of the default box, which is what makes the caret's first
     frame informative instead of an empty panel and a button.
     """
+    prof = ActionProfile("drift_open", payload)
     src, tree = _src_plot_tree(session, plot)
     if src is None or tree is None:
         emit_error("Drift Correction: no active dataset")
@@ -902,15 +1237,20 @@ def drift_open(session, plot, payload) -> None:
     if existing is not None and not existing._closed:
         existing.params = _coerce({**existing.params, **(payload or {})})
         _emit_state(existing)
+        prof.done("reopen")
         return
 
     wiz = DriftWizard(session, tree, src)
     wiz.params = _coerce(payload)
     try:
-        n_frames, get_frame, shape = wiz.frames()
+        with prof.stage("frames"):
+            n_frames, get_frame, shape = wiz.frames()
     except TypeError as exc:
         emit_error(f"Drift Correction: {exc}")
         return
+    prof.info(n_frames=int(n_frames), frame=f"{int(shape[0])}x{int(shape[1])}",
+              lazy=bool(getattr(getattr(wiz.signal(), "data", None), "dask", None)
+                        is not None))
     # BEFORE the worker: StrictMode fires open/close/open synchronously and the
     # close's bump has to be able to invalidate this open's deferred build.
     gen = wiz.guard()
@@ -918,17 +1258,33 @@ def drift_open(session, plot, payload) -> None:
     _emit_state(wiz, n_frames=int(n_frames))
 
     def _work():
-        return _stack_sum(get_frame, wiz.sum_indices(n_frames))
+        # Pass the shape: the byte cap is the whole point and it cannot be
+        # applied without knowing how big a frame is.
+        idx = wiz.sum_indices(n_frames, shape)
+        prof.info(sum_frames=int(len(idx)))
+        stride = _check_stride(shape)
+        prof.info(stride=stride)
+        with prof.stage("sum_read"):
+            # Decimate IN THE READER, not after: the point is not to pay for
+            # pixels we discard. `stride=` still goes to _stack_sum because the
+            # SHIFTS have to be scaled to match (see there).
+            return _stack_sum(lambda i: get_frame(i, None, stride), idx,
+                              prof=prof, stride=stride)
 
     def _done(raw_sum):
         if not wiz.still(gen) or wiz._closed:
+            prof.done("superseded")
             return
-        wiz.open_check_window(raw_sum, int(n_frames))
-        wiz.ensure_roi_widget(shape)
+        with prof.stage("check_window"):
+            wiz.open_check_window(raw_sum, int(n_frames))
+        with prof.stage("roi_widget"):
+            wiz.ensure_roi_widget(shape)
         _emit_state(wiz, n_frames=int(n_frames))
         emit_status("Drift Correction: drag the box onto a landmark to test it, "
                     "then Correct Drift.")
-        _run_preview(wiz)
+        prof.mark("check_visible")
+        prof.done()
+        _kick_first_preview(wiz)
 
     def _fail(exc):
         emit_error(f"Drift Correction: reading the movie failed — {exc}")
@@ -988,56 +1344,67 @@ def drift_tune(session, plot, payload) -> None:
     wiz = _wizard(session, plot)
     if wiz is None:
         return
+    before = wiz.params.get("preview_frames")
     wiz.params = _coerce({**wiz.params, **(payload or {})})
+    if wiz.params.get("preview_frames") != before:
+        wiz._preview_cache = None        # a different set of frames to hold
     _emit_state(wiz)
     _run_preview(wiz)
 
 
-def _run_preview(wiz: DriftWizard) -> None:
-    """Align ~20 sampled frames on the current box and report the gain.
+def _kick_first_preview(wiz: DriftWizard) -> None:
+    """Absorb the torch import on a WORKER, then run the first preview.
 
-    Latest-wins on ``_drift_preview_gen``: a drag that outruns the solve drops
-    the stale result rather than painting it over the newer one. The preview
-    never touches ``tree.drift`` or the caret's solved state — it is a question,
-    not an answer.
+    The preview solve runs on the shared nav dispatcher, and the first torch call
+    in a process costs ~2.9 s of import — measured landing squarely inside the
+    user's first interaction, because opening the caret races the session's
+    background prewarm. Blocking the dispatcher for it would freeze the navigator
+    too, so the wait happens here, on a worker, AFTER the check window is already
+    on screen. The window stays fast, and by the time the first preview reaches
+    the dispatcher torch is resident and the step is ~7 ms.
+
+    If torch never arrives (missing, or slow past the timeout) the preview falls
+    back to numpy — 18 ms warm, still inside a drag frame. Nothing waits forever.
+    """
+    from spyde.backend.heavy_imports import prewarm_torch_cuda, wait_for_torch
+
+    prewarm_torch_cuda()          # idempotent — make sure one is in flight
+    prof = ActionProfile("drift_first_preview")
+    t_kick = time.perf_counter()
+
+    def _work():
+        # Two DIFFERENT waits hide in "the caret took N seconds", and only a
+        # split tells them apart: time spent queued for a worker at all, versus
+        # time spent on the torch import once running.
+        prof.info(worker_queue_ms=round((time.perf_counter() - t_kick) * 1e3, 1))
+        with prof.stage("torch_wait"):
+            return wait_for_torch(60.0)
+
+    def _done(_ready):
+        prof.mark("preview_submitted")
+        prof.done()
+        if not wiz._closed:
+            _run_preview(wiz)
+
+    def _fail(exc):
+        log.debug("[drift] torch wait failed (%s); previewing anyway", exc)
+        if not wiz._closed:
+            _run_preview(wiz)
+
+    run_on_worker(wiz.session, _work, name="drift-torch-warm",
+                  on_done=_done, on_error=_fail)
+
+
+def _run_preview(wiz: DriftWizard) -> None:
+    """Kick a preview that is not drag-driven (caret open, a tuned parameter).
+
+    Same path as the drag — one submit onto the shared dispatcher — so there is
+    exactly ONE way a preview is computed. ``force`` because this update has no
+    stream of successors to make it current: it must land.
     """
     if wiz._closed:
         return
-    tree = wiz.tree
-    gen = bump_generation(tree, "_drift_preview_gen")
-    params = dict(wiz.params)
-    roi = wiz.roi_box()          # the BOX, toggle or not — see active_roi()
-    try:
-        n_frames, get_frame, shape = wiz.frames()
-    except TypeError as exc:
-        log.debug("[drift] preview skipped: %s", exc)
-        return
-    if n_frames < 2:
-        return
-    h, w = (roi[2], roi[3]) if roi is not None else (int(shape[0]), int(shape[1]))
-    indices = _preview_indices(n_frames, params["preview_frames"], h * w * 4)
-
-    def _work():
-        return preview_alignment(get_frame, indices, roi, params=params)
-
-    def _done(result):
-        if not is_current(tree, "_drift_preview_gen", gen) or wiz._closed:
-            return
-        wiz.preview = result
-        wiz.show_preview(result)
-        emit({"type": "drift_preview", "window_id": wiz.src_window_id,
-              "roi": None if result["roi"] is None else list(result["roi"]),
-              "frames": int(result["frames"]),
-              "gain": float(result["gain"]),
-              "max_abs_shift": float(result["max_abs_shift"]),
-              "params": dict(params)})
-
-    def _fail(exc):
-        if is_current(tree, "_drift_preview_gen", gen):
-            emit_error(f"Drift preview failed: {exc}")
-
-    run_on_worker(wiz.session, _work, name="drift-preview",
-                  on_done=_done, on_error=_fail)
+    wiz._preview_driver.submit(force=True)
 
 
 def drift_run(session, plot, payload) -> None:
@@ -1082,12 +1449,15 @@ def drift_run(session, plot, payload) -> None:
         emit_status("Drift Correction: no usable alignment box — correlating "
                     "the whole frame.")
 
+    prof = ActionProfile("drift_run", payload)
+    prof.info(n_frames=int(n_frames), roi=("yes" if roi is not None else "whole-frame"))
     gen = wiz.guard()
     stopped = [False]
     wiz._stop = stopped
     if hasattr(tree, "register_cancel"):
         tree.register_cancel(flag=stopped)
-    wiz.open_trace_window(int(n_frames))
+    with prof.stage("trace_window"):
+        wiz.open_trace_window(int(n_frames))
     _emit_state(wiz)
     emit_status(f"Solving drift over {n_frames} frames…")
     dispatch = getattr(session, "_dispatch_to_main", None)
@@ -1132,19 +1502,23 @@ def drift_run(session, plot, payload) -> None:
                     or time.monotonic() - last_flush[0] >= _TRACE_MAX_INTERVAL):
                 _flush()
 
-        model = solve_translation(
-            wiz.signal(), progress=_progress, on_shift=_on_shift,
-            cancel=lambda: stopped[0],
-            provenance={"action": "Drift Correction", "params": dict(p),
-                        "roi": None if roi is None else [int(v) for v in roi]},
-            **_solver_kwargs(p, roi))
+        with prof.stage("solve"):
+            model = solve_translation(
+                wiz.signal(), progress=_progress, on_shift=_on_shift,
+                cancel=lambda: stopped[0],
+                provenance={"action": "Drift Correction", "params": dict(p),
+                            "roi": None if roi is None else [int(v) for v in roi]},
+                **_solver_kwargs(p, roi))
         _flush()
         if stopped[0]:
             return model, None, float("nan")
         # One extra streaming pass over the SAME bounded subset the raw sum
         # used, so the two check images are comparable.
-        after = _stack_sum(get_frame, wiz.sum_indices(n_frames), model.shifts,
-                           order=int(p["order"]))
+        with prof.stage("corrected_sum"):
+            _stride = _check_stride(_shape)
+            after = _stack_sum(lambda i: get_frame(i, None, _stride),
+                               wiz.sum_indices(n_frames), model.shifts,
+                               order=int(p["order"]), stride=_stride)
         # The same number the discovery preview reports, now for the whole
         # movie — measured on the worker because a 4096² gradient energy is
         # ~100 ms and the main thread is the navigator's.
@@ -1164,16 +1538,27 @@ def drift_run(session, plot, payload) -> None:
                 return
             wiz.model = model
             tree.drift = model
-            wiz.update_check(after=after)
+            # Repaint the curve with the SOLVED values. What streamed during the
+            # solve is `solve_translation`'s provisional causal estimate — the
+            # global least-squares answer does not exist until every pair has
+            # been measured, so the live trace is necessarily a preview of it.
+            # They agree closely; overwriting is cheap and makes the curve the
+            # user keeps the one the model actually contains.
+            with prof.stage("paint"):
+                wiz.push_trace([(i, float(dy), float(dx))
+                                for i, (dy, dx) in enumerate(model.shifts)])
+                wiz.update_check(after=after)
             emit({"type": "drift_result", "window_id": wiz.src_window_id,
                   "shifts": [[float(a), float(b)] for a, b in model.shifts],
                   "kind": model.kind, "reference": model.reference,
                   "roi": None if roi is None else [int(v) for v in roi],
                   "max_abs_shift": float(model.max_abs_shift),
                   "gain": float(gain),
-                  "rejected": int(model.params.get("rejected_from_reference", 0)),
+                  "residual": float(model.params.get("ls_residual_px", float("nan"))),
                   "cancelled": bool(stopped[0])})
             _emit_state(wiz)
+            prof.mark("result_visible")
+            prof.done()
             solved = int(np.isfinite(model.shifts).all(axis=1).sum())
             if stopped[0]:
                 emit_status(f"Drift solve stopped after {solved} of "
@@ -1298,20 +1683,25 @@ def drift_corrected(signal, *, model, order: int = 1, fill: float = float("nan")
     return new
 
 
-def _commit(wiz: DriftWizard):
+def _commit(wiz: DriftWizard, payload: dict | None = None):
+    prof = ActionProfile("drift_commit", payload)
     if wiz.model is None:
         emit_error("Drift Correction: solve first, then Apply")
+        prof.done("no-model")
         return None
     parent = wiz.signal()
     try:
-        new_signal = wiz.tree.add_transformation(
-            parent, function=drift_corrected, node_name="Drift corrected",
-            local=True, model=wiz.model, order=int(wiz.params["order"]))
+        with prof.stage("add_transformation"):
+            new_signal = wiz.tree.add_transformation(
+                parent, function=drift_corrected, node_name="Drift corrected",
+                local=True, model=wiz.model, order=int(wiz.params["order"]))
     except Exception as exc:
         emit_error(f"Drift Correction: applying the model failed — {exc}")
         log.exception("drift commit failed")
+        prof.done("raised")
         return None
     if new_signal is None:
+        prof.done("add_transformation returned None")
         return None
     wiz.tree.drift = wiz.model
     try:
@@ -1322,9 +1712,12 @@ def _commit(wiz: DriftWizard):
              "roi": wiz.model.params.get("roi")})
     except Exception as exc:
         log.debug("[drift] stamping provenance failed: %s", exc)
-    show_tree_node(wiz.src_plot, wiz.tree, new_signal)
+    with prof.stage("show_node"):
+        show_tree_node(wiz.src_plot, wiz.tree, new_signal)
     emit_status(f"Drift corrected node added (max shift "
                 f"{wiz.model.max_abs_shift:.2f} px)")
+    prof.mark("node_visible")
+    prof.done()
     return new_signal
 
 
@@ -1334,7 +1727,7 @@ def drift_commit(session, plot, payload=None) -> None:
     if wiz is None:
         emit_error("Drift Correction: nothing to apply")
         return
-    wiz.commit()
+    wiz.commit(payload)
 
 
 def drift_correction(ctx, action_name: str = "Drift Correction", **params):

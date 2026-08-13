@@ -249,7 +249,13 @@ class TestDiscoveryPreview:
 
     def test_the_preview_uses_the_box_even_with_the_toggle_off(self, window):
         """The toggle is the COMMITMENT (does the full solve restrict to the
-        box); the preview is the QUESTION and always asks it about the box."""
+        box); the preview is the QUESTION and always asks it about the box.
+
+        The box is now a FIXED square (``_ROI_BOX_PX``), so the widget's w/h are
+        ignored and only its POSITION is read — that is the point of a fixed box
+        and it is why this asserts the size comes from ``box_size()`` rather than
+        from the widget it used to come from.
+        """
         session, plot, _tree, wiz = _opened(window)
         msgs = window["messages"]
         assert wiz.params["use_roi"] is False
@@ -257,15 +263,24 @@ class TestDiscoveryPreview:
         del msgs[:]
         dr.drift_tune(session, plot, {})
         assert _wait(lambda: _of_type(msgs, "drift_preview"))
-        assert _of_type(msgs, "drift_preview")[-1]["roi"] == [12, 10, 48, 60]
+        roi = _of_type(msgs, "drift_preview")[-1]["roi"]
+        edge = wiz.box_size()
+        assert roi[2] == edge and roi[3] == edge, roi
+        assert roi == list(wiz.roi_box())
 
     def test_the_box_is_read_in_image_pixels_as_y0_x0_h_w(self, window):
         """anyplotlib 2-D widgets report IMAGE PIXELS and solve_translation's
-        roi is in pixels — the two meet with NO scale conversion."""
+        roi is in pixels — the two meet with NO scale conversion.
+
+        Framed on a 1024² movie so the fixed 512 box fits with room to move: on
+        the 96x112 fixture the box clamps to the whole frame and the ordering
+        claim becomes untestable. The widget's w/h are deliberately nonsense to
+        show they are ignored.
+        """
         _s, _p, _t, wiz = _opened(window)
-        wiz._frame_shape = (96, 112)
+        wiz._frame_shape = (1024, 1024)
         wiz._roi_widget = _Box(x=20, y=8, w=40, h=32)
-        assert wiz.roi_box() == (8, 20, 32, 40)
+        assert wiz.roi_box() == (8, 20, dr._ROI_BOX_PX, dr._ROI_BOX_PX)
 
     def test_the_box_is_clamped_into_the_frame(self, window):
         _s, _p, _t, wiz = _opened(window)
@@ -286,57 +301,44 @@ class TestDiscoveryPreview:
         y0, x0, h, w = wiz.roi_box()
         assert h >= _MIN_ROI and w >= _MIN_ROI
 
-    def test_a_superseded_preview_does_not_paint(self, window, monkeypatch):
-        """Latest-wins: a drag that outruns the solve must drop the stale
-        result, not paint it over the newer one.
+    def test_a_superseded_drag_step_is_never_computed(self):
+        """Latest-wins, at the level it now happens: COALESCING, not a guard.
 
-        Drives a REAL ``drift_tune`` (worker thread → ``_run_preview`` →
-        ``is_current``-guarded ``_done``, drift_action.py) instead of poking the
-        generation counters directly — the old version bumped the generation
-        and asserted ``is_current`` without ever calling ``drift_tune``, so the
-        guarded ``_done`` path it claims to protect never ran and the assertion
-        held trivially. ``preview_alignment`` is gated on an Event so a "newer
-        drag" can be landed deterministically while the older one is still
-        computing, rather than racing real time.
+        The preview used to run on a worker with a generation counter, so a
+        superseded result was computed in full and then discarded on arrival.
+        It now goes onto the shared serial dispatcher
+        (``base_selector._nav_dispatcher``, CLAUDE.md Live-Display §2), which
+        keeps at most ONE pending job per submitter — so a box the user has
+        already dragged past is dropped BEFORE it costs anything. That is a
+        stronger property than the old one and this asserts it directly: submit
+        several positions while the worker is busy, and only the last survives.
+
+        Driven against the dispatcher itself rather than through a Session: the
+        claim is about the queue, and a real drag would race real time.
         """
-        session, plot, tree, wiz = _opened(window)
-        msgs = window["messages"]
-        # Drain the automatic discovery preview `_opened` triggers so it can't
-        # land in the middle of the controlled run below.
-        assert _wait(lambda: _of_type(msgs, "drift_preview"))
-
-        painted = []
-        wiz.show_preview = lambda res: painted.append(res)
+        from spyde.drawing.selectors.base_selector import _nav_dispatcher
 
         started, release = threading.Event(), threading.Event()
-        real_preview_alignment = dr.preview_alignment
+        ran = []
 
-        def _blocking(*a, **k):
-            started.set()
-            release.wait(5.0)
-            return real_preview_alignment(*a, **k)
+        class _Job:
+            def _run_update(self, **kw):
+                ran.append(kw.get("tag"))
+                if kw.get("tag") == "first":
+                    started.set()
+                    release.wait(5.0)
 
-        monkeypatch.setattr(dr, "preview_alignment", _blocking)
-
-        done = threading.Event()
-        real_is_current = dr.is_current
-
-        def _is_current(owner, key, gen_):
-            result = real_is_current(owner, key, gen_)
-            if key == "_drift_preview_gen":
-                done.set()
-            return result
-
-        monkeypatch.setattr(dr, "is_current", _is_current)
-
-        dr.drift_tune(session, plot, {"upsample": 4, "max_shift": 12})
-        assert started.wait(5.0), "the preview work never started"
-        dr.bump_generation(tree, "_drift_preview_gen")     # a newer drag lands
+        job = _Job()
+        _nav_dispatcher.submit(job, tag="first")
+        assert started.wait(5.0), "the dispatcher never picked the job up"
+        # Three more "drag steps" queue while the first is still running.
+        for tag in ("stale-1", "stale-2", "latest"):
+            _nav_dispatcher.submit(job, tag=tag)
         release.set()
 
-        assert _wait(lambda: done.is_set()), \
-            "the superseded preview's _done never ran"
-        assert painted == []
+        assert _wait(lambda: "latest" in ran), f"the latest box never ran: {ran}"
+        assert "stale-1" not in ran and "stale-2" not in ran, (
+            f"a superseded drag step was computed instead of coalesced: {ran}")
 
     def test_the_settle_timer_coalesces_a_drag(self, window):
         """The widget's pointer_move fires at renderer frame rate; only the
@@ -527,12 +529,12 @@ class TestSolve:
         one the full solve correlates on."""
         session, plot, _tree, wiz = _opened(window)
         msgs = window["messages"]
-        wiz._frame_shape = (96, 112)
         wiz._roi_widget = _Box(x=16, y=12, w=64, h=64)
+        expect = list(wiz.roi_box())          # the FIXED box at the widget's position
         dr.drift_run(session, plot, {"use_roi": True})
         assert _wait(lambda: wiz.model is not None)
-        assert wiz.model.params["roi"] == [12, 16, 64, 64]
-        assert _of_type(msgs, "drift_result")[-1]["roi"] == [12, 16, 64, 64]
+        assert wiz.model.params["roi"] == expect
+        assert _of_type(msgs, "drift_result")[-1]["roi"] == expect
 
 
 @pytest.mark.usefixtures("_capture_module_emit")
@@ -780,12 +782,86 @@ class TestSchema:
         assert schema and schema is not dr.DriftWizard.parameters
 
     def test_schema_defaults_match_the_handler_defaults(self):
+        """The caret contract, BOTH directions.
+
+        A schema key with no DEFAULTS entry coerces to nothing; a DEFAULTS entry
+        with no schema key is a parameter no host can render and no payload will
+        ever carry, so it silently stays at its default forever. This has bitten
+        twice, and only the first direction was checked — which is exactly how
+        `reference`/`normalize`/`reject_outliers` could have been left behind in
+        one place after being removed from the other.
+        """
         from spyde.actions import registry
         schema = registry.wizard_parameters("drift")
         for key, spec in schema.items():
             assert key in dr.DEFAULTS, f"drift schema declares unknown param {key!r}"
             assert spec["default"] == dr.DEFAULTS[key], \
                 f"drift schema/{key} drifted from drift_action.DEFAULTS"
+        assert set(schema) == set(dr.DEFAULTS), (
+            f"DEFAULTS keys with no schema entry: {set(dr.DEFAULTS) - set(schema)}")
+
+    def test_every_default_reaches_the_solver_or_the_warp(self):
+        """No DEFAULTS entry may be inert. `_solver_kwargs` carries the solver's
+        share; `use_roi`/`order`/`preview_frames`/`method` are consumed by the
+        wizard itself. Anything outside both sets is a control that does nothing,
+        which is the failure mode this contract exists to catch."""
+        wizard_only = {"use_roi", "order", "preview_frames", "method"}
+        solver = set(dr._solver_kwargs(dict(dr.DEFAULTS)))
+        # `roi` is passed positionally by the caller, not from DEFAULTS.
+        solver.discard("roi")
+        unused = set(dr.DEFAULTS) - wizard_only - solver
+        assert not unused, f"DEFAULTS entries that reach nothing: {unused}"
+
+    def test_the_caret_defaults_match_the_backend_defaults(self):
+        """The RENDERER's DEFAULTS must equal ``drift_action.DEFAULTS``.
+
+        The caret sends its own values on every action, so a renderer default that
+        drifts from the backend one silently WINS — the backend default becomes
+        dead code and every user gets the stale number. This has now bitten twice
+        in this caret: ``band`` (12 vs 48) and ``preview_frames`` (20 vs 2, which
+        made the live preview do 10x the work it was designed for). Neither was
+        caught by a Python test, a tsc pass, or a green e2e — only by reading a
+        screenshot and noticing the readout said "over 12 frames".
+
+        Parsed rather than duplicated, so the test cannot itself go stale.
+        """
+        import re
+        from pathlib import Path
+
+        tsx = (Path(__file__).resolve().parents[3] / "electron" / "src" /
+               "renderer" / "src" / "components" / "DriftWizard.tsx")
+        if not tsx.exists():                      # python-only checkout
+            pytest.skip("renderer sources not present")
+        src = tsx.read_text(encoding="utf-8")
+        m = re.search(r"const DEFAULTS: DriftSaved = \{(.*?)\}", src, re.S)
+        assert m, "could not find the caret's DEFAULTS block"
+
+        def snake(name: str) -> str:
+            return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+        found = {}
+        for key, raw in re.findall(r"(\w+)\s*:\s*('[^']*'|[\w.]+)", m.group(1)):
+            val = raw.strip("'")
+            if val in ("true", "false"):
+                val = val == "true"
+            else:
+                try:
+                    val = int(val)
+                except ValueError:
+                    try:
+                        val = float(val)
+                    except ValueError:
+                        pass
+            found[snake(key)] = val
+
+        assert set(found) == set(dr.DEFAULTS), (
+            f"caret/backend key mismatch: only in caret {set(found) - set(dr.DEFAULTS)}, "
+            f"only in backend {set(dr.DEFAULTS) - set(found)}")
+        for key, want in dr.DEFAULTS.items():
+            got = found[key]
+            assert got == want, (
+                f"the caret ships {key}={got!r} but the backend default is "
+                f"{want!r} — the caret wins, so every user gets {got!r}")
 
     def test_every_stage_is_registered(self):
         from spyde.actions.registry import STAGED_HANDLERS, resolve_staged
@@ -795,15 +871,20 @@ class TestSchema:
             assert stage in STAGED_HANDLERS
             assert callable(resolve_staged(stage))
 
-    def test_the_default_face_is_two_toggles(self):
+    def test_the_default_face_is_one_toggle(self):
         """§0.9a: everything that is not the task itself is tagged Advanced, so
         any host renders the same small face. The caret is the enforcement; this
-        is the schema saying the same thing."""
+        is the schema saying the same thing.
+
+        It was TWO toggles until the second one, ``reject_outliers``, lost its
+        backing: the solver's bad-frame gate is gone and robustness is now a
+        property of the least-squares solve (``spyde/drift/translation.py``), so
+        there is nothing left there for the user to switch.
+        """
         from spyde.actions import registry
         schema = registry.wizard_parameters("drift")
         face = [k for k, s in schema.items() if not s.get("tab")]
-        assert face == ["use_roi", "reject_outliers"], \
-            f"the caret's default face grew to {face}"
+        assert face == ["use_roi"], f"the caret's default face grew to {face}"
 
     def test_toolbar_entry_gates_on_a_movie(self):
         import spyde
@@ -848,8 +929,13 @@ class TestCoercion:
     def test_unknown_method_falls_back(self):
         assert dr._coerce({"method": "warp"})["method"] == dr.DEFAULTS["method"]
 
-    def test_unknown_reference_falls_back(self):
-        assert dr._coerce({"reference": "later"})["reference"] == "running"
+    def test_band_is_clamped(self):
+        """Replaces ``test_unknown_reference_falls_back``: there is no reference
+        mode to fall back to any more, and ``band`` is the parameter a bad payload
+        can now put out of range — 0 pairs per frame would leave the solve with
+        nothing to solve."""
+        assert dr._coerce({"band": 0})["band"] == 1
+        assert dr._coerce({"band": 9999})["band"] == 200
 
     def test_order_is_clamped(self):
         assert dr._coerce({"order": 9})["order"] == 3
